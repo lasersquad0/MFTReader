@@ -95,7 +95,9 @@ bool DataRunsDecode(MFT_ATTR_HEADER* attr, THArray<DATA_RUN_ITEM>& runs)
 {
     LogEngine::Logger& logger = LogEngine::GetLogger(MFT_LOGGER_NAME);
 
-    assert(runs.Count() == 0); // make sure that old data runs are cleared
+    // we do not need this assert because sometimes one ATTR_LIST list may contain two ATTR_ALLOC attributes for some reason
+    // it means we come here two times during parsing one MFT record with such ATTR_LIST 
+    //assert(runs.Count() == 0); // make sure that old data runs are cleared
 
     if (!attr || !attr->NonResidentFlag) 
     {
@@ -294,6 +296,10 @@ void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues)
         if(currAttr->NonResidentFlag == 0)
             assert(currAttr->res.DataSize + currAttr->res.DataOffset <= currAttr->AttrSize);
 
+        // all atributes except ATTR_FILENAME and ATTR_LOGGED_UTILITY_STREAM should be in a single copy
+        if ((currAttr->AttrType != ATTR_FILENAME) && (currAttr->AttrType != ATTR_LOGGED_UTILITY_STREAM))
+            assert(attrValues[MakeAttrTypeIndex(currAttr->AttrType)] == nullptr);
+
         attrValues[MakeAttrTypeIndex(currAttr->AttrType)] = currAttr;
 
         currAttr = (MFT_ATTR_HEADER*)Add2Ptr(currAttr, currAttr->AttrSize);
@@ -302,15 +308,17 @@ void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues)
     } while (*((uint32_t*)currAttr) != ATTR_END);
 }
 
-MFT_ATTR_HEADER* ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrList, ATTR_TYPE attrType)
+void ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrList, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result)
 {
     GET_LOGGER_FUNC;
+
+    ZeroMemory(result, SAME_ATTR_CNT * sizeof(result[0]));
 
     assert(attrList->NonResidentFlag == 1);
 
     TDataRuns dataRuns;
     if (!DataRunsDecode(attrList, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
-        return nullptr;
+        return;
 
     uint8_t* dataBuf = nullptr;
 
@@ -325,8 +333,7 @@ MFT_ATTR_HEADER* ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER
 
     if (!ReadClusters(volData, rli.lcn, rli.len, dataBuf)) // ReadClusters writes a message into log file in case of an error
     {
-        //delete[] dataBuf;
-        return nullptr;
+        return;
     }
 
     /*if (!FixupUSA(volData, dataBuf, rli))
@@ -338,6 +345,7 @@ MFT_ATTR_HEADER* ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER
     ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)dataBuf;
     uint8_t* dataBufEnd = dataBuf + /*rli.len * */volData.BytesPerCluster;
 
+    uint resIndex = 0;
     while (true) // loop by LCNs in one data run
     {
         if (attrListItem->AttrType == attrType)
@@ -349,15 +357,21 @@ MFT_ATTR_HEADER* ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER
             {
                 PMFT_ATTR_HEADER attrValues2[ATTR_TYPE_CNT];
                 FillAttrValues(mftRec, attrValues2);
-                auto attr = GetAttr(volData, attrType, attrValues2);
-                assert(attr);
-                return attr;
+                PMFT_ATTR_HEADER currAttr2 = attrValues2[MakeAttrTypeIndex(attrType)];
+                assert(currAttr2);
+
+                //TODO optimization - for attributes other them ATT_ALLOC return immediately when first value found
+                if (currAttr2)
+                    result[resIndex++] = currAttr2;
+                else
+                    logger.WarnFmt("[ParseNonresAttrList] Attr: {} cannot be found is nonres ATT_LIST.", wtos(AttrTypeNames[MakeAttrTypeIndex(attrType)]));
+
+                assert(resIndex < SAME_ATTR_CNT);
             }
             else
             {
                 logger.Error("[ParseNonresAttrList] LoadMFTRecordCache returned nullptr.");
-                //delete[] dataBuf;
-                return nullptr;
+                return;
             }
         }
 
@@ -365,31 +379,39 @@ MFT_ATTR_HEADER* ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER
         if ((uint8_t*)attrListItem >= dataBufEnd) break;
     }
 
-    //delete[] dataBuf;
     logger.ErrorFmt("[ParseNonresAttrList] Attr: {} not found in the nonResident ATTR_LIST in LCN {}.", wtos(AttrTypeNames[MakeAttrTypeIndex(attrListItem->AttrType)]), rli.lcn);
-    return nullptr;
 }
 
-MFT_ATTR_HEADER* GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues)
+void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues, PMFT_ATTR_HEADER* result)
 {
-    PMFT_ATTR_HEADER currAttr = attrValues[MakeAttrTypeIndex(attrType)];
-    if (currAttr) return currAttr; // if attr is found return it
+    ZeroMemory(result, SAME_ATTR_CNT*sizeof(result[0]));
 
-    // otherwise look it in ATT_LIST attribute
+    PMFT_ATTR_HEADER currAttr = attrValues[MakeAttrTypeIndex(attrType)];
+    if (currAttr)
+    {
+        result[0] = currAttr; // if attr is found return it
+        return;
+    }
+
+    /* otherwise look it in ATT_LIST attribute */
 
     currAttr = attrValues[MakeAttrTypeIndex(ATTR_LIST_ATTR)];
-    if (!currAttr) return nullptr; 
+    if (!currAttr)
+    {
+        result[0] = nullptr;
+        return;
+    }
 
     GET_LOGGER;
     logger.Debug("ATTR_LIST_ATTR START");
     
     if (currAttr->NonResidentFlag == 1)
     {
-        MFT_ATTR_HEADER* res = ParseNonresAttrList(volData, currAttr, attrType);
-        if (res)
+        ParseNonresAttrList(volData, currAttr, attrType, result);
+        if (result[0] != nullptr)
         {
             logger.Debug("ATTR_LIST_ATTR FINISHED");
-            return res;
+            return;
         }
     }
     else
@@ -399,16 +421,9 @@ MFT_ATTR_HEADER* GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const P
         ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(currAttr, currAttr->res.DataOffset);
         uint8_t* currAttrEnd = (uint8_t*)currAttr + currAttr->AttrSize;
 
-        /*if (attrListItem->StartVCN != 0)
-        {
-            std::string aname2 = wtos(AttrTypeNames[MakeAttrTypeIndex(attrListItem->AttrType)]);
-            std::string aname1 = wtos(AttrTypeNames[MakeAttrTypeIndex(attrType)]);
-            logger.WarnFmt("[GetAttr] ATTR LIST attrListItem->StartVCN != 0! StartVCN: {:#x}, Initial AttrType: {}, AttrType: {}, AttrRef: {}, AttrSize: {}",
-                             attrListItem->StartVCN, aname1, aname2, attrListItem->ref.Id, attrListItem->AttrSize);
-        }*/
-
         assert(attrListItem->StartVCN == 0);
 
+        uint resIndex = 0;
         while (true)
         {
             // we come here only when requested atribute is located in another MFT rec
@@ -421,10 +436,18 @@ MFT_ATTR_HEADER* GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const P
                 {
                     PMFT_ATTR_HEADER attrValues2[ATTR_TYPE_CNT];
                     FillAttrValues(mftRec, attrValues2);
-                    auto attr = GetAttr(volData, attrType, attrValues2);
-                    assert(attr);
+                    PMFT_ATTR_HEADER currAttr2 = attrValues2[MakeAttrTypeIndex(attrType)];
+                    assert(currAttr2);
+
+                    //TODO optimization - for attributes other them ATT_ALLOC return immediately when first value found
+                    if (currAttr2)
+                        result[resIndex++] = currAttr2; 
+                    else
+                        logger.WarnFmt("Attribute {} cannot be found is ATT_LIST", wtos(AttrTypeNames[MakeAttrTypeIndex(attrType)]));
+                    
+                    assert(resIndex < SAME_ATTR_CNT);
+
                     logger.Debug("ATTR_LIST_ATTR FINISHED");
-                    return attr;
                 }
                 else
                 {
@@ -436,12 +459,14 @@ MFT_ATTR_HEADER* GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const P
             if ((uint8_t*)attrListItem >= currAttrEnd) break;
         }
 
-        assert((attrType == ATTR_BITMAP) || (attrType == ATTR_ALLOC)); // only these two types can be missing
+        if(resIndex == 0)
+            assert((attrType == ATTR_BITMAP) || (attrType == ATTR_ALLOC)); // only these two types can be missing
+
     }
 
     logger.Debug("ATTR_LIST_ATTR FINISHED NULL");
 
-    return nullptr; // some attrs may not present in MFT rec. e.g. BITMAP is not created for empty directories while INDEX_ROOT exists
+    // some attrs may not present in MFT rec. e.g. BITMAP is not created for empty directories while INDEX_ROOT exists
 };
 
 

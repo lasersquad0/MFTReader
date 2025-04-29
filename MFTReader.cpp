@@ -15,7 +15,6 @@
 
 #pragma pack(show)
 
-
 bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitField& bitmap)
 {
     assert(attr->NonResidentFlag == 1);
@@ -96,7 +95,10 @@ bool ParseBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitField& b
 
 bool ParseAlloc(MFT_ATTR_HEADER* attr, TDataRuns& dataRuns)
 {
-    assert(dataRuns.Count() == 0);
+    // sometimes one ATTR_LIST list may contain two ATTR_ALLOC attributes for some reason
+    // it means we come here two times during parsing one MFT record with such ATTR_LIST 
+    //assert(dataRuns.Count() == 0);
+
     if (!attr) return true; // attr==NULL means that ALLOC attribute is not present in MFT rec. Usully ALLOC is not needed in MFT rec for empty directories
 
     assert(attr->NonResidentFlag == 1);
@@ -133,11 +135,16 @@ uint32_t GetFileListFromMFTRec(const VOLUME_DATA& volData, MFT_FILE_RECORD* mftR
     PMFT_ATTR_HEADER attrValues[ATTR_TYPE_CNT];
     FillAttrValues(mftRec, attrValues);
 
-    auto bitmap = GetAttr(volData, ATTR_BITMAP, attrValues);
+    PMFT_ATTR_HEADER multValues[SAME_ATTR_CNT];
+    GetAttr(volData, ATTR_BITMAP, attrValues, multValues);
+    auto bitmap = multValues[0];
+    assert(multValues[1] == nullptr); // only single value can be returned
     ParseBitmap(volData, bitmap, node.Bitmap); // copy bitmap into TBitField class for easier access
 
-    auto alloc = GetAttr(volData, ATTR_ALLOC, attrValues);
-    ParseAlloc(alloc, node.DataRuns); // decode data runs and store them in node.DataRuns
+    GetAttr(volData, ATTR_ALLOC, attrValues, multValues); // multiple values can be returned
+    uint i = 0;
+    while(multValues[i] != nullptr)
+        ParseAlloc(multValues[i++], node.DataRuns); // decode data runs and store them in node.DataRuns
     
     uint32_t lcnTotalCount = 0;
     for (auto& run : node.DataRuns) lcnTotalCount += run.len;
@@ -145,7 +152,9 @@ uint32_t GetFileListFromMFTRec(const VOLUME_DATA& volData, MFT_FILE_RECORD* mftR
     TLCNRecs lcns(volData.BytesPerCluster, lcnTotalCount);
     lcns.LoadDataRuns(volData, node);  //TODO add error handling 
 
-    auto root = GetAttr(volData, ATTR_ROOT, attrValues);
+    GetAttr(volData, ATTR_ROOT, attrValues, multValues);
+    auto root = multValues[0];
+    assert(multValues[1] == nullptr); // only single value can be returned
     ParseIndexRoot(root, lcns, node.FileList);
 
     return node.FileList.Count();
@@ -283,13 +292,13 @@ int main()
     logger1.SetLogLevel(LogEngine::Levels::llInfo);
     //logger1.GetSink(MFT_LOGGER_NAME)->SetLogLevel(LogEngine::Levels::llDebug);
 
-    std::shared_ptr<LogEngine::Sink> sink(DBG_NEW LogEngine::StdoutSink(MFT_LOGGER_NAME));
+    std::shared_ptr<LogEngine::Sink> sink(DBG_NEW LogEngine::StdoutSinkST(MFT_LOGGER_NAME));
     sink->SetLogLevel(LogEngine::Levels::llError);
     logger1.AddSink(sink);
     
     logger1.Info("--------------- START --------------");
     
-    PCWSTR volume = L"\\\\.\\D:";
+    PCWSTR volume = L"\\\\.\\C:";
     
 
     try
@@ -340,9 +349,8 @@ int main()
         logger1.WarnFmt("Reading time : {}", MillisecToStr<std::string>(std::chrono::duration_cast<std::chrono::milliseconds>(stop - start1).count()));
         std::cout << std::endl <<"Reading time: " << MillisecToStr<std::string>(std::chrono::duration_cast<std::chrono::milliseconds>(stop - start1).count()) << std::endl;
         
-        std::cout << "Sorting... " << std::endl;
-
-        std::sort(dirList.begin(), dirList.end(), compare);
+        //std::cout << "Sorting... " << std::endl;
+        //std::sort(dirList.begin(), dirList.end(), compare);
 
         //uint32_t recID = MFTRecIdByPath(volumeData, L"C:\\Program Files\\Common Files\\Microsoft");
 

@@ -16,6 +16,7 @@
 #include "DynamicArrays.h"
 #include "ci_string.h"
 
+#define SAME_ATTR_CNT 5
 #define MFT_LOGGER_NAME "mftlog"
 #define MFT_LOGGER_NAME_FUNC "mftlogfunc"
 #define MFT_LOGGER_NAME_LIST "mftlist"
@@ -164,7 +165,7 @@ bool ReadClusters(const VOLUME_DATA& volData, uint64_t lcnStart, uint32_t lcnCnt
 bool FixupUSA(const VOLUME_DATA& volData, PBYTE dataBuf, DATA_RUN_ITEM& rli);
 bool LoadMFTRecord(const VOLUME_DATA& volData, MFT_REF recID, uint8_t* mftRec);
 uint8_t* LoadMFTRecordCache(const VOLUME_DATA& volData, MFT_REF recID);
-MFT_ATTR_HEADER* GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues);
+void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues, PMFT_ATTR_HEADER* result);
 void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues);
 
 // This class stores MFT records in memory and gets them by MFT rec ID

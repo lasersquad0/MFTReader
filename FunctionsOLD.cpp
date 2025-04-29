@@ -277,7 +277,7 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node)
                     {
                         if (visitedMFTRec.IndexOf(attrList->ref.sId.low) == -1) // make sure we parse each record only one
                         {
-                            if (LoadMFTRecord(volData, attrList->ref, mftRecBuf))//TODO shall we call LoadRecordCache here?
+                            if (LoadMFTRecord(volData, attrList->ref, mftRecBuf)) //TODO shall we call LoadRecordCache here?
                             {
                                 if (ParseMFTRecord(volData, mftRecBuf, node))
                                     visitedMFTRec.AddValue(attrList->ref.sId.low);
@@ -354,7 +354,10 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node)
             }
             case ATTR_ALLOC:
             {
-                assert(node.DataRuns.Count() == 0);
+                // sometimes one ATTR_LIST list may contain two ATTR_ALLOC attributes for some reason
+                // it means we come here two times during parsing one MFT record with such ATTR_LIST 
+                if (node.DataRuns.Count() > 0)
+                    logger.Warn("Multiple ATTR_ALLOC attributes (node.DataRuns.Count() > 0).");
 
                 if (!DataRunsDecode(currAttr, node.DataRuns))
                 {
