@@ -248,20 +248,18 @@ bool LoadMFTRecord(const VOLUME_DATA& volData, MFT_REF recID, uint8_t* mftRec)
     //ULONG cb = __builtin_offsetof(NTFS_FILE_RECORD_OUTPUT_BUFFER, FileRecordBuffer[volData.BytesPerMFTRec]);
     ULONG cb = offsetof(NTFS_FILE_RECORD_OUTPUT_BUFFER, FileRecordBuffer[volData.BytesPerMFTRec]);
     
-    //TODO speed improvement - allocate memory in stack here
     auto pnfrob = (PNTFS_FILE_RECORD_OUTPUT_BUFFER)alloca(cb);
 
     if (!DeviceIoControl(volData.hVolume, FSCTL_GET_NTFS_FILE_RECORD, &nfrib, sizeof(nfrib), pnfrob, cb, 0, nullptr))
     {
         logger.ErrorFmt("DeviceIoControl failed with error: {}", GetLastError());
-        //free(pnfrob);
         return false;
     }
 
     uint8_t* pFileRec = pnfrob->FileRecordBuffer;
+
     //TODO think how to avoid this memcpy_s
     memcpy_s(mftRec, volData.BytesPerMFTRec, pFileRec, volData.BytesPerMFTRec);
-    //free(pnfrob);
 
     return true;
 }
