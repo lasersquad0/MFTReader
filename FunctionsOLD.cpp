@@ -90,47 +90,49 @@ bool ProcessDataRuns(VOLUME_DATA& volData, DIR_NODE& node)
     GET_LOGGER;
     logger.Debug("---------- PROCESSING Data Runs ---------");
 
-    int64_t bitsCounter = 0;
     int64_t lastBit = node.Bitmap.LastBit();
 
     if (lastBit == -1)
     {
-        logger.Debug("BITMAP attr is NULL or not present !!!");
+        logger.Debug("[ProcessDataRuns] BITMAP attr is NULL or not present!");
+        logger.Debug("---------- END OF PROCESSING Data Runs ---------");
         return true;
     }
 
     logger.DebugFmt("BITMAP Size in 64bit words: {}, Value64: {:#x}", node.Bitmap.Count(), *(uint64_t*)node.Bitmap.GetData());
 
+    int64_t bitsCounter = 0;
     uint8_t* dataBuf = nullptr;
     uint32_t dataBufLen = 0; // memory of how many clusters is allocated in dataBuf
-    uint32_t r = 0;
-    while (r < node.DataRuns.Count())
+    uint32_t currRun = 0;
+    while (currRun < node.DataRuns.Count())
     {
-        if (bitsCounter > lastBit) // no more valid LCNs 
+        if (bitsCounter > lastBit) // no more valid LCNs, break loop 
             break;
 
-        DATA_RUN_ITEM& rli = node.DataRuns[r];
+        DATA_RUN_ITEM& rli = node.DataRuns[currRun];
         logger.DebugFmt("Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
 
-        if (rli.len > dataBufLen)
+        uint32_t rlilen = valuemin(lastBit + 1 - bitsCounter, rli.len);
+
+        if (rlilen > dataBufLen)
         {
             delete[] dataBuf;
-            dataBuf = DBG_NEW uint8_t[rli.len * volData.BytesPerCluster];
-            dataBufLen = rli.len;
+            dataBuf = DBG_NEW uint8_t[rlilen * volData.BytesPerCluster];
+            dataBufLen = rlilen;
         }
 
-        //TODO optimization: instead of rli.len we can read min(lastbit+1-bitsCounter, rli.len) clusters
-        if (!ReadClusters(volData, rli.lcn, rli.len, dataBuf))
+        if (!ReadClusters(volData, rli.lcn, rlilen, dataBuf))
             break;
 
-        if (!FixupUSA(volData, dataBuf, rli))
+        if (!FixupUSA(volData, dataBuf, rli, rlilen))
         {
             logger.Error("FixupUSA returned error.");
             break;
         }
 
         INDEX_BUFFER* allocIndex = (INDEX_BUFFER*)dataBuf;
-        uint8_t* dataBufEnd = dataBuf + rli.len * volData.BytesPerCluster;
+        uint8_t* dataBufEnd = dataBuf + rlilen * volData.BytesPerCluster;
 
         uint32_t cnt = 0;
         while (true) // loop by LCNs in one data run
@@ -150,18 +152,19 @@ bool ProcessDataRuns(VOLUME_DATA& volData, DIR_NODE& node)
                 else
                 {
                     uint8_t* sign = allocIndex->RecHeader.Signature;
-                    logger.WarnFmt("Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", cnt + rli.lcn, sign[0], sign[1], sign[2], sign[3]);
+                    logger.WarnFmt("Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", rli.lcn + cnt, sign[0], sign[1], sign[2], sign[3]);
                 }
             }
             else
             {
-                logger.DebugFmt("Bitmap bit {}th is zero. LastBit: {}. Bypassing LCN cluster {}.", bitsCounter, lastBit, cnt + rli.lcn);
+                logger.DebugFmt("Bitmap bit {}th is zero. LastBit: {}. Bypassing LCN cluster {}.", bitsCounter, lastBit, rli.lcn + cnt);
                 if (bitsCounter > lastBit) // no more valid LCNs 
                     break;
             }
 
-            assert(cnt < rli.len);
+            assert(cnt < rlilen);
 
+            // go to the next LCN
             allocIndex = (INDEX_BUFFER*)Add2Ptr(allocIndex, volData.BytesPerCluster);
             cnt++; 
             bitsCounter++;
@@ -169,12 +172,13 @@ bool ProcessDataRuns(VOLUME_DATA& volData, DIR_NODE& node)
             if ((uint8_t*)allocIndex >= dataBufEnd) break;
         }
 
-        r++;
+        currRun++;
     }
+
+    delete[] dataBuf;
 
     logger.Debug("---------- END OF PROCESSING Data Runs ---------");
 
-    delete[] dataBuf;
     return true;
 }
 
@@ -211,7 +215,7 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node)
     // such special MFT records may be either IN_USE or IN_USE|IS_DIRECTORY type
     // therefore I added if before assert
     if(mftRec->ParentFileRec.Id == 0)
-        assert(mftRec->Flags == 0x03); // only "directory" record should go here
+        assert(mftRec->Flags == 0x03); // only "directory" record should go here for base records
 
     MFT_ATTR_HEADER* currAttr = (MFT_ATTR_HEADER*)Add2Ptr(mftRec, mftRec->FirstAttrOffset);
 
@@ -275,7 +279,7 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node)
                 {
                     if (attrList->ref.sId.low != mftRec->IndexMFTRec)
                     {
-                        if (visitedMFTRec.IndexOf(attrList->ref.sId.low) == -1) // make sure we parse each record only one
+                        if (visitedMFTRec.IndexOf(attrList->ref.sId.low) == -1) // make sure we parse each record only once
                         {
                             if (LoadMFTRecord(volData, attrList->ref, mftRecBuf)) //TODO shall we call LoadRecordCache here?
                             {
@@ -421,6 +425,7 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node)
                             }
                         }
                     }
+
                     attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
                     if ( (attrListItem->AttrType == ATTR_ZERO) || ((uint8_t*)attrListItem >= dataBufEnd)) break;
                 }
@@ -494,6 +499,7 @@ bool ReadDirectoryX(VOLUME_DATA& volData, MFT_REF mftRecID, uint32_t dirLevel, T
         if (!IsMetaFile(item) && !IsDotDir(item.ciName)) // do not add hidden metafiles into file list
         {
             if (dirLevel == 0) std::wcout << item.ciName.c_str() << std::endl;
+            if (dirLevel == 1) std::wcout << "\t" << item.ciName.c_str() << std::endl;
 
             gDirList.AddValue(item);
 
@@ -768,13 +774,14 @@ bool ReadDirectoryOLD(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dir
                 if (!DataRunsDecode(currAttr, runs))
                 {
                     logger.Error("DataRunsDecode finished with error.");
+                    break;
                 }
 
                 uint validLcnCnt = 0;
                 PMFT_ATTR_HEADER attrValues[ATTR_TYPE_CNT];
                 FillAttrValues(pmftrec, attrValues);
                 PMFT_ATTR_HEADER bmpAttr = attrValues[MakeAttrTypeIndex(ATTR_BITMAP)];
-                if (bmpAttr) //TODO add proper handling bitmap attribute for LIST_ATTR attribute type
+                if (bmpAttr) //TODO add proper handling bitmap attribute for LIST_ATTR attribute type as it is done in ParseMFTRecord
                 {
                     ATTR_BITMAP_ATTR* bmp = (ATTR_BITMAP_ATTR*)Add2Ptr(bmpAttr, bmpAttr->res.DataOffset);
                     logger.InfoFmt("BITMAP Size in bytes: {}, Value64: {:#x}", bmpAttr->res.DataSize, *(uint64_t*)bmp->bitmap);
@@ -792,22 +799,19 @@ bool ReadDirectoryOLD(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dir
                 //assert(validLcnCnt > 0);
                 assert(validLcnCnt <= runLenLen);
 
-                //if (validLcnCnt < rli.len)
-                //    logger.InfoFmt("BITMAP Attribute works! DataRun LCN Len: {}, LCN Len from BITMAP:{}", rli.len, validLcnCnt);
-
-                uint8_t* dataBuf{ 0 };
+                uint8_t* dataBuf = nullptr;
                 uint32_t dataBufLen = 0; // size of allocated memory in clusters
-                uint32_t r = 0;
-                while (r < runs.Count())
+                uint32_t currRun = 0;
+                while (currRun < runs.Count())
                 {
-                    DATA_RUN_ITEM& rli = runs[r];
+                    DATA_RUN_ITEM& rli = runs[currRun];
                     logger.InfoFmt("Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
 
                     //rli.len = validLcnCnt;
 
                     if (rli.len > dataBufLen)
                     {
-                        if (dataBufLen > 0) delete[] dataBuf;
+                        delete[] dataBuf;
                         dataBuf = DBG_NEW uint8_t[rli.len * volData.BytesPerCluster];
                         dataBufLen = rli.len;
                     }
@@ -818,7 +822,7 @@ bool ReadDirectoryOLD(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dir
                         break;
                     }
 
-                    if (!FixupUSA(volData, dataBuf, rli))
+                    if (!FixupUSA(volData, dataBuf, rli, rli.len))
                     {
                         logger.Error("FixupUSA returned error.");
                         break;
@@ -846,16 +850,17 @@ bool ReadDirectoryOLD(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dir
                         else
                         {
                             uint8_t* sign = allocIndex->RecHeader.Signature;
-                            logger.WarnFmt("Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", cnt + rli.lcn, sign[0], sign[1], sign[2], sign[3]);
+                            logger.WarnFmt("Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", rli.lcn + cnt, sign[0], sign[1], sign[2], sign[3]);
                         }
 
+                        // go to the next lcn record
                         allocIndex = (INDEX_BUFFER*)Add2Ptr(allocIndex, volData.BytesPerCluster);
                         cnt++;
 
                         if ((uint8_t*)allocIndex >= dataBufEnd) break;
                     }
 
-                    r++;
+                    currRun++;
                 }
 
                 delete[] dataBuf;

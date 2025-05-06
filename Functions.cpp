@@ -13,14 +13,14 @@ LogEngine::Logger& GetLoggerFunc()
     LogEngine::Logger& logger = LogEngine::GetFileLogger(MFT_LOGGER_NAME_FUNC, "LogMFTReaderFUNC.log");
     logger.SetAsyncMode(true);
     logger.SetLogLevel(LogEngine::Levels::llDebug);
-    logger.GetSink(MFT_LOGGER_NAME_FUNC)->SetLogLevel(LogEngine::Levels::llDebug);
+    //logger.GetSink(MFT_LOGGER_NAME_FUNC)->SetLogLevel(LogEngine::Levels::llDebug);
     return logger;
 }
 
 void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, THArray<FILE_NAME>& fnames)
 {
-    LogEngine::Logger& logger = LogEngine::GetLogger(MFT_LOGGER_NAME);
-
+    GET_LOGGER;
+    
     uint32_t off = ihdr->DEOffset; // offset of 1st dir entry
 
     while (true) // iterate though all DE+FILE_NAME entries
@@ -38,9 +38,10 @@ void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, THArray<FILE_NAME>& fn
         if (de->flags & NTFS_IE_HAS_SUBNODES)
         {
             CLST vcn = *(CLST*)Add2Ptr(ihdr, off + de->size - sizeof(uint64_t));
-            logger.DebugFmt("DE has subnodes in VCN={}", vcn);
+            auto rec = lcns.GetRecByVCN(vcn);
+            logger.DebugFmt("[GetFileListFromNode] Dir Entry has subnodes located in VCN={}, LCN={}", vcn, rec.first);
 
-            INDEX_BUFFER* allocIndex = (INDEX_BUFFER*)lcns.GetRecByVCN(vcn);
+            INDEX_BUFFER* allocIndex = (INDEX_BUFFER*)rec.second;
             
             // process items only if cluster starts from correct signature INDX
             // sometimes fully empty (filled with zero) clusters present in run list without starting INDX signature
@@ -52,16 +53,15 @@ void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, THArray<FILE_NAME>& fn
 
                 auto pihdr = &(allocIndex->ihdr);
                 GetFileListFromNode(pihdr, lcns, fnames);
-
             }
             else
             {
                 uint8_t* sign = allocIndex->RecHeader.Signature;
-                logger.WarnFmt("Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", lcns.GetLCNByVCN(vcn), sign[0], sign[1], sign[2], sign[3]);
+                logger.WarnFmt("[GetFileListFromNode] Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", lcns.GetRecByVCN(vcn).first, sign[0], sign[1], sign[2], sign[3]);
             }
         }
 
-        if (de->key_size > 0) // key_size>0 means that File Name attr exists
+        if (de->key_size > 0) // key_size>0 means that FileName attr exists
         {
             ATTR_FILE_NAME* fattr = (ATTR_FILE_NAME*)Add2Ptr(de, sizeof(NTFS_DE));
 
@@ -69,12 +69,12 @@ void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, THArray<FILE_NAME>& fn
 
             if (fattr->NameType != FILE_NAME_DOS) // bypass DOS filenames
             {
-                ci_string ciwnm(GetFName(fattr, sizeof(ATTR_FILE_NAME)), fattr->FileNameLen);//TODO select one string here
-                std::wstring wnm(GetFName(fattr, sizeof(ATTR_FILE_NAME)), fattr->FileNameLen);
-                std::string nm = wtos(wnm);
+                ci_string ciwnm(GetFName(fattr, sizeof(ATTR_FILE_NAME)), fattr->FileNameLen);
+                //std::wstring wnm(GetFName(fattr, sizeof(ATTR_FILE_NAME)), fattr->FileNameLen);
+                std::string nm = wtos(ciwnm);
 
-                logger.DebugFmt("DE ATTR Parent rec: {:#x}", fattr->ParentDir.Id);
-                logger.DebugFmt("DE ATTR name: '{}'", nm);
+                logger.DebugFmt("[GetFileListFromNode] Dir Entry Parent rec ID: {:#x}", fattr->ParentDir.Id);
+                logger.DebugFmt("[GetFileListFromNode] Dir Entry File/Dir name: '{}'", nm);
 
                 fnames.AddValue({ ciwnm, *fattr, de->ref });
             }
@@ -108,6 +108,7 @@ bool DataRunsDecode(MFT_ATTR_HEADER* attr, THArray<DATA_RUN_ITEM>& runs)
 
     uint8_t* datarun = Add2Ptr(attr, attr->nonres.DataRunsOffset);
     uint8_t* attrEnd = Add2Ptr(attr, attr->AttrSize);
+    assert(attr->AttrSize > 0);
 
     uint64_t currVCN = attr->nonres.StartVCN;
     uint64_t currLCN = 0;
@@ -156,13 +157,12 @@ bool DataRunsDecode(MFT_ATTR_HEADER* attr, THArray<DATA_RUN_ITEM>& runs)
 
         datarun += b3 + 1; // move to the next data run
 
-        logger.DebugFmt("DataRuns VCN: {}", ri.vcn);
-        logger.DebugFmt("DataRuns LCN: {}", ri.lcn);
-        logger.DebugFmt("DataRuns Length: {}", ri.len);
-
+        logger.DebugFmt("DataRunsDecode VCN: {}", ri.vcn);
+        logger.DebugFmt("DataRunsDecode LCN: {}", ri.lcn);
+        logger.DebugFmt("DataRunsDecode Length: {}", ri.len);
     }
 
-    logger.DebugFmt("DataRuns total count: {}", runs.Count());
+    logger.DebugFmt("DataRunsDecode Data Runs Count: {}", runs.Count());
 
     return true;
 }
@@ -193,18 +193,20 @@ bool ReadClusters(const VOLUME_DATA& volData, uint64_t lcnStart, uint32_t lcnCnt
     }
 }
 
-bool FixupUSA(const VOLUME_DATA& volData, PBYTE dataBuf, DATA_RUN_ITEM& rli)
+// dataBuf contains data for rli.len clusters
+bool FixupUSA(const VOLUME_DATA& volData, PBYTE dataBuf, DATA_RUN_ITEM& rli, uint32_t rlilen)
 {
     NTFS_RECORD_HEADER* indexRec = (NTFS_RECORD_HEADER*)dataBuf;
     uint32_t wordsPerSector = volData.BytesPerSector >> 1;
 
-    for (size_t i = 0; i < rli.len; i++)
+    // loop by LCNs loaded into dataBuf
+    for (size_t i = 0; i < rlilen; i++)
     {
         if (!ntfs_is_indx_recp(indexRec->Signature)) // bypass non 'INDX' clusters (usually filled by zero)
         {
-            //LogEngine::Logger& logger = LogEngine::GetLogger(MFT_LOGGER_NAME);
-            //uint8_t* sign = indexRec->Signature;
-            //logger.WarnFmt("[FixupUSA] Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", rli.lcn + i, sign[0], sign[1], sign[2], sign[3]);
+            GET_LOGGER;
+            uint8_t* sign = indexRec->Signature;
+            logger.WarnFmt("[FixupUSA] Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", rli.lcn + i, sign[0], sign[1], sign[2], sign[3]);
             
             continue;
         }
@@ -252,19 +254,20 @@ bool LoadMFTRecord(const VOLUME_DATA& volData, MFT_REF recID, uint8_t* mftRec)
 
     if (!DeviceIoControl(volData.hVolume, FSCTL_GET_NTFS_FILE_RECORD, &nfrib, sizeof(nfrib), pnfrob, cb, 0, nullptr))
     {
-        logger.ErrorFmt("DeviceIoControl failed with error: {}", GetLastError());
+        logger.ErrorFmt("DeviceIoControl failed with error. Error code: {}", GetLastError());
         return false;
     }
 
-    uint8_t* pFileRec = pnfrob->FileRecordBuffer;
+    MFT_FILE_RECORD* mftRecord = (MFT_FILE_RECORD*)(pnfrob->FileRecordBuffer);
+    assert(mftRecord->IndexMFTRec == recID.sId.low); // make sure we've got the same record as requested.
 
     //TODO think how to avoid this memcpy_s
-    memcpy_s(mftRec, volData.BytesPerMFTRec, pFileRec, volData.BytesPerMFTRec);
+    memcpy_s(mftRec, volData.BytesPerMFTRec, mftRecord, volData.BytesPerMFTRec);
 
     return true;
 }
 
-// mftRec should be a buffer with volData.BytesPerMFTRec size
+// returns NULL if error occurred during loading MFT record
 uint8_t* LoadMFTRecordCache(const VOLUME_DATA& volData, MFT_REF recID)
 {
     TMFTRecCache* cache = Singleton<TMFTRecCache>::getInstance();
@@ -274,7 +277,7 @@ uint8_t* LoadMFTRecordCache(const VOLUME_DATA& volData, MFT_REF recID)
     {
         uint8_t* mftRecBuf = DBG_NEW uint8_t[volData.BytesPerMFTRec];
         if (!LoadMFTRecord(volData, recID, mftRecBuf))
-            return nullptr; // error loading mft record
+            return nullptr; // error loading mft record, it means that DeviceIoControl failed with error
 
         cache->SetValue(recID.Id, mftRecBuf); // update cache
 
@@ -300,6 +303,7 @@ void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues)
 
         attrValues[MakeAttrTypeIndex(currAttr->AttrType)] = currAttr;
 
+        assert(currAttr->AttrSize > 0);
         currAttr = (MFT_ATTR_HEADER*)Add2Ptr(currAttr, currAttr->AttrSize);
         assert(mftRec->FileRecSize > Diff2Ptr(mftRec, currAttr));
 
@@ -369,12 +373,14 @@ void ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrList, 
             else
             {
                 logger.Error("[ParseNonresAttrList] LoadMFTRecordCache returned nullptr.");
-                return;
+                //return;
             }
         }
 
+        assert(attrListItem->AttrSize > 0);
+        assert(attrListItem->StartVCN == 0); 
         attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
-        if ((uint8_t*)attrListItem >= dataBufEnd) break;
+        if ((attrListItem->AttrType == ATTR_ZERO) || ((uint8_t*)attrListItem >= dataBufEnd)) break;
     }
 
     logger.ErrorFmt("[ParseNonresAttrList] Attr: {} not found in the nonResident ATTR_LIST in LCN {}.", wtos(AttrTypeNames[MakeAttrTypeIndex(attrListItem->AttrType)]), rli.lcn);
@@ -416,6 +422,7 @@ void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEA
     {
         assert(currAttr->NonResidentFlag == 0);
 
+        //TODO this code is very similar to code in ParseNonresAttrList. Think of extracting into separate method.
         ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(currAttr, currAttr->res.DataOffset);
         uint8_t* currAttrEnd = (uint8_t*)currAttr + currAttr->AttrSize;
 
@@ -429,7 +436,7 @@ void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEA
             {
                 uint8_t* mftRecBuf = LoadMFTRecordCache(volData, attrListItem->ref);
                 auto mftRec = (MFT_FILE_RECORD*)mftRecBuf;
-                assert(mftRecBuf != nullptr);
+                assert(mftRecBuf != nullptr); // mftRecBuf=null indicates error
                 if (mftRecBuf)
                 {
                     PMFT_ATTR_HEADER attrValues2[ATTR_TYPE_CNT];
@@ -449,10 +456,14 @@ void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEA
                 }
                 else
                 {
-                    // TODO add error handling here
+                    // error loading MFT record
+                    // do not break loop and trying to load more records
+                    logger.Warn("LoadMFTRecordCache returned null MFT record!");
                 }
             }
 
+            assert(attrListItem->AttrSize > 0);
+            assert(attrListItem->StartVCN == 0);
             attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
             if ((uint8_t*)attrListItem >= currAttrEnd) break;
         }

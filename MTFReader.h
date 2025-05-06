@@ -318,7 +318,7 @@ struct ATTR_LIST_ENTRY
                              // record holds one extent of the attribute and there is one attribute list entry for each extent
     MFT_REF ref;	         // 0x10 The reference of the MFT record holding the MFT_ATTR_HEADER for this portion of the attribute value.
     uint16_t AttrId;		 // 0x18 If StartVCN = 0, the Id of the attribute being referenced; otherwise 0.
-    uint16_t name[3];		 // 0x1A Just to align. To get real name can use bNameOffset.
+    uint16_t name[3];		 // 0x1A Just to align. To get real name can use NameOffset.
 
 }; // sizeof(0x20)
 

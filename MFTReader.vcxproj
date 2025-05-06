@@ -164,6 +164,7 @@
     <ClCompile Include="Utils.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\common\include\string_utils.h" />
     <ClInclude Include="Functions.h" />
     <ClInclude Include="MTFReader.h" />
     <ClInclude Include="Utils.h" />

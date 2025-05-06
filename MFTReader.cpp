@@ -12,6 +12,22 @@
 #include "Functions.h"
 #include "MTFReader.h"
 
+/* Идеи для анализа файловой системы
+1. MFT записи с редкими флагами   
+IS_4          = 0x0004, // it is called RECORD_FLAG_SYSTEM in another source
+    IS_VIEW_INDEX = 0x0008, // it is called RECORD_FLAG_UNKNOWN in another source
+    SPACE_FILLER 
+2. Файлы с альтернативными потоками - названия этих потоков и размеры
+3. Папки с кол-во файлов больше чем 1000 (например)
+3. Файлы-папки имеющие 3 и более имен.
+4. файлы-папки имеющие 2 и больше hard links
+5. Файлы-папки с атрибутом sparse
+6. Файлы- папки имеющие в MFT записи кол-во атрибутов > 5 (например)
+7. файлы-папки имеющие редкие атрибуты EA, EA_INFO, SECURE_ID, ATTR_LOGGED_UTILITY_STREAM
+8. файлы-папки имеющие nonresident атрибуты кроме DATA
+9. Файлы-папки имеющие длинные data run list (3 и более items в data runs list)
+10. 
+*/
 
 #pragma pack(show)
 
@@ -23,18 +39,22 @@ bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitFi
     if (!DataRunsDecode(attr, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
         return false;
 
-    // GET_LOGGER;
-
     uint8_t* dataBuf = nullptr;
     uint32_t dataBufLen = 0; // memory size in clusters, how many clusters is allocated in dataBuf
-    uint32_t r = 0;
+    uint32_t currRun = 0;
     THArrayRaw bmpRecs(volData.BytesPerCluster);
 
     assert(dataRuns.Count() > 0);
-
-    while (r < dataRuns.Count())
+    
+    if (dataRuns.Count() > 1)
     {
-        DATA_RUN_ITEM& rli = dataRuns[r];
+        GET_LOGGER;
+        logger.WarnFmt("[ParseNonresBitmap] Bitmap occupies more than one data run. Bitmap Data Runs Count: {}", dataRuns.Count());
+    }
+
+    while (currRun < dataRuns.Count())
+    {
+        DATA_RUN_ITEM& rli = dataRuns[currRun];
 
         if (rli.len > dataBufLen)
         {
@@ -52,9 +72,9 @@ bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitFi
         // in most cases nonresident Bitmap will occupy one data run
         // therefore we have special handling of this case
         if (dataRuns.Count() > 1)
-            bmpRecs.AddMany(dataBuf, rli.len);
+            bmpRecs.AddMany(dataBuf, rli.len); //TODO think to avoid several copying dataBuf. first into bmpRecs, then into bitmap
 
-        r++;
+        currRun++;
     }
 
     if (dataRuns.Count() > 1)
@@ -99,7 +119,7 @@ bool ParseAlloc(MFT_ATTR_HEADER* attr, TDataRuns& dataRuns)
     // it means we come here two times during parsing one MFT record with such ATTR_LIST 
     //assert(dataRuns.Count() == 0);
 
-    if (!attr) return true; // attr==NULL means that ALLOC attribute is not present in MFT rec. Usully ALLOC is not needed in MFT rec for empty directories
+    if (!attr) return true; // attr==NULL means that ALLOC attribute is not present in MFT rec. Usually ALLOC is not needed in MFT record for empty directories
 
     assert(attr->NonResidentFlag == 1);
 
@@ -130,31 +150,48 @@ bool ParseIndexRoot(MFT_ATTR_HEADER* attr, TLCNRecs& lcns, TFileList& fileList)
 
 uint32_t GetFileListFromMFTRec(const VOLUME_DATA& volData, MFT_FILE_RECORD* mftRec, DIR_NODE& node)
 {
+    GET_LOGGER;
+
     assert(mftRec->Flags == 0x03); // only "directory" record should go here
+    assert(node.Bitmap.Count() == 0);
 
     PMFT_ATTR_HEADER attrValues[ATTR_TYPE_CNT];
     FillAttrValues(mftRec, attrValues);
 
     PMFT_ATTR_HEADER multValues[SAME_ATTR_CNT];
     GetAttr(volData, ATTR_BITMAP, attrValues, multValues);
-    auto bitmap = multValues[0];
-    assert(multValues[1] == nullptr); // only single value can be returned
-    ParseBitmap(volData, bitmap, node.Bitmap); // copy bitmap into TBitField class for easier access
+    auto bitmap = multValues[0]; // bitmap can be NULL here
+    assert(multValues[1] == nullptr); // only single value can be returned for bitmap
+    if (bitmap)
+    {
+        if (!ParseBitmap(volData, bitmap, node.Bitmap)) // copy bitmap into TBitField class for easier access
+        {
+            logger.Error("[GetFileListFromMFTRec] ParseBitmap finished with error.");
+        }
+    }
 
     GetAttr(volData, ATTR_ALLOC, attrValues, multValues); // multiple values can be returned
     uint i = 0;
-    while(multValues[i] != nullptr)
-        ParseAlloc(multValues[i++], node.DataRuns); // decode data runs and store them in node.DataRuns
-    
+    while (multValues[i] != nullptr)
+    {
+        if (!ParseAlloc(multValues[i++], node.DataRuns)) // decode data runs and store them in node.DataRuns
+        {
+            logger.Error("[GetFileListFromMFTRec] ParseAlloc finished with error.");
+        }
+    }
+
     uint32_t lcnTotalCount = 0;
     for (auto& run : node.DataRuns) lcnTotalCount += run.len;
 
     TLCNRecs lcns(volData.BytesPerCluster, lcnTotalCount);
-    lcns.LoadDataRuns(volData, node);  //TODO add error handling 
+    if (!lcns.LoadDataRuns(volData, node))
+    {
+        logger.Error("[GetFileListFromMFTRec] TLCNRecs.LoadDataRuns finished with error.");
+    }
 
     GetAttr(volData, ATTR_ROOT, attrValues, multValues);
     auto root = multValues[0];
-    assert(multValues[1] == nullptr); // only single value can be returned
+    assert(multValues[1] == nullptr); // only single value can be returned for ATT_ROOT
     ParseIndexRoot(root, lcns, node.FileList);
 
     return node.FileList.Count();
@@ -205,8 +242,6 @@ uint32_t MFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path)
         }
     }
 
-    //free(mftRecBuf);
-
     return mftRecID.sId.low;
 }
 
@@ -227,16 +262,21 @@ bool ReadDirectory2(VOLUME_DATA& volData, MFT_REF parentMftRecID, uint32_t dirLe
     }
 
     DIR_NODE node;
-
     GetFileListFromMFTRec(volData, mftRec, node);
-
-    //delete[] mftRecBuf;
 
     for (auto& item : node.FileList)
     {
         if (!IsMetaFile(item) && !IsDotDir(item.ciName)) // do not add hidden metafiles into file list
         {
             if (dirLevel == 0) std::wcout << item.ciName.c_str() << std::endl;
+            if (dirLevel == 1)
+            {
+                std::wcout << "      " << item.ciName.c_str() << std::endl;
+              //  std::cout << "      " << "Головоломка" << std::endl;
+            }
+
+            //if (parentMftRecID.sId.low == 5877) 
+            //    std::wcout << "\t\t" << item.ciName.c_str() << std::endl;
 
             if(IsDir(item.Attr))
                 gDirList.AddValue(item);
@@ -287,20 +327,36 @@ int main()
     _CrtMemState s1, s2, s3;
     _CrtMemCheckpoint(&s1); // Take a snapshot at the start of main()
 
-    LogEngine::Logger& logger1 = LogEngine::GetFileLogger(MFT_LOGGER_NAME, "LogMFTReader.log");
-    logger1.SetAsyncMode(true);
-    logger1.SetLogLevel(LogEngine::Levels::llInfo);
-    //logger1.GetSink(MFT_LOGGER_NAME)->SetLogLevel(LogEngine::Levels::llDebug);
 
-    std::shared_ptr<LogEngine::Sink> sink(DBG_NEW LogEngine::StdoutSinkST(MFT_LOGGER_NAME));
-    sink->SetLogLevel(LogEngine::Levels::llError);
-    logger1.AddSink(sink);
-    
+    //allows russian text printed in console
+    std::locale::global(std::locale("ru_RU.UTF-8"));
+    std::wcout.imbue(std::locale());
+
+
+    // if MFTReader.lfg exists load loggers from that file
+    if (std::filesystem::exists("MFTReader.lfg"))
+    {
+        LogEngine::InitFromFile("MFTReader.lfg");
+    }
+    else // otherwise configure loggers in code 
+    {
+        LogEngine::Logger& logger = LogEngine::GetFileLogger(MFT_LOGGER_NAME, "LogMFTReader.log");
+        logger.SetAsyncMode(true);
+        logger.SetLogLevel(LogEngine::Levels::llInfo);
+
+        std::shared_ptr<LogEngine::Sink> sink(DBG_NEW LogEngine::StdoutSinkST(MFT_LOGGER_NAME));
+        sink->SetLogLevel(LogEngine::Levels::llError);
+        logger.AddSink(sink);
+    }
+
+    LogEngine::Logger& logger1 = LogEngine::GetLogger(MFT_LOGGER_NAME);
+    assert(logger1.SinkCount() > 0); // make sure that we've got properly configured logger
+
+
     logger1.Info("--------------- START --------------");
     
     PCWSTR volume = L"\\\\.\\C:";
     
-
     try
     {
         logger1.InfoFmt("Opening volume: {}", wtos(volume));
@@ -342,6 +398,10 @@ int main()
         std::wcout << L"Reading volume: " << volume << std::endl;
         
         ClearCaches();
+        
+       // uint32_t recID = MFTRecIdByPath(volumeData, L"C:\\Windows\\WinSxS");
+       // std::cout << "WinSxS recrord ID: " << recID << std::endl;
+
         ReadDirectory2(volumeData, recId, 0, dirList);
         //ReadDirectoryX(volumeData, recId, 0, dirList);
 
@@ -352,8 +412,8 @@ int main()
         //std::cout << "Sorting... " << std::endl;
         //std::sort(dirList.begin(), dirList.end(), compare);
 
-        //uint32_t recID = MFTRecIdByPath(volumeData, L"C:\\Program Files\\Common Files\\Microsoft");
-
+        //uint32_t recID = MFTRecIdByPath(volumeData, L"C:\\Windows\\WinSxS");
+        
         std::string filename = "ListMFTFile_sorted.log";
         LogEngine::TFileStream ff(filename);
         auto dirCount = std::count_if(dirList.begin(), dirList.end(), [](FILE_NAME& a) { return IsDir(a.Attr); });
@@ -378,8 +438,10 @@ int main()
 
         dirList.ClearMem();
         CloseHandle(hVolume);
-
         ClearCaches();
+
+        logger1.Info("-----------------FINISH-------------------");
+
         LogEngine::ShutdownLoggers();
 
         _CrtMemCheckpoint(&s2); // Take a snapshot at the end of main()
@@ -397,8 +459,6 @@ int main()
     {
         logger1.Error("MFTReader error: UNKNOWN.");
     }
-
-    logger1.Info("-----------------FINISH-------------------");
 
 }
 

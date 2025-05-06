@@ -29,7 +29,7 @@
 #define IsMetaFile(_) (((_).Attr.ParentDir.sId.low == 5) && ((_).ciName[0] == L'$'))
 #define IsDotDir(_) ( ((_)[0] == L'.') && ((_).size() == 1) )
 
-#define ATTR_TYPE_NAMES { L"zero", L"STANDARD INFO", L"ATTR LIST", L"FILENAME", L"OBJECT ID", L"secure info", L"label", \
+#define ATTR_TYPE_NAMES { L"ZERO", L"STANDARD INFO", L"ATTR LIST", L"FILENAME", L"OBJECT ID", L"secure_info", L"LABEL", \
                           L"VOLUME INFO", L"DATA", L"INDEX ROOT", L"ALLOCATION", L"BITMAP", L"REPARSE", L"EA_INFORMATION", \
                           L"EA", L"PROPERTYSHEET", L"UTILITY STREAM" }
 
@@ -162,7 +162,7 @@ bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitFi
 bool ReadDirectoryX(VOLUME_DATA& volData, MFT_REF mftRecID, uint32_t dirLevel, THArray<FILE_NAME>& gDirList);
 bool DataRunsDecode(MFT_ATTR_HEADER* attr, THArray<DATA_RUN_ITEM>& runs);
 bool ReadClusters(const VOLUME_DATA& volData, uint64_t lcnStart, uint32_t lcnCnt, PBYTE dataBuf);
-bool FixupUSA(const VOLUME_DATA& volData, PBYTE dataBuf, DATA_RUN_ITEM& rli);
+bool FixupUSA(const VOLUME_DATA& volData, PBYTE dataBuf, DATA_RUN_ITEM& rli, uint32_t rlilen);
 bool LoadMFTRecord(const VOLUME_DATA& volData, MFT_REF recID, uint8_t* mftRec);
 uint8_t* LoadMFTRecordCache(const VOLUME_DATA& volData, MFT_REF recID);
 void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues, PMFT_ATTR_HEADER* result);
@@ -184,7 +184,7 @@ public:
     }
 };
 
-// Memory storage for LCN records that contain list of files
+// Memory storage for LCN records that contains list of files
 // contains all LCN records loaded into memory defined by "data runs" of ALLOC attribute
 // get LCN record by LCN number of by VCN number
 class TLCNRecs
@@ -193,6 +193,7 @@ private:
     THArrayRaw FRecs; // storage for LCN records 
     THash2<CLST, CLST, uint8_t*> FHash; // mapping mft records to VCNs and LCNs
 public:
+    using rec_type = decltype(FHash)::ValuesHash::iterator::value_type;
     TLCNRecs(uint recSize, uint capacity) : FRecs(recSize) { SetCapacity(capacity); }
 
     void SetCapacity(uint capacity) { FRecs.SetCapacity(capacity); FHash.SetCapacity(capacity); }
@@ -208,23 +209,23 @@ public:
         return p;
     }
 
-    uint8_t* GetRecByVCN(CLST VCN) //TODO shall we return here THashIterator::value_type that contains both pointer to record and LCN?
+    rec_type GetRecByVCN(CLST VCN) 
     { 
         auto& LCNHash = FHash.GetValue(VCN); 
         
         assert(LCNHash.Count() == 1);
 
-        return (*LCNHash.begin()).second;
+        return *LCNHash.begin();
     }
 
-    CLST GetLCNByVCN(CLST VCN)
+    /*CLST GetLCNByVCN(CLST VCN)
     {
         auto& LCNHash = FHash.GetValue(VCN);
 
         assert(LCNHash.Count() == 1);
 
         return (*LCNHash.begin()).first;
-    }
+    }*/
 
     //loads LCN records into memory from data runs located in node parameter
     bool LoadDataRuns(const VOLUME_DATA& volData, DIR_NODE& node)
@@ -233,44 +234,45 @@ public:
 
         GET_LOGGER_FUNC;
 
+        int64_t lastBit = node.Bitmap.LastBit();
+
+        if (lastBit == -1) return true; // here bitmap tells us that no LCNs need to be loaded
+
         int64_t LCNCounter = 0;
-        int64_t last1Bit = node.Bitmap.LastBit();
-
-        if (last1Bit == -1) return true; // here bitmap tells us that no LCNs need to be loaded
-
         uint8_t* dataBuf = nullptr;
         uint32_t dataBufLen = 0; // memory size in clusters, how many clusters is allocated in dataBuf
-        uint32_t r = 0;
-        while (r < node.DataRuns.Count())
+        uint32_t currRun = 0;
+        while (currRun < node.DataRuns.Count())
         {
-            if (LCNCounter > last1Bit) // stop loading by bitmap field
+            if (LCNCounter > lastBit) // stop loading by bitmap field
                   break;
 
-            DATA_RUN_ITEM& rli = node.DataRuns[r];
+            DATA_RUN_ITEM& rli = node.DataRuns[currRun];
             //logger.DebugFmt("Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
 
-            if (rli.len > dataBufLen)
+            uint32_t rlilen = valuemin(lastBit + 1 - LCNCounter, rli.len);
+
+            if (rlilen > dataBufLen)
             {
                 delete[] dataBuf;
-                dataBuf = DBG_NEW uint8_t[rli.len * volData.BytesPerCluster];
-                dataBufLen = rli.len;
+                dataBuf = DBG_NEW uint8_t[rlilen * volData.BytesPerCluster];
+                dataBufLen = rlilen;
             }
 
-            //TODO optimization: instead of rli.len we can read min(lastbit+1-bitsCounter, rli.len) clusters
-            if (!ReadClusters(volData, rli.lcn, rli.len, dataBuf)) // ReadCluster writes error meesage to log file in case of an error
+            if (!ReadClusters(volData, rli.lcn, rlilen, dataBuf)) // ReadCluster writes error meesage to log file in case of an error
             {
                 delete[] dataBuf;
                 return false;
             }
 
-            if (!FixupUSA(volData, dataBuf, rli))
+            if (!FixupUSA(volData, dataBuf, rli, rlilen))
             {
                 logger.Error("FixupUSA returned error.");
                 delete[] dataBuf;
                 return false;
             }
 
-            for (size_t i = 0; i < rli.len; i++)
+            for (size_t i = 0; i < rlilen; i++)
             {
                 if (node.Bitmap.Test(LCNCounter++)) // add only LCNs which are marked in bitmap bit field
                 {
@@ -278,7 +280,7 @@ public:
                 }
             }
             
-            r++;
+            currRun++;
         }
 
         delete[] dataBuf;
