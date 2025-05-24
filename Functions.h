@@ -36,6 +36,7 @@
 // Attr types have numbers 0x10 0x20 0x100, etc. - convert them into consecutive indexes in the array
 // used for indexing ATTR_TYPE_NAMES array and in some other places
 #define MakeAttrTypeIndex(_) ((_)>>4) 
+#define MATI MakeAttrTypeIndex
 
 static const wchar_t* AttrTypeNames[] ATTR_TYPE_NAMES;
 
@@ -64,7 +65,7 @@ public:
         FBitsCount = 0;
     }
 
-    TBitField(const uint64_t* bits, const uint64_t wordsCount) // count is in uint64_t words here
+    TBitField(const uint64_t* bits, const uint64_t wordsCount): TBitField() // count is in uint64_t words here
     {
         SetData(bits, wordsCount);
     }
@@ -73,10 +74,17 @@ public:
 
     void SetData(const uint64_t* bits, const uint64_t wordsCount) // count is in uint64_t words here
     {
+        delete[] FBits; // free previously allocated memory if any
         FBits = DBG_NEW uint64_t[wordsCount];
         FCount = wordsCount;
-        FBitsCount = wordsCount * 64;
-        memcpy_s(FBits, wordsCount * sizeof(uint64_t), bits, wordsCount * sizeof(uint64_t));
+        FBitsCount = wordsCount * 64; 
+        assert(!memcpy_s(FBits, wordsCount * sizeof(uint64_t), bits, wordsCount * sizeof(uint64_t)));
+    }
+
+    TBitField& operator=(const TBitField& a) // copy constructor
+    {
+        SetData(a.FBits, a.FCount);
+        return *this;
     }
 
     uint8_t* GetData()
@@ -131,7 +139,6 @@ typedef MFT_ATTR_HEADER* PMFT_ATTR_HEADER;
 struct FILE_NAME
 {
     ci_string ciName;
-    //std::wstring Name;
     struct ATTR_FILE_NAME Attr;
     struct MFT_REF MFTRef; // MFT Id of this file
 
@@ -145,9 +152,9 @@ typedef THArray<DATA_RUN_ITEM> TDataRuns;
 
 struct DIR_NODE
 {
-    TFileList FileList; // from INDEX_ROOT attribute and then from ALLOCATE after processing data runs 
+    TFileList FileList; // filled from INDEX_ROOT attribute and then from ALLOCATE after processing data runs 
     TDataRuns DataRuns; // from ALLOCATE attribute
-    TBitField Bitmap;
+    TBitField Bitmap;   // tells us which LCNs from data runs are valid ones
 
     void Clear() 
     {
@@ -157,8 +164,32 @@ struct DIR_NODE
     }
 };
 
+struct ITEM_INFO
+{
+    MFT_REF RecID;
+    bool HasAttr[ATTR_TYPE_CNT];
+    bool NonResidentAttrList;
+    bool NonResidentBitmap;
+    bool NonResidentAlloc;
+    bool ResidentData;
+
+    uint AttrsCount;
+    uint NamesCount; // DOS, WIN, POSIX
+    uint DataStreamsCount;
+    std::wstring FileName;
+    std::wstring DataStreamNames[5]; // unlikely that file will have more than 5 file streams
+    
+    DIR_NODE Node;
+
+    bool operator==(const ITEM_INFO& other) const { return RecID.Id == other.RecID.Id; }
+};
+
+typedef THArray<ITEM_INFO> TItemInfoList;
+
+
 LogEngine::Logger& GetLoggerFunc();
 bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitField& bitmap);
+void ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrList, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result);
 bool ReadDirectoryX(VOLUME_DATA& volData, MFT_REF mftRecID, uint32_t dirLevel, THArray<FILE_NAME>& gDirList);
 bool DataRunsDecode(MFT_ATTR_HEADER* attr, THArray<DATA_RUN_ITEM>& runs);
 bool ReadClusters(const VOLUME_DATA& volData, uint64_t lcnStart, uint32_t lcnCnt, PBYTE dataBuf);
@@ -250,7 +281,7 @@ public:
             DATA_RUN_ITEM& rli = node.DataRuns[currRun];
             //logger.DebugFmt("Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
 
-            uint32_t rlilen = valuemin(lastBit + 1 - LCNCounter, rli.len);
+            uint32_t rlilen = valuemin((uint32_t)(lastBit + 1 - LCNCounter), rli.len);
 
             if (rlilen > dataBufLen)
             {
