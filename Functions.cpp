@@ -310,17 +310,19 @@ void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues)
     } while (*((uint32_t*)currAttr) != ATTR_END);
 }
 
-void ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrList, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result)
+void ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrList, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result)
 {
     GET_LOGGER_FUNC;
 
     ZeroMemory(result, SAME_ATTR_CNT * sizeof(result[0]));
 
-    assert(attrList->NonResidentFlag == 1);
+    assert(attrAttrList->NonResidentFlag == 1);
 
     TDataRuns dataRuns;
-    if (!DataRunsDecode(attrList, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
+    if (!DataRunsDecode(attrAttrList, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
+    {
         return;
+    }
 
     uint8_t* dataBuf = nullptr;
 
@@ -352,10 +354,9 @@ void ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrList, 
     {
         if (attrListItem->AttrType == attrType)
         {
-            uint8_t* mftRecBuf = LoadMFTRecordCache(volData, attrListItem->ref);
-            auto mftRec = (MFT_FILE_RECORD*)mftRecBuf;
-            assert(mftRecBuf != nullptr);
-            if (mftRecBuf)
+            MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)LoadMFTRecordCache(volData, attrListItem->ref);
+            assert(mftRec != nullptr);
+            if (mftRec)
             {
                 PMFT_ATTR_HEADER attrValues2[ATTR_TYPE_CNT];
                 FillAttrValues(mftRec, attrValues2);
@@ -366,7 +367,7 @@ void ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrList, 
                 if (currAttr2)
                     result[resIndex++] = currAttr2;
                 else
-                    logger.WarnFmt("[ParseNonresAttrList] Attr: {} cannot be found is nonres ATT_LIST.", wtos(AttrTypeNames[MakeAttrTypeIndex(attrType)]));
+                    logger.WarnFmt("[ParseNonresAttrList] Attr: {} cannot be found is nonres ATT_LIST.", wtos(AttrTypeNames[MATI(attrType)]));
 
                 assert(resIndex < SAME_ATTR_CNT);
             }
@@ -383,7 +384,7 @@ void ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrList, 
         if ((attrListItem->AttrType == ATTR_ZERO) || ((uint8_t*)attrListItem >= dataBufEnd)) break;
     }
 
-    logger.ErrorFmt("[ParseNonresAttrList] Attr: {} not found in the nonResident ATTR_LIST in LCN {}.", wtos(AttrTypeNames[MakeAttrTypeIndex(attrListItem->AttrType)]), rli.lcn);
+    logger.ErrorFmt("[ParseNonresAttrList] Attr: {} not found in the nonResident ATTR_LIST in LCN {}.", wtos(AttrTypeNames[MATI(attrListItem->AttrType)]), rli.lcn);
 }
 
 void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues, PMFT_ATTR_HEADER* result)
@@ -412,7 +413,7 @@ void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEA
     if (currAttr->NonResidentFlag == 1)
     {
         ParseNonresAttrList(volData, currAttr, attrType, result);
-        if (result[0] != nullptr)
+        if (result[0] != nullptr) // if result is empty then it goes to "ATTR_LIST_ATTR FINISHED NULL"
         {
             logger.Debug("ATTR_LIST_ATTR FINISHED");
             return;
@@ -465,6 +466,7 @@ void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEA
             assert(attrListItem->AttrSize > 0);
             assert(attrListItem->StartVCN == 0);
             attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
+            if (attrListItem->AttrType == ATTR_ZERO) break;
             if ((uint8_t*)attrListItem >= currAttrEnd) break;
         }
 

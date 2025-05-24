@@ -17,13 +17,13 @@ Some records contain EA and/or EA_INFO attributes (what is this for in windows?)
 //#define LODWORD(x)  (static_cast<DWORD>(x))
 //#define HIDWORD(x)  (static_cast<DWORD>((x) >> 32))
 
-#define Diff2Ptr(ptr1, ptr2) ((ULONG)(PBYTE(ptr2) - PBYTE(ptr1)))
+#define Diff2Ptr(ptr1, ptr2) ((ULONG)((uint8_t*)(ptr2) - (uint8_t*)(ptr1)))
 
 #define Add2Ptr(P, I)		((uint8_t*)(P) + (I))
 //#define PtrOffset(B, O)		((size_t)((size_t)(O) - (size_t)(B)))
 
-#define GetAName(pRec, field)  ( (wchar_t*)((PBYTE)(pRec) + (pRec->field)) )
-#define GetFName(pRec, offset) ( (wchar_t*)((PBYTE)(pRec) + (offset)) )
+#define GetAttrName(pRec, field)  ( (wchar_t*)((uint8_t*)(pRec) + (pRec->field)) )
+#define GetFName(pRec, offset) ( (wchar_t*)((uint8_t*)(pRec) + (offset)) )
 
 // mask to remove sequence number of MFT_REF
 #define MFT_REF_MASK 0x0000FFFFFFFFFFFF
@@ -292,8 +292,7 @@ struct ATTR_STD_INFO5
     uint64_t ModifyTime;	  // 0x08 File modification time.
     uint64_t ModifyAttrTime;  // 0x10 Last time any attribute of this MFT record was modified.
     uint64_t LastAccessTime;  // 0x18 File last access time.
-    uint32_t FileAttrib;      // 0x20 Standard DOS attributes & more.
-    //FILE_ATTRIBUTE FileAttrib; 
+    uint32_t FileAttrib;      // 0x20 Standard DOS attributes & more. //FILE_ATTRIBUTE FileAttrib; 
     uint32_t max_ver_num;	  // 0x24 Maximum allowed versions for file. Zero if version numbering is disabled.
     uint32_t VersionNum;	  // 0x28 This file's version (if any). Set to zero if max_ver_num is zero.
     uint32_t class_id;	      // 0x2C Class Id from bidirectional Class Id index.

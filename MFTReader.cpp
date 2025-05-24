@@ -320,6 +320,7 @@ bool VerifyArraySorted(THArray<FILE_NAME>& dirList)
     return true;
 }
 
+bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirLevel, ITEM_INFO& itemInfo);
 
 int main()
 {
@@ -402,8 +403,10 @@ int main()
        // uint32_t recID = MFTRecIdByPath(volumeData, L"C:\\Windows\\WinSxS");
        // std::cout << "WinSxS recrord ID: " << recID << std::endl;
 
-        ReadDirectory2(volumeData, recId, 0, dirList);
+        //ReadDirectory2(volumeData, recId, 0, dirList);
         //ReadDirectoryX(volumeData, recId, 0, dirList);
+        ITEM_INFO iInfo{0};
+        ReadMftItemInfo(volumeData, recId, 0, iInfo);
 
         auto stop = std::chrono::high_resolution_clock::now();
         logger1.WarnFmt("Reading time : {}", MillisecToStr<std::string>(std::chrono::duration_cast<std::chrono::milliseconds>(stop - start1).count()));
