@@ -971,6 +971,8 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
                         if ((uint8_t*)attrEntry + attrEntry->AttrSize >= attrEntryEnd) break;
                         attrEntry = (ATTR_LIST_ENTRY*)Add2Ptr(attrEntry, attrEntry->AttrSize);
                         if (attrEntry->AttrType == ATTR_ZERO) break; 
+                        //assert(attrEntry->AttrId > 0);
+                        assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
                         assert(attrEntry->AttrSize > 0);
                     }
 
