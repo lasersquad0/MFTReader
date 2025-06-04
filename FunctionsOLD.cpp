@@ -446,7 +446,7 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node)
             }
 
             default:
-                logger.WarnFmt("UNKNOWN NONResident ATTR has been met. Type: {}, MFT Id: {:#x}", wtos(AttrTypeNames[MakeAttrTypeIndex(currAttr->AttrType)]), mftRec->IndexMFTRec);
+                logger.WarnFmt("UNKNOWN NONResident ATTR has been met. Type: {}, MFT Id: {:#x}", wtos(AttrTypeNames[MATI(currAttr->AttrType)]), mftRec->IndexMFTRec);
 
             } //switch
         }
@@ -751,7 +751,8 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
             }
             
             default:
-                logger.Warn("UNKNOWN Resident ATTR has been met");
+                logger.WarnFmt("UNKNOWN Resident ATTR has been met. Type: {}, MFT Id: {:#x}", wtos(AttrTypeNames[MATI(currAttr->AttrType)]), pmftrec->IndexMFTRec);
+
 
             } // switch
 
@@ -982,7 +983,8 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
                 break;
             }
             default:
-                logger.Warn("UNKNOWN NONresident ATTR has been met.");
+                logger.WarnFmt("UNKNOWN NONResident ATTR has been met. Type: {}, MFT Id: {:#x}", wtos(AttrTypeNames[MATI(currAttr->AttrType)]), pmftrec->IndexMFTRec);
+
 
             } //switch
         } //currAttr->NonResidentFlag == 0
