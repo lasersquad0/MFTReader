@@ -39,12 +39,12 @@ bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitFi
     if (!DataRunsDecode(attr, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
         return false;
 
+    assert(dataRuns.Count() > 0);
+
     uint8_t* dataBuf = nullptr;
     uint32_t dataBufLen = 0; // memory size in clusters, how many clusters is allocated in dataBuf
     uint32_t currRun = 0;
     THArrayRaw bmpRecs(volData.BytesPerCluster);
-
-    assert(dataRuns.Count() > 0);
     
     if (dataRuns.Count() > 1)
     {

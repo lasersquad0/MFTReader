@@ -129,6 +129,12 @@ struct NTFS_RECORD_HEADER
 
 static_assert(sizeof(NTFS_RECORD_HEADER) == 0x10);
 
+/* Attributes are stored in ascending order in the file record and
+attribute list.The sorting is done by first sorting according to
+attribute type code, then attribute name, and lastly attribute value.
+NTFS guarantees that if two attributes of the same type code and
+name exist on a file then they must have different values, and the
+values must be resident. */
 struct MFT_FILE_RECORD
 {
     NTFS_RECORD_HEADER RecHeader;

@@ -173,11 +173,12 @@ struct ITEM_INFO
     bool NonResidentAlloc;
     bool ResidentData;
 
+    uint HardLinksCount;
     uint AttrsCount;
-    uint NamesCount; // DOS, WIN, POSIX
+    uint FileNamesCount; // DOS, WIN, POSIX
     uint DataStreamsCount;
-    std::wstring FileName;
-    std::wstring DataStreamNames[5]; // unlikely that file will have more than 5 file streams
+    std::wstring FileNames[200];
+    std::wstring DataStreamNames[20]; // unlikely that file will have more than 5 file streams
     
     DIR_NODE Node;
 

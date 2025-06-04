@@ -13,7 +13,6 @@ LogEngine::Logger& GetLoggerFunc()
     LogEngine::Logger& logger = LogEngine::GetFileLogger(MFT_LOGGER_NAME_FUNC, "LogMFTReaderFUNC.log");
     logger.SetAsyncMode(true);
     logger.SetLogLevel(LogEngine::Levels::llDebug);
-    //logger.GetSink(MFT_LOGGER_NAME_FUNC)->SetLogLevel(LogEngine::Levels::llDebug);
     return logger;
 }
 
@@ -93,13 +92,13 @@ void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, THArray<FILE_NAME>& fn
 // attr parameter cannot be NULL here. It should be valid pointer to MFT_ATTR_HEADER structure
 bool DataRunsDecode(MFT_ATTR_HEADER* attr, THArray<DATA_RUN_ITEM>& runs)
 {
-    LogEngine::Logger& logger = LogEngine::GetLogger(MFT_LOGGER_NAME);
+    GET_LOGGER;
 
     // we do not need this assert because sometimes one ATTR_LIST list may contain two ATTR_ALLOC attributes for some reason
     // it means we come here two times during parsing one MFT record with such ATTR_LIST 
     //assert(runs.Count() == 0); // make sure that old data runs are cleared
 
-    if (!attr || !attr->NonResidentFlag) 
+    if (!attr || !attr->NonResidentFlag) // parameters validation
     {
         // this in incorrect data in MFT
         logger.Error("[DataRunsDecode] Attr (!currAttr || !currAttr->NonResidentFlag) = TRUE");
@@ -176,10 +175,16 @@ bool ReadClusters(const VOLUME_DATA& volData, uint64_t lcnStart, uint32_t lcnCnt
 
     offset.QuadPart = lcnStart * volData.BytesPerCluster;
 
-    SetFilePointerEx(volData.hVolume, offset, NULL, FILE_BEGIN);
+    BOOL res = SetFilePointerEx(volData.hVolume, offset, NULL, FILE_BEGIN);
+    if (!res)
+    {
+        GET_LOGGER;
+        logger.ErrorFmt("ReadCluster.SetFilePointerEx has failed with error: {}", GetLastError());
+        return false;
+    }
 
     // read clusterCnt clusters
-    BOOL res = ReadFile(volData.hVolume, dataBuf, lcnCnt * volData.BytesPerCluster, &bytesRead, nullptr);
+    res = ReadFile(volData.hVolume, dataBuf, lcnCnt * volData.BytesPerCluster, &bytesRead, nullptr);
     if (res)
     {
         assert(lcnCnt * volData.BytesPerCluster == bytesRead);
@@ -187,7 +192,7 @@ bool ReadClusters(const VOLUME_DATA& volData, uint64_t lcnStart, uint32_t lcnCnt
     }
     else
     {
-        LogEngine::Logger& logger = LogEngine::GetLogger(MFT_LOGGER_NAME);
+        GET_LOGGER; 
         logger.ErrorFmt("ReadCluster.ReadFile has failed with error: {}", GetLastError());
         return false;
     }
