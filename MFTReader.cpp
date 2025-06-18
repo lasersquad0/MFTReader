@@ -1,16 +1,21 @@
 
+// this is to remove defines min, max in windows headers because they conflict with std::min std::max 
+#define NOMINMAX
+
 #include <iostream>
 #include <cassert>
 #include <string>
 #include <algorithm>
 #include <shlwapi.h>
 #include <malloc.h>
+#include <iterator>
 
 #include "string_utils.h"
 #include "DynamicArrays.h"
 #include "LogEngine.h"
 #include "Functions.h"
 #include "MTFReader.h"
+
 
 /* Идеи для анализа файловой системы
 1. MFT записи с редкими флагами   
@@ -29,173 +34,16 @@ IS_4          = 0x0004, // it is called RECORD_FLAG_SYSTEM in another source
 10. 
 */
 
-#pragma pack(show)
-
-bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitField& bitmap)
-{
-    assert(attr->NonResidentFlag == 1);
-
-    TDataRuns dataRuns;
-    if (!DataRunsDecode(attr, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
-        return false;
-
-    assert(dataRuns.Count() > 0);
-
-    uint8_t* dataBuf = nullptr;
-    uint32_t dataBufLen = 0; // memory size in clusters, how many clusters is allocated in dataBuf
-    uint32_t currRun = 0;
-    THArrayRaw bmpRecs(volData.BytesPerCluster);
-    
-    if (dataRuns.Count() > 1)
-    {
-        GET_LOGGER;
-        logger.WarnFmt("[ParseNonresBitmap] Bitmap occupies more than one data run. Bitmap Data Runs Count: {}", dataRuns.Count());
-    }
-
-    while (currRun < dataRuns.Count())
-    {
-        DATA_RUN_ITEM& rli = dataRuns[currRun];
-
-        if (rli.len > dataBufLen)
-        {
-            delete[] dataBuf;
-            dataBuf = DBG_NEW uint8_t[rli.len * volData.BytesPerCluster];
-            dataBufLen = rli.len;
-        }
-
-        if (!ReadClusters(volData, rli.lcn, rli.len, dataBuf)) // ReadCluster writes error meesage to log file in case of an error
-        {
-            delete[] dataBuf;
-            return false;
-        }
-
-        // in most cases nonresident Bitmap will occupy one data run
-        // therefore we have special handling of this case
-        if (dataRuns.Count() > 1)
-            bmpRecs.AddMany(dataBuf, rli.len); //TODO think to avoid several copying dataBuf. first into bmpRecs, then into bitmap
-
-        currRun++;
-    }
-
-    if (dataRuns.Count() > 1)
-    {
-        uint32_t bmpLenBytes = bmpRecs.Count() * bmpRecs.GetItemSize();
-        assert((bmpLenBytes & 0x07) == 0); // bitmap data size always multiple of 8
-        bitmap.SetData((uint64_t*)bmpRecs.Memory(), bmpLenBytes >> 3);
-    }
-    else
-    {
-        uint32_t bmpLenBytes = dataBufLen * volData.BytesPerCluster; //TODO shall we use nonres.RealSize here?
-        assert((bmpLenBytes & 0x07) == 0); // bitmap data size always multiple of 8
-        bitmap.SetData((uint64_t*)dataBuf, bmpLenBytes >> 3);
-    }
-
-    delete[] dataBuf;
-    return true;
-}
-
-bool ParseBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitField& bitmap)
-{
-    assert(bitmap.Count() == 0);
-    if (!attr) return false; // attr==nullptr means that no LCNs need to be parsed, usually Bitmap is null for empty directories
-
-    if (attr->NonResidentFlag == 0)
-    {
-        assert((attr->res.DataSize & 0x07) == 0); // bitmap data size always multiple of 8
-
-        ATTR_BITMAP_ATTR* bmp = (ATTR_BITMAP_ATTR*)Add2Ptr(attr, attr->res.DataOffset);
-        bitmap.SetData((uint64_t*)bmp->bitmap, attr->res.DataSize >> 3);
-        return true;
-    }
-    else
-    {
-        return ParseNonresBitmap(volData, attr, bitmap);
-    }
-}
-
-bool ParseAlloc(MFT_ATTR_HEADER* attr, TDataRuns& dataRuns)
-{
-    // sometimes one ATTR_LIST list may contain two ATTR_ALLOC attributes for some reason
-    // it means we come here two times during parsing one MFT record with such ATTR_LIST 
-    //assert(dataRuns.Count() == 0);
-
-    if (!attr) return true; // attr==NULL means that ALLOC attribute is not present in MFT rec. Usually ALLOC is not needed in MFT record for empty directories
-
-    assert(attr->NonResidentFlag == 1);
-
-    if (!DataRunsDecode(attr, dataRuns))
-    {
-        return false;
-       // logger.Error("DataRunsDecode finished with error.");
-    }
-    return true;
-}
-
-bool ParseIndexRoot(MFT_ATTR_HEADER* attr, TLCNRecs& lcns, TFileList& fileList)
-{
-    assert(fileList.Count() == 0);
-    assert(attr->NonResidentFlag == 0); // always resident
-
-    ATTR_INDEX_ROOT* indexR = (ATTR_INDEX_ROOT*)Add2Ptr(attr, attr->res.DataOffset);
-    auto pihdr = &(indexR->ihdr);
-
-    //logger.DebugFmt("Stored attr type: {:#x} ({})", (uint32_t)indexR->AttrType, wtos(AttrTypeNames[indexR->AttrType >> 4]));
-    //logger.DebugFmt("Collation rule: {}", (uint32_t)indexR->Rule);
-    //logger.DebugFmt("Dir type: {} {}", indexR->ihdr.Flags, (indexR->ihdr.Flags == 0 ? " (small dir)" : " (big dir)"));
-
-    GetFileListFromNode(pihdr, lcns, fileList);
-
-    return true;
-}
-
-uint32_t GetFileListFromMFTRec(const VOLUME_DATA& volData, MFT_FILE_RECORD* mftRec, DIR_NODE& node)
-{
-    GET_LOGGER;
-
-    assert(mftRec->Flags == 0x03); // only "directory" record should go here
-    assert(node.Bitmap.Count() == 0);
-
-    PMFT_ATTR_HEADER attrValues[ATTR_TYPE_CNT];
-    FillAttrValues(mftRec, attrValues);
-
-    PMFT_ATTR_HEADER multValues[SAME_ATTR_CNT];
-    GetAttr(volData, ATTR_BITMAP, attrValues, multValues);
-    auto bitmap = multValues[0]; // bitmap can be NULL here
-    assert(multValues[1] == nullptr); // only single value can be returned for bitmap
-    if (bitmap)
-    {
-        if (!ParseBitmap(volData, bitmap, node.Bitmap)) // copy bitmap into TBitField class for easier access
-        {
-            logger.Error("[GetFileListFromMFTRec] ParseBitmap finished with error.");
-        }
-    }
-
-    GetAttr(volData, ATTR_ALLOC, attrValues, multValues); // multiple values can be returned
-    uint i = 0;
-    while (multValues[i] != nullptr)
-    {
-        if (!ParseAlloc(multValues[i++], node.DataRuns)) // decode data runs and store them in node.DataRuns
-        {
-            logger.Error("[GetFileListFromMFTRec] ParseAlloc finished with error.");
-        }
-    }
-
-    uint32_t lcnTotalCount = 0;
-    for (auto& run : node.DataRuns) lcnTotalCount += run.len;
-
-    TLCNRecs lcns(volData.BytesPerCluster, lcnTotalCount);
-    if (!lcns.LoadDataRuns(volData, node))
-    {
-        logger.Error("[GetFileListFromMFTRec] TLCNRecs.LoadDataRuns finished with error.");
-    }
-
-    GetAttr(volData, ATTR_ROOT, attrValues, multValues);
-    auto root = multValues[0];
-    assert(multValues[1] == nullptr); // only single value can be returned for ATT_ROOT
-    ParseIndexRoot(root, lcns, node.FileList);
-
-    return node.FileList.Count();
-}
+/* Идеи для commandline tool
+*  вывод всех Attributes по recID
+*  вывод всех attributes по file path 
+*     + опция выводить ли все file names либо только unicode
+* Опция задать диск с которым работаем C: или D: и т.п.
+* 
+* MFTReader.exe -d C -m 32435   // вывод информации по MFT record ID. 
+* MFTReader.exe -p "c:\Program Files\Git\bin\git.exe" // здесь указывать диск опцией -d необязательно
+* 
+*/
 
 uint32_t MFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path)
 {
@@ -208,10 +56,9 @@ uint32_t MFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path)
     if (arr.size() == 0) return 0;
 
     assert(arr[0][0] == 'C' || arr[0][0] == 'c'); // we support only C: disks for now
-
   
     MFT_REF mftRecID;
-    mftRecID.Id = MFT_ROOT_RECID; // root record
+    mftRecID.Id = MFT_ROOT_REC_ID; // starting MFT record
     uint8_t* mftRecBuf = (uint8_t*)alloca(volData.BytesPerMFTRec);
 
     DIR_NODE node;
@@ -222,7 +69,6 @@ uint32_t MFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path)
         if (!LoadMFTRecord(volData, mftRecID, mftRecBuf))
         {
             logger.Error("LoadMFTRecord finished with error.");
-            //free(mftRecBuf);
             return false;
         }
 
@@ -230,7 +76,7 @@ uint32_t MFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path)
         GetFileListFromMFTRec(volData, mftRec, node); //TODO add error handling here
         FILE_NAME fn;
         fn.ciName = arr[i];
-        auto iter = std::lower_bound(node.FileList.begin(), node.FileList.end(), fn);
+        auto iter = std::lower_bound(node.FileList.begin(), node.FileList.end(), fn); // fn has overrided operators < and ==
         if (iter != node.FileList.end() && (*iter).ciName == fn.ciName)
         {
             mftRecID = iter->MFTRef;
@@ -243,55 +89,6 @@ uint32_t MFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path)
     }
 
     return mftRecID.sId.low;
-}
-
-bool ReadDirectory2(VOLUME_DATA& volData, MFT_REF parentMftRecID, uint32_t dirLevel, THArray<FILE_NAME>& gDirList)
-{
-    if (dirLevel > 30) throw std::runtime_error("dirLevel > 30 !!!!!!!");
-
-    LogEngine::Logger& logger = LogEngine::GetLogger(MFT_LOGGER_NAME);
-
-    uint8_t* mftRecBuf = (uint8_t*)alloca(volData.BytesPerMFTRec);
-    MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
-
-    if (!LoadMFTRecord(volData, parentMftRecID, mftRecBuf))
-    {
-        logger.Error("LoadMFTRecord finished with error.");
-        //delete[] mftRecBuf;
-        return false;
-    }
-
-    DIR_NODE node;
-    GetFileListFromMFTRec(volData, mftRec, node);
-
-    for (auto& item : node.FileList)
-    {
-        if (!IsMetaFile(item) && !IsDotDir(item.ciName)) // do not add hidden metafiles into file list
-        {
-            if (dirLevel == 0) std::wcout << item.ciName.c_str() << std::endl;
-            if (dirLevel == 1)
-            {
-                std::wcout << "      " << item.ciName.c_str() << std::endl;
-              //  std::cout << "      " << "Головоломка" << std::endl;
-            }
-
-            //if (parentMftRecID.sId.low == 5877) 
-            //    std::wcout << "\t\t" << item.ciName.c_str() << std::endl;
-
-            if(IsDir(item.Attr))
-                gDirList.AddValue(item);
-            else
-                gDirList.AddValue(item);
-        }
-
-        //if (IsReparse(item.Attr)) { logger.InfoFmt("REPARSE detected: {}", wtos(item.Name)); continue; }
-
-        // item.Attr.ParentDir actually is ref to item's MFT Id, not to the parent dir
-        if (IsDir(item.Attr) && !IsMetaFile(item) && !IsDotDir(item.ciName)) // bypass hidden mft metafiles
-            ReadDirectory2(volData, item.MFTRef, dirLevel + 1, gDirList);
-    }
-
-    return true;
 }
 
 void ClearCaches()
@@ -320,20 +117,8 @@ bool VerifyArraySorted(THArray<FILE_NAME>& dirList)
     return true;
 }
 
-bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirLevel, ITEM_INFO& itemInfo);
-
-int main()
+static void InitLogger()
 {
-    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-    _CrtMemState s1, s2, s3;
-    _CrtMemCheckpoint(&s1); // Take a snapshot at the start of main()
-
-
-    //allows russian text printed in console
-    std::locale::global(std::locale("ru_RU.UTF-8"));
-    std::wcout.imbue(std::locale());
-
-
     // if MFTReader.lfg exists load loggers from that file
     if (std::filesystem::exists("MFTReader.lfg"))
     {
@@ -349,6 +134,148 @@ int main()
         sink->SetLogLevel(LogEngine::Levels::llError);
         logger.AddSink(sink);
     }
+}
+
+static void ReadDirsV1(VOLUME_DATA& volData, MFT_REF startMftRecID)
+{
+    THArray<FILE_NAME> dirList;
+    dirList.SetCapacity(1'000'000);
+
+    ReadDirectoryV1(volData, startMftRecID, 0, dirList);
+
+    //std::cout << "Sorting... " << std::endl;
+    //std::sort(dirList.begin(), dirList.end(), compare);
+
+    //std::string filename = "ListMFTFile_sorted.log";
+    //LogEngine::TFileStream ff(filename);
+    auto dirCount = std::count_if(dirList.begin(), dirList.end(), [](FILE_NAME& a) { return IsDir(a.Attr); });
+
+    std::cout << toStringSepA(dirList.Count()) + " - total" << std::endl;
+    std::cout << toStringSepA(dirList.Count() - dirCount) + " - files" << std::endl; // only files 
+    std::cout << toStringSepA(dirCount) + " - dirs" << std::endl; // only dirs 
+
+    /*ff << toStringSepW(dirList.Count()) + L" - total";
+    ff << toStringSepW(dirList.Count() - dirCount) + L" - files"; // only files
+    ff << toStringSepW(dirCount) + L" - dirs"; // only dirs
+
+    std::cout << "Saving list of files to " << filename << std::endl;
+
+    for (auto& item : dirList)
+    {
+        if (IsDir(item.Attr))
+            item.ciName += L'\\';
+
+        ff << item.ciName;
+    }
+*/
+    dirList.ClearMem();
+
+}
+
+static void ReadDirsV2(VOLUME_DATA& volData, MFT_REF startMftRecID)
+{
+    THArray<FILE_NAME> dirList;
+    dirList.SetCapacity(1'000'000);
+
+    ReadDirectoryV2(volData, startMftRecID, 0, dirList);
+
+    //std::cout << "Sorting... " << std::endl;
+    //std::sort(dirList.begin(), dirList.end(), compare);
+
+    //std::string filename = "ListMFTFile_sorted.log";
+    //LogEngine::TFileStream ff(filename);
+    auto dirCount = std::count_if(dirList.begin(), dirList.end(), [](FILE_NAME& a) { return IsDir(a.Attr); });
+
+    std::cout << toStringSepA(dirList.Count()) + " - total" << std::endl;
+    std::cout << toStringSepA(dirList.Count() - dirCount) + " - files" << std::endl; // only files 
+    std::cout << toStringSepA(dirCount) + " - dirs" << std::endl; // only dirs 
+
+    /*ff << toStringSepW(dirList.Count()) + L" - total";
+    ff << toStringSepW(dirList.Count() - dirCount) + L" - files"; // only files
+    ff << toStringSepW(dirCount) + L" - dirs"; // only dirs
+
+    std::cout << "Saving list of files to " << filename << std::endl;
+
+    for (auto& item : dirList)
+    {
+        if (IsDir(item.Attr))
+            item.ciName += L'\\';
+
+        ff << item.ciName;
+    }
+*/
+    dirList.ClearMem();
+}
+
+static void ReadItems(VOLUME_DATA& volData, MFT_REF startMftRecID)
+{
+    GET_LOGGER;
+
+    extern TItemInfoList gItemsList;
+    gItemsList.SetCapacity(1'000'000); // Expect 1M files and dirs
+
+    ITEM_INFO iInfo{0};
+    if(!ReadMftItemInfo(volData, startMftRecID, 0, iInfo))
+    {
+        logger.Error("ReadMftItemInfo() returned false!");
+    }
+
+  
+    auto AttrCountGreater7 = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.AttrsCount > 7; });
+    auto HardLinksGreater7 = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.HardLinksCount > 7; });
+    auto DataStreamsCountGreater2 = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.DataStreamsCount > 2; });
+    auto FilenamesCountGreater9 = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.FileNamesCount > 9; });
+    auto FilenamesCountGreater5 = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.FileNamesCount > 5; });
+    auto HasNonresAttrList = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.NonResidentAttrList; });
+    auto HasNonresBitmap = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.NonResidentBitmap; });
+    auto HasResidentData = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.ResidentData; });
+
+    auto maxHardLinks = std::max_element(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) {return a.HardLinksCount < b.HardLinksCount; });
+    auto maxAttrs = std::max_element(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) {return a.AttrsCount < b.AttrsCount; });
+    auto maxFilenames = std::max_element(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) {return a.FileNamesCount < b.FileNamesCount; });
+    auto maxDataStreams = std::max_element(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) {return a.DataStreamsCount < b.DataStreamsCount; });
+
+    std::cout << "Total items count: " << gItemsList.Count() << std::endl;
+    std::cout << "Attrs count > 7: " << AttrCountGreater7 << std::endl;
+    std::cout << "Hard Links count > 7: " << HardLinksGreater7 << std::endl;
+    std::cout << "Data streams count > 2: " << DataStreamsCountGreater2 << std::endl;
+    std::cout << "Filenames count > 9: " << FilenamesCountGreater9 << std::endl;
+    std::cout << "Filenames count > 5: " << FilenamesCountGreater5 << std::endl;
+    std::cout << "Have non-resident attr_list: " << HasNonresAttrList << std::endl;
+    std::cout << "Have non-resident bitmap: " << HasNonresBitmap << std::endl;
+    std::cout << "Have resident data: " << HasResidentData<< std::endl;
+    std::cout << "ITEM_INFO size:" << sizeof(ITEM_INFO) << std::endl;
+    std::cout << "DIR_NODE size:" << sizeof(DIR_NODE) << std::endl;
+    std::cout << std::format("Max hard links count: {}, file name: {}", (*maxHardLinks).HardLinksCount, wtos((*maxHardLinks).MainName)) << std::endl;
+    std::cout << std::format("Max attrs count: {}, file name: {}", (*maxAttrs).AttrsCount, wtos((*maxAttrs).MainName)) << std::endl;
+    std::cout << std::format("Max file names count:{}, file name: {}", (*maxFilenames).FileNamesCount, wtos((*maxFilenames).MainName)) << std::endl;
+    std::cout << std::format("Max data streams count:{}, filename:{}", (*maxDataStreams).DataStreamsCount, wtos((*maxDataStreams).MainName)) << std::endl;
+
+    std::cout << "Datastream names:" << std::endl;
+    for (auto& ds : (*maxDataStreams).DataStreamNames)
+    {
+        std::cout << wtos(ds) << std::endl;
+    }
+
+    std::cout << "File names:" << std::endl;
+    for (auto& fn : (*maxFilenames).FileNames)
+    {
+        std::cout << wtos(fn) << std::endl;
+    }
+
+}
+
+int main()
+{
+    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+    _CrtMemState s1, s2, s3;
+    _CrtMemCheckpoint(&s1); // Take a snapshot at the start of main()
+
+    //allows russian text printed in console
+    std::locale::global(std::locale("ru_RU.UTF-8"));
+    std::wcout.imbue(std::locale());
+
+    InitLogger();
 
     LogEngine::Logger& logger1 = LogEngine::GetLogger(MFT_LOGGER_NAME);
     assert(logger1.SinkCount() > 0); // make sure that we've got properly configured logger
@@ -356,12 +283,11 @@ int main()
 
     logger1.Info("--------------- START --------------");
     
-    PCWSTR volume = L"\\\\.\\C:";
+    const wchar_t* volume = L"\\\\.\\C:";
     
     try
     {
         logger1.InfoFmt("Opening volume: {}", wtos(volume));
-
 
         HANDLE hVolume = CreateFile(volume, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0,
             OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0);
@@ -387,12 +313,12 @@ int main()
         volumeData.TotalClusters = nvdb.TotalClusters;
         volumeData.BytesPerSector = nvdb.BytesPerSector;
 
+        //uint32_t recID = MFTRecIdByPath(volumeData, L"C:\\Program Files\\Git\\mingw64\\libexec\\git-core\\git-merge-index.exe");
+        //std::cout << "Record ID: " << recID << std::endl;
+        //return 1;
 
-        MFT_REF recId;
-        //183207 cppunit11.12.1/src/wind32/debug;
-        recId.Id = 5; // 70496 WinSyS; //60408 windows/install; //64501 system32; // 58193 prog data; // 114082; // 61; // 58663 windows; //57651 pf; // 58065 pf(86);//  195302 child MFT record; // 170497 cppunit11.12.1; // 91401 cppunit11.6;
-        THArray<FILE_NAME> dirList;
-        dirList.SetCapacity(1'000'000);
+        MFT_REF startId;
+        startId.Id = MFT_ROOT_REC_ID;
 
         auto start1 = std::chrono::high_resolution_clock::now();
 
@@ -400,50 +326,44 @@ int main()
         
         ClearCaches();
         
-       // uint32_t recID = MFTRecIdByPath(volumeData, L"C:\\Windows\\WinSxS");
-       // std::cout << "WinSxS recrord ID: " << recID << std::endl;
-
-        //ReadDirectory2(volumeData, recId, 0, dirList);
-        //ReadDirectoryX(volumeData, recId, 0, dirList);
-        ITEM_INFO iInfo{0};
-        ReadMftItemInfo(volumeData, recId, 0, iInfo);
+        //ReadDirsV1(volumeData, startId);
+        //ReadDirsV2(volumeData, startId);
+        ReadItems(volumeData, startId);
 
         auto stop = std::chrono::high_resolution_clock::now();
         logger1.WarnFmt("Reading time : {}", MillisecToStr<std::string>(std::chrono::duration_cast<std::chrono::milliseconds>(stop - start1).count()));
-        std::cout << std::endl <<"Reading time: " << MillisecToStr<std::string>(std::chrono::duration_cast<std::chrono::milliseconds>(stop - start1).count()) << std::endl;
-        
-        //std::cout << "Sorting... " << std::endl;
-        //std::sort(dirList.begin(), dirList.end(), compare);
+        std::cout << std::endl << "Reading time: " << MillisecToStr<std::string>(std::chrono::duration_cast<std::chrono::milliseconds>(stop - start1).count()) << std::endl;
 
-        //uint32_t recID = MFTRecIdByPath(volumeData, L"C:\\Windows\\WinSxS");
-        
-        std::string filename = "ListMFTFile_sorted.log";
-        LogEngine::TFileStream ff(filename);
-        auto dirCount = std::count_if(dirList.begin(), dirList.end(), [](FILE_NAME& a) { return IsDir(a.Attr); });
-        
-        std::cout << toStringSepA(dirList.Count()) + " - total" << std::endl;
-        std::cout << toStringSepA(dirList.Count() - dirCount) + " - files" << std::endl; // only files 
-        std::cout << toStringSepA(dirCount) + " - dirs" << std::endl; // only dirs 
-       
-        ff << toStringSepW(dirList.Count()) + L" - total";
-        ff << toStringSepW(dirList.Count() - dirCount) + L" - files"; // only files 
-        ff << toStringSepW(dirCount) + L" - dirs"; // only dirs 
-        
-        /*std::cout << "Saving list of files to " << filename << std::endl;
+    
+        // std::string filename = "LogMFTFile_Items.log";
+       // LogEngine::TFileStream ff(filename);
 
-        for (auto& item : dirList)
+       /* std::cout << "Looking for duplicates..." << std::endl;
+
+        auto iterEnd = gItemsList.end();
+        auto iterBeg = gItemsList.begin();
+        auto start2 = std::chrono::high_resolution_clock::now();
+
+        for (size_t i = 0; i < gItemsList.Count(); i++)
         {
-            if (IsDir(item.Attr))
-                item.ciName += L'\\';
-            
-            ff << item.ciName;
-        }*/
+            ITEM_INFO& item = gItemsList[i];
+            //   ff << toStringSepA(item.RecID.sId.low);
 
-        dirList.ClearMem();
+            auto iter = std::find_if(iterBeg + i + 1, iterEnd, [&](const ITEM_INFO& a) {return item.RecID.sId.low == a.RecID.sId.low; });
+            if (iter != iterEnd) std::cout << "Duplicate item found: " << item.RecID.sId.low << std::endl;
+        }
+
+        stop = std::chrono::high_resolution_clock::now();
+        std::cout << std::endl << "find_if() time 1: " << MillisecToStr<std::string>(std::chrono::duration_cast<std::chrono::milliseconds>(stop - start2).count()) << std::endl;
+
+        */
+
         CloseHandle(hVolume);
         ClearCaches();
 
         logger1.Info("-----------------FINISH-------------------");
+
+        //gItemsList.ClearMem();
 
         LogEngine::ShutdownLoggers();
 
