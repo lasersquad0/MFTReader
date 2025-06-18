@@ -1,3 +1,7 @@
+
+// this is to remove defines min, max in windows headers because they conflict with std::min std::max 
+#define NOMINMAX
+
 #include <Windows.h>
 
 #include "Utils.h"
