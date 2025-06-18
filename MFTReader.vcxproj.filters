@@ -44,5 +44,8 @@
     <ClInclude Include="..\common\include\string_utils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\LogEngine2\include\DynamicArrays.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

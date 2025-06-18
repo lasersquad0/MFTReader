@@ -165,6 +165,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\common\include\string_utils.h" />
+    <ClInclude Include="..\LogEngine2\include\DynamicArrays.h" />
     <ClInclude Include="Functions.h" />
     <ClInclude Include="MTFReader.h" />
     <ClInclude Include="Utils.h" />
