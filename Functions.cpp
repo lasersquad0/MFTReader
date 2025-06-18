@@ -1,4 +1,7 @@
 
+// this is to remove defines min, max in windows headers because they conflict with std::min std::max 
+#define NOMINMAX
+
 #include <iostream>
 #include <string>
 #include <cassert>
@@ -6,6 +9,7 @@
 
 #include "string_utils.h"
 #include "LogEngine.h"
+#include "MTFReader.h"
 #include "Functions.h"
 
 LogEngine::Logger& GetLoggerFunc()
@@ -28,15 +32,17 @@ void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, THArray<FILE_NAME>& fn
 
         NTFS_DE* de = (NTFS_DE*)Add2Ptr(ihdr, off); // NTFS_DE it is a "header" above File Name attribute, covers each file name attribute item
 
-        // logger.DebugFmt("DE File rec {:#x}", de->ref.Id);
-        // logger.DebugFmt("DE size: {}", de->size);
-        // logger.DebugFmt("DE key_size: {}", de->key_size);
+        logger.DebugFmt("[GetFileListFromNode] Dir Entry File rec {:#x}", de->ref.Id);
+        logger.DebugFmt("[GetFileListFromNode] Dir Entry size: {}", de->size);
+        logger.DebugFmt("[GetFileListFromNode] Dir Entry key_size: {}", de->key_size);
+        logger.DebugFmt("[GetFileListFromNode] Dir Entry flags: {}", de->flags);
 
         assert(de->size >= de->key_size + sizeof(NTFS_DE));
 
         if (de->flags & NTFS_IE_HAS_SUBNODES)
         {
-            CLST vcn = *(CLST*)Add2Ptr(ihdr, off + de->size - sizeof(uint64_t));
+            CLST vcn = *(CLST*)Add2Ptr(ihdr, off + de->size - sizeof(uint64_t)); // last 8 bytes contain the VÑN of subnode. This field is presented only if (flags & NTFS_IE_HAS_SUBNODES)
+    
             auto rec = lcns.GetRecByVCN(vcn);
             logger.DebugFmt("[GetFileListFromNode] Dir Entry has subnodes located in VCN={}, LCN={}", vcn, rec.first);
 
@@ -46,14 +52,12 @@ void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, THArray<FILE_NAME>& fn
             // sometimes fully empty (filled with zero) clusters present in run list without starting INDX signature
             if (ntfs_is_indx_recp(allocIndex->RecHeader.Signature))
             {
-                //logger.DebugFmt("Alloc Attr cluster's VCN: {} LCN: {}", allocIndex->vcn, clst);
-                
                 assert(vcn == allocIndex->vcn);
 
                 auto pihdr = &(allocIndex->ihdr);
                 GetFileListFromNode(pihdr, lcns, fnames);
             }
-            else
+            else // INDX not found
             {
                 uint8_t* sign = allocIndex->RecHeader.Signature;
                 logger.WarnFmt("[GetFileListFromNode] Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", lcns.GetRecByVCN(vcn).first, sign[0], sign[1], sign[2], sign[3]);
@@ -69,11 +73,8 @@ void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, THArray<FILE_NAME>& fn
             if (fattr->NameType != FILE_NAME_DOS) // bypass DOS filenames
             {
                 ci_string ciwnm(GetFName(fattr, sizeof(ATTR_FILE_NAME)), fattr->FileNameLen);
-                //std::wstring wnm(GetFName(fattr, sizeof(ATTR_FILE_NAME)), fattr->FileNameLen);
-                std::string nm = wtos(ciwnm);
-
                 logger.DebugFmt("[GetFileListFromNode] Dir Entry Parent rec ID: {:#x}", fattr->ParentDir.Id);
-                logger.DebugFmt("[GetFileListFromNode] Dir Entry File/Dir name: '{}'", nm);
+                logger.DebugFmt("[GetFileListFromNode] Dir Entry File/Dir name: '{}'", wtos(ciwnm));
 
                 fnames.AddValue({ ciwnm, *fattr, de->ref });
             }
@@ -82,7 +83,7 @@ void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, THArray<FILE_NAME>& fn
         off += de->size; // moving to the next DE
 
         // check if this is last DE or we have exceeded pihdr->used
-        if (((de->flags & NTFS_IE_LAST) > 0) || (de->size < sizeof(NTFS_DE)) || (off > ihdr->Used)) // off refers to next DE here
+        if (((de->flags & NTFS_IE_LAST) > 0) || (de->size < sizeof(NTFS_DE)) || (off >= ihdr->Used)) // off refers to next DE here
         {
             break;
         }
@@ -161,7 +162,7 @@ bool DataRunsDecode(MFT_ATTR_HEADER* attr, THArray<DATA_RUN_ITEM>& runs)
         logger.DebugFmt("DataRunsDecode Length: {}", ri.len);
     }
 
-    logger.DebugFmt("DataRunsDecode Data Runs Count: {}", runs.Count());
+    logger.DebugFmt("[DataRunsDecode] Data Runs Count: {}", runs.Count());
 
     return true;
 }
@@ -315,7 +316,7 @@ void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues)
     } while (*((uint32_t*)currAttr) != ATTR_END);
 }
 
-void ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrList, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result)
+bool ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrList, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result)
 {
     GET_LOGGER_FUNC;
 
@@ -326,7 +327,7 @@ void ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrLi
     TDataRuns dataRuns;
     if (!DataRunsDecode(attrAttrList, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
     {
-        return;
+        return false;
     }
 
     uint8_t* dataBuf = nullptr;
@@ -338,21 +339,21 @@ void ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrLi
 
     assert(rli.len == 1);
 
-    dataBuf = (uint8_t*)alloca(rli.len * volData.BytesPerCluster);
+    uint dataBufSize = rli.len * volData.BytesPerCluster;
+    dataBuf = (uint8_t*)alloca(dataBufSize);
 
     if (!ReadClusters(volData, rli.lcn, rli.len, dataBuf)) // ReadClusters writes a message into log file in case of an error
     {
-        return;
+        return false;
     }
 
-    /*if (!FixupUSA(volData, dataBuf, rli))
-    {
-        logger.Error("FixupUSA returned error.");
-        break;
-    }*/
-
     ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)dataBuf;
-    uint8_t* dataBufEnd = dataBuf + /*rli.len * */volData.BytesPerCluster;
+    uint8_t* dataBufEnd1 = dataBuf + dataBufSize;
+    uint8_t* dataBufEnd2 = dataBuf + attrAttrList->nonres.RealSize;
+    
+    assert(attrListItem->AttrSize > 0);
+    assert(attrListItem->AttrType > 0);
+    assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
 
     uint resIndex = 0;
     while (true) // loop by LCNs in one data run
@@ -372,7 +373,7 @@ void ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrLi
                 if (currAttr2)
                     result[resIndex++] = currAttr2;
                 else
-                    logger.WarnFmt("[ParseNonresAttrList] Attr: {} cannot be found is nonres ATT_LIST.", wtos(AttrTypeNames[MATI(attrType)]));
+                    logger.WarnFmt("[ParseNonresAttrList] Attr: {} cannot be found is nonres ATT_LIST.", AttrName(attrType));
 
                 assert(resIndex < SAME_ATTR_CNT);
             }
@@ -383,13 +384,21 @@ void ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrLi
             }
         }
 
-        assert(attrListItem->AttrSize > 0);
-        assert(attrListItem->StartVCN == 0); 
+         
         attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
-        if ((attrListItem->AttrType == ATTR_ZERO) || ((uint8_t*)attrListItem >= dataBufEnd)) break;
+        if (((uint8_t*)attrListItem >= dataBufEnd1)) break; 
+        if (((uint8_t*)attrListItem >= dataBufEnd2)) break; 
+        assert(attrListItem->AttrType > 0);
+        assert(attrListItem->AttrSize > 0);
+        assert(attrListItem->StartVCN == 0);
+        assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
+        
     }
 
-    logger.ErrorFmt("[ParseNonresAttrList] Attr: {} not found in the nonResident ATTR_LIST in LCN {}.", wtos(AttrTypeNames[MATI(attrListItem->AttrType)]), rli.lcn);
+    if(resIndex == 0)
+        logger.ErrorFmt("[ParseNonresAttrList] Attr: {} not found in the nonResident ATTR_LIST in LCN {}.", AttrName(attrListItem->AttrType), rli.lcn);
+    
+    return true;
 }
 
 void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues, PMFT_ATTR_HEADER* result)
@@ -417,7 +426,12 @@ void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEA
     
     if (currAttr->NonResidentFlag == 1)
     {
-        ParseNonresAttrList(volData, currAttr, attrType, result);
+        if (!ParseNonresAttrList(volData, currAttr, attrType, result))
+        {
+            logger.Error("ParseNonresAttrList returned error.");
+            return;
+        }
+
         if (result[0] != nullptr) // if result is empty then it goes to "ATTR_LIST_ATTR FINISHED NULL"
         {
             logger.Debug("ATTR_LIST_ATTR FINISHED");
@@ -432,7 +446,10 @@ void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEA
         ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(currAttr, currAttr->res.DataOffset);
         uint8_t* currAttrEnd = (uint8_t*)currAttr + currAttr->AttrSize;
 
+        assert(attrListItem->AttrSize > 0);
+        assert(attrListItem->AttrType > 0);
         assert(attrListItem->StartVCN == 0);
+        assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
 
         uint resIndex = 0;
         while (true)
@@ -454,7 +471,7 @@ void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEA
                     if (currAttr2)
                         result[resIndex++] = currAttr2; 
                     else
-                        logger.WarnFmt("Attribute {} cannot be found is ATT_LIST", wtos(AttrTypeNames[MakeAttrTypeIndex(attrType)]));
+                        logger.WarnFmt("Attribute {} cannot be found is ATT_LIST", AttrName(attrType));
                     
                     assert(resIndex < SAME_ATTR_CNT);
 
@@ -468,11 +485,13 @@ void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEA
                 }
             }
 
-            assert(attrListItem->AttrSize > 0);
-            assert(attrListItem->StartVCN == 0);
+            
             attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
-            if (attrListItem->AttrType == ATTR_ZERO) break;
-            if ((uint8_t*)attrListItem >= currAttrEnd) break;
+            if ((uint8_t*)attrListItem >= currAttrEnd) break; 
+            assert(attrListItem->AttrSize > 0);
+            assert(attrListItem->StartVCN == 0); 
+            assert(attrListItem->AttrType > 0);
+            assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
         }
 
         if(resIndex == 0)
@@ -486,4 +505,233 @@ void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEA
 };
 
 
+bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitField& bitmap)
+{
+    assert(attr->NonResidentFlag == 1);
 
+    TDataRuns dataRuns;
+    if (!DataRunsDecode(attr, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
+        return false;
+
+    assert(dataRuns.Count() > 0);
+
+    uint8_t* dataBuf = nullptr;
+    uint32_t dataBufLen = 0; // memory size in clusters, how many clusters is allocated in dataBuf
+    uint32_t currRun = 0;
+    THArrayRaw bmpRecs(volData.BytesPerCluster);
+
+    if (dataRuns.Count() > 1)
+    {
+        GET_LOGGER;
+        logger.WarnFmt("[ParseNonresBitmap] Bitmap occupies more than one data run. Bitmap Data Runs Count: {}", dataRuns.Count());
+    }
+
+    while (currRun < dataRuns.Count())
+    {
+        DATA_RUN_ITEM& rli = dataRuns[currRun];
+
+        if (rli.len > dataBufLen)
+        {
+            delete[] dataBuf;
+            dataBuf = DBG_NEW uint8_t[rli.len * volData.BytesPerCluster];
+            dataBufLen = rli.len;
+        }
+
+        if (!ReadClusters(volData, rli.lcn, rli.len, dataBuf)) // ReadCluster writes error meesage to log file in case of an error
+        {
+            delete[] dataBuf;
+            return false;
+        }
+
+        // in most cases nonresident Bitmap will occupy one data run
+        // therefore we have special handling of this case
+        if (dataRuns.Count() > 1)
+            bmpRecs.AddMany(dataBuf, rli.len); //TODO think to avoid several copying dataBuf. first into bmpRecs, then into bitmap
+
+        currRun++;
+    }
+
+    if (dataRuns.Count() > 1)
+    {
+        uint32_t bmpLenBytes = bmpRecs.Count() * bmpRecs.GetItemSize();
+        assert((bmpLenBytes & 0x07) == 0); // bitmap data size always multiple of 8
+        bitmap.SetData((uint64_t*)bmpRecs.Memory(), bmpLenBytes >> 3);
+    }
+    else
+    {
+        uint32_t bmpLenBytes = dataBufLen * volData.BytesPerCluster; //TODO shall we use nonres.RealSize here?
+        assert((bmpLenBytes & 0x07) == 0); // bitmap data size always multiple of 8
+        bitmap.SetData((uint64_t*)dataBuf, bmpLenBytes >> 3);
+    }
+
+    delete[] dataBuf;
+    return true;
+}
+
+bool ParseBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitField& bitmap)
+{
+    if (!attr) return true; // attr==nullptr means that no LCNs need to be parsed, usually Bitmap is null for empty directories
+
+    assert(bitmap.Count() == 0);
+
+    if (attr->NonResidentFlag == 0)
+    {
+        assert((attr->res.DataSize & 0x07) == 0); // bitmap data size always multiple of 8
+
+        ATTR_BITMAP_ATTR* bmp = (ATTR_BITMAP_ATTR*)Add2Ptr(attr, attr->res.DataOffset);
+        bitmap.SetData((uint64_t*)bmp->bitmap, attr->res.DataSize >> 3);
+        return true;
+    }
+    else
+    {
+        return ParseNonresBitmap(volData, attr, bitmap);
+    }
+}
+
+bool ParseAlloc(MFT_ATTR_HEADER* attr, TDataRuns& dataRuns)
+{
+    // sometimes one ATTR_LIST list may contain two ATTR_ALLOC attributes for some reason
+    // it means we come here two times during parsing one MFT record with such ATTR_LIST 
+    //assert(dataRuns.Count() == 0);
+
+    if (!attr) return true; // attr==NULL means that ALLOC attribute is not present in MFT rec. Usually ALLOC is not needed in MFT record for empty directories
+
+    assert(attr->NonResidentFlag == 1);
+
+    return DataRunsDecode(attr, dataRuns); // DataRunDecode writes message to log in case of an error
+}
+
+void ParseIndexRoot(MFT_ATTR_HEADER* attr, TLCNRecs& lcns, TFileList& fileList)
+{
+    GET_LOGGER;
+
+    assert(fileList.Count() == 0);
+    assert(attr->NonResidentFlag == 0); // always resident
+
+    ATTR_INDEX_ROOT* indexR = (ATTR_INDEX_ROOT*)Add2Ptr(attr, attr->res.DataOffset);
+    auto pihdr = &(indexR->ihdr);
+
+    logger.DebugFmt("IndexRoot attr type: {:#x} ({})", (uint32_t)indexR->AttrType, AttrName(indexR->AttrType));
+    logger.DebugFmt("Collation rule: {}", (uint32_t)indexR->Rule);
+    logger.DebugFmt("Dir type: {} {}", indexR->ihdr.Flags, (indexR->ihdr.Flags == 0 ? " (SMALL DIR)" : " (BIG DIR)"));
+    
+    GetFileListFromNode(pihdr, lcns, fileList);
+}
+
+// mftRec record must be a directory type
+// loads files from MFT rec in sorted order starting from Index Root
+int32_t GetFileListFromMFTRec(const VOLUME_DATA& volData, MFT_FILE_RECORD* mftRec, DIR_NODE& node)
+{
+    GET_LOGGER;
+
+    assert(mftRec->Flags == 0x03); // only "directory" record should go here
+    if (mftRec->Flags != 0x03)
+    {
+        logger.Error("[GetFileListFromMFTRec] Error: mftRec->Flags != 0x03 !");
+        return -1; // error
+    }
+
+    assert(node.Bitmap.Count() == 0);
+
+    PMFT_ATTR_HEADER attrValues[ATTR_TYPE_CNT];
+    FillAttrValues(mftRec, attrValues);
+
+    PMFT_ATTR_HEADER multValues[SAME_ATTR_CNT];
+
+    GetAttr(volData, ATTR_BITMAP, attrValues, multValues);
+    auto bitmap = multValues[0]; // bitmap can be NULL here
+    assert(multValues[1] == nullptr); // only single value can be returned for bitmap
+    if (multValues[1] != nullptr)
+    {
+        logger.Warn("[GetFileListFromMFTRec] Warning: looks like two ATTR_BITMAP attributes in one MFT record!");
+        // no need to return an error, let work with first bitmap
+    }
+
+    // bitmap can be null, its ok
+    if (bitmap)
+    {
+        if (!ParseBitmap(volData, bitmap, node.Bitmap)) // copy bitmap into TBitField class for easier access
+        {
+            logger.Error("[GetFileListFromMFTRec] ParseBitmap finished with error.");
+        }
+    }
+
+    GetAttr(volData, ATTR_ALLOC, attrValues, multValues); // multiple values can be returned
+    uint i = 0;
+    while (multValues[i] != nullptr)
+    {
+        if (!ParseAlloc(multValues[i++], node.DataRuns)) // decode data runs and store them in node.DataRuns
+        {
+            logger.Error("[GetFileListFromMFTRec] ParseAlloc finished with error.");
+        }
+    }
+
+    uint32_t lcnTotalCount = 0;
+    for (auto& run : node.DataRuns) lcnTotalCount += run.len;
+
+    TLCNRecs lcns(volData.BytesPerCluster, lcnTotalCount);
+    if (!lcns.LoadDataRuns(volData, node))
+    {
+        logger.Error("[GetFileListFromMFTRec] TLCNRecs.LoadDataRuns finished with error.");
+        return -1; // fail to load data runs this is critical error, return immediately with error
+    }
+
+    GetAttr(volData, ATTR_ROOT, attrValues, multValues);
+    auto root = multValues[0];
+    assert(multValues[1] == nullptr); // only single value can be returned for ATT_ROOT
+    if (multValues[1] != nullptr)
+    {
+        logger.Warn("[GetFileListFromMFTRec] Warning: looks like two ATTR_ROOT attributes in one MFT record!");
+        //no need to return, let work with first root attribute
+    }
+
+    ParseIndexRoot(root, lcns, node.FileList);
+
+    return node.FileList.Count();
+}
+
+// reads list of files in already sorted order
+bool ReadDirectoryV2(VOLUME_DATA& volData, MFT_REF parentMftRecID, uint32_t dirLevel, THArray<FILE_NAME>& gDirList)
+{
+    if (dirLevel > 30) throw std::runtime_error("dirLevel > 30 !!!!!!!");
+
+    GET_LOGGER;
+
+    uint8_t* mftRecBuf = (uint8_t*)alloca(volData.BytesPerMFTRec);
+    MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
+
+    if (!LoadMFTRecord(volData, parentMftRecID, mftRecBuf))
+    {
+        logger.Error("LoadMFTRecord finished with error.");
+        return false;
+    }
+
+    DIR_NODE node;
+    int32_t cnt = GetFileListFromMFTRec(volData, mftRec, node);// writes error to log file in case of error
+    if (cnt == -1) return false;
+
+    for (auto& item : node.FileList)
+    {
+        if (!IsMetaFile(item) && !IsDotDir(item.ciName)) // do not add hidden metafiles into file list
+        {
+            if (dirLevel == 0) std::wcout << item.ciName.c_str() << std::endl;
+            //if (dirLevel == 1) std::wcout << "      " << item.ciName.c_str() << std::endl;
+
+            if (IsDir(item.Attr))
+                gDirList.AddValue(item);
+            else
+                gDirList.AddValue(item);
+        }
+
+        //if (IsReparse(item.Attr)) { logger.InfoFmt("REPARSE detected: {}", wtos(item.Name)); continue; }
+
+        // item.Attr.ParentDir actually is ref to item's MFT Id, not to the parent dir
+        if (IsDir(item.Attr) && !IsMetaFile(item) && !IsDotDir(item.ciName)) // bypass hidden mft metafiles
+            if (!ReadDirectoryV2(volData, item.MFTRef, dirLevel + 1, gDirList))
+            {
+                logger.ErrorFmt("ReadDirectory2 finished with error for MFT rec: {}", item.MFTRef.sId.low);
+            }
+    }
+
+    return true;
+}

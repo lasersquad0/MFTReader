@@ -29,18 +29,18 @@
 #define IsMetaFile(_) (((_).Attr.ParentDir.sId.low == 5) && ((_).ciName[0] == L'$'))
 #define IsDotDir(_) ( ((_)[0] == L'.') && ((_).size() == 1) )
 
-#define ATTR_TYPE_NAMES { L"ZERO", L"STANDARD INFO", L"ATTR LIST", L"FILENAME", L"OBJECT ID", L"secure_info", L"LABEL", \
-                          L"VOLUME INFO", L"DATA", L"INDEX ROOT", L"ALLOCATION", L"BITMAP", L"REPARSE", L"EA_INFORMATION", \
-                          L"EA", L"PROPERTYSHEET", L"UTILITY STREAM" }
+// ANSI chaset for logging purposes only
+#define ATTR_TYPE_NAMES { "ZERO", "STANDARD INFO", "ATTR LIST", "FILENAME", "OBJECT ID", "secure_info", "LABEL", \
+                          "VOLUME INFO", "DATA", "INDEX ROOT", "ALLOCATION", "BITMAP", "REPARSE", "EA_INFORMATION", \
+                          "EA", "PROPERTYSHEET", "UTILITY STREAM" }
 
 // Attr types have numbers 0x10 0x20 0x100, etc. - convert them into consecutive indexes in the array
 // used for indexing ATTR_TYPE_NAMES array and in some other places
 #define MakeAttrTypeIndex(_) ((_)>>4) 
-#define MATI MakeAttrTypeIndex
+#define AttrName(_) (AttrTypeNames[MakeAttrTypeIndex(_)])
 
-static const wchar_t* AttrTypeNames[] ATTR_TYPE_NAMES;
-
-static const wchar_t* FileNameTypes[]{ L"POSIX", L"UNICODE", L"DOS", L"UNICODE_AND_DOS" };
+static const char* AttrTypeNames[] ATTR_TYPE_NAMES;
+static const char* FileNameTypes[]{ "POSIX", "UNICODE", "DOS", "UNICODE_AND_DOS" };
 
 struct VOLUME_DATA
 {
@@ -70,6 +70,11 @@ public:
         SetData(bits, wordsCount);
     }
 
+    TBitField(const TBitField& a): TBitField()
+    {
+        SetData(a.FBits, a.FCount);
+    }
+
     ~TBitField() { delete[] FBits; FBits = nullptr; }
 
     void SetData(const uint64_t* bits, const uint64_t wordsCount) // count is in uint64_t words here
@@ -78,10 +83,11 @@ public:
         FBits = DBG_NEW uint64_t[wordsCount];
         FCount = wordsCount;
         FBitsCount = wordsCount * 64; 
-        assert(!memcpy_s(FBits, wordsCount * sizeof(uint64_t), bits, wordsCount * sizeof(uint64_t)));
+        auto res = memcpy_s(FBits, wordsCount * sizeof(uint64_t), bits, wordsCount * sizeof(uint64_t));
+        assert(!res);
     }
 
-    TBitField& operator=(const TBitField& a) // copy constructor
+    TBitField& operator=(const TBitField& a)
     {
         SetData(a.FBits, a.FCount);
         return *this;
@@ -158,8 +164,8 @@ struct DIR_NODE
 
     void Clear() 
     {
-        FileList.Clear();
-        DataRuns.Clear();
+        FileList.ClearMem();
+        DataRuns.ClearMem();
         Bitmap.Clear();
     }
 };
@@ -175,9 +181,10 @@ struct ITEM_INFO
 
     uint HardLinksCount;
     uint AttrsCount;
-    uint FileNamesCount; // DOS, WIN, POSIX
+    uint FileNamesCount; // all types - DOS, WIN, POSIX
     uint DataStreamsCount;
-    std::wstring FileNames[200];
+    std::wstring MainName;
+    THArray<std::wstring> FileNames;
     std::wstring DataStreamNames[20]; // unlikely that file will have more than 5 file streams
     
     DIR_NODE Node;
@@ -190,8 +197,9 @@ typedef THArray<ITEM_INFO> TItemInfoList;
 
 LogEngine::Logger& GetLoggerFunc();
 bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitField& bitmap);
-void ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrList, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result);
-bool ReadDirectoryX(VOLUME_DATA& volData, MFT_REF mftRecID, uint32_t dirLevel, THArray<FILE_NAME>& gDirList);
+bool ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrList, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result);
+bool ReadDirectoryV1(VOLUME_DATA& volData, MFT_REF mftRecID, uint32_t dirLevel, THArray<FILE_NAME>& gDirList);
+bool ReadDirectoryV2(VOLUME_DATA& volData, MFT_REF parentMftRecID, uint32_t dirLevel, THArray<FILE_NAME>& gDirList);
 bool DataRunsDecode(MFT_ATTR_HEADER* attr, THArray<DATA_RUN_ITEM>& runs);
 bool ReadClusters(const VOLUME_DATA& volData, uint64_t lcnStart, uint32_t lcnCnt, PBYTE dataBuf);
 bool FixupUSA(const VOLUME_DATA& volData, PBYTE dataBuf, DATA_RUN_ITEM& rli, uint32_t rlilen);
@@ -199,6 +207,8 @@ bool LoadMFTRecord(const VOLUME_DATA& volData, MFT_REF recID, uint8_t* mftRec);
 uint8_t* LoadMFTRecordCache(const VOLUME_DATA& volData, MFT_REF recID);
 void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues, PMFT_ATTR_HEADER* result);
 void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues);
+int32_t GetFileListFromMFTRec(const VOLUME_DATA& volData, MFT_FILE_RECORD* mftRec, DIR_NODE& node);
+bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirLevel, ITEM_INFO& itemInfo);
 
 // This class stores MFT records in memory and gets them by MFT rec ID
 // MFT record is defined as uint8_t* type 
