@@ -14,9 +14,6 @@ Some records contain EA and/or EA_INFO attributes (what is this for in windows?)
 
 #include <windows.h>
 
-//#define LODWORD(x)  (static_cast<DWORD>(x))
-//#define HIDWORD(x)  (static_cast<DWORD>((x) >> 32))
-
 #define Diff2Ptr(ptr1, ptr2) ((ULONG)((uint8_t*)(ptr2) - (uint8_t*)(ptr1)))
 
 #define Add2Ptr(P, I)		((uint8_t*)(P) + (I))
@@ -28,8 +25,10 @@ Some records contain EA and/or EA_INFO attributes (what is this for in windows?)
 // mask to remove sequence number of MFT_REF
 #define MFT_REF_MASK 0x0000FFFFFFFFFFFF
 
-#define MFT_ROOT_RECID 5
+#define MFT_ROOT_REC_ID 5
 
+// structure fields aligment set to 1 byte.
+// by default aligment is 16 bytes but here we need 1
 #pragma pack(push, 1)
 
 /* MFT record number structure. */
@@ -169,22 +168,22 @@ static_assert(sizeof(MFT_FILE_RECORD) == 0x30);
 enum ATTR_TYPE : uint32_t
 {
     ATTR_ZERO        = 0x00,
-    ATTR_STD_INFO    = 0x10,
-    ATTR_LIST_ATTR   = 0x20,
-    ATTR_FILENAME    = 0x30,
+    ATTR_STD_INFO    = 0x10, // resident only
+    ATTR_LIST_ATTR   = 0x20, // both resident and non-resident
+    ATTR_FILENAME    = 0x30, // resident only
     ATTR_ID          = 0x40, // ATTR_VOLUME_VERSION on Nt4
     ATTR_SECURE      = 0x50,
     ATTR_LABEL       = 0x60,
     ATTR_VOL_INFO    = 0x70,
-    ATTR_DATA        = 0x80,
-    ATTR_ROOT        = 0x90,
-    ATTR_ALLOC       = 0xA0,
-    ATTR_BITMAP      = 0xB0,
-    ATTR_REPARSE     = 0xC0, // ATTR_SYMLINK on Nt4
-    ATTR_EA_INFO     = 0xD0,
-    ATTR_EA          = 0xE0,
+    ATTR_DATA        = 0x80, // both resident and non-resident
+    ATTR_ROOT        = 0x90, // resident only????
+    ATTR_ALLOC       = 0xA0, // non-resident only
+    ATTR_BITMAP      = 0xB0, // both resident and non-resident
+    ATTR_REPARSE     = 0xC0, // ATTR_SYMLINK on Nt4. both resident and non-resident ??
+    ATTR_EA_INFO     = 0xD0, // both resident and non-resident???
+    ATTR_EA          = 0xE0, // both resident and non-resident 
     ATTR_PROPERTYSET = 0xF0,
-    ATTR_LOGGED_UTILITY_STREAM = 0x100,
+    ATTR_LOGGED_UTILITY_STREAM = 0x100, // both resident and non-resident
     ATTR_END         = 0xFFFFFFFF
 };
 
@@ -312,6 +311,7 @@ struct ATTR_STD_INFO5
 static_assert(sizeof(ATTR_STD_INFO5) == 0x48);
 
 // Attribute ATTR_LIST_ATTR structure (0x20)  - located between STD_INFO and FILE_NAME attributes
+// can be resident and non-resident
 struct ATTR_LIST_ENTRY 
 {
     enum ATTR_TYPE AttrType; // 0x00 The type of attribute.
@@ -353,6 +353,7 @@ struct NTFS_DUP_INFO
 static_assert(sizeof(NTFS_DUP_INFO) == 0x38);
 
 // Filename attribute structure (0x30). 
+// resident only
 struct ATTR_FILE_NAME
 {
     MFT_REF ParentDir;   // 0x00 reference to MFT record for parent directory.
@@ -363,6 +364,7 @@ struct ATTR_FILE_NAME
 
 static_assert(sizeof(ATTR_FILE_NAME) == 0x42);
 
+// resident only????
 /*struct VOLUME_INFO
 {
     uint64_t res1;	   // 0x00
@@ -372,9 +374,9 @@ static_assert(sizeof(ATTR_FILE_NAME) == 0x42);
 
 }; // sizeof=0xC   */
 
-#pragma pack(show)  
+//#pragma pack(show)  
 
-/* Object ID (0x40) */
+// Object ID (0x40). Resident only???? 
 struct ATTR_OBJECT_ID
 {
     GUID ObjId;	// 0x00: Unique Id assigned to file.
@@ -424,7 +426,7 @@ enum class COLLATION_RULE: uint32_t
 
 static_assert(sizeof(COLLATION_RULE) == 4);
 
-//
+// resident only???
 struct ATTR_INDEX_ROOT
 {
     enum ATTR_TYPE AttrType;  // 0x00: The type of attribute to index on. 0 if entry does not use an attribute
@@ -513,6 +515,7 @@ struct RUNS_TREE
  * corresponds to one index block within the index allocation attribute. Thus
  * the number of bits in the bitmap * index block size / cluster size is the
  * number of clusters in the index allocation attribute.
+ * Can be resident and non-resident
  */
 struct ATTR_BITMAP_ATTR 
 {
