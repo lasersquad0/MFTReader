@@ -1,9 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.12.35527.113 d17.12
+VisualStudioVersion = 17.12.35527.113
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MFTReader", "MFTReader.vcxproj", "{EB794E50-A737-4896-835A-1F882F77DE60}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MFTReaderConsole", "prj\MFTReader\MFTReader.vcxproj", "{EB794E50-A737-4896-835A-1F882F77DE60}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MFTReaderDLL", "prj\MFTReaderDLL\MFTReaderDLL.vcxproj", "{14E30335-5A5D-4696-9482-835A8EFB2A35}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,8 +23,19 @@ Global
 		{EB794E50-A737-4896-835A-1F882F77DE60}.Release|x64.Build.0 = Release|x64
 		{EB794E50-A737-4896-835A-1F882F77DE60}.Release|x86.ActiveCfg = Release|Win32
 		{EB794E50-A737-4896-835A-1F882F77DE60}.Release|x86.Build.0 = Release|Win32
+		{14E30335-5A5D-4696-9482-835A8EFB2A35}.Debug|x64.ActiveCfg = Debug|x64
+		{14E30335-5A5D-4696-9482-835A8EFB2A35}.Debug|x64.Build.0 = Debug|x64
+		{14E30335-5A5D-4696-9482-835A8EFB2A35}.Debug|x86.ActiveCfg = Debug|Win32
+		{14E30335-5A5D-4696-9482-835A8EFB2A35}.Debug|x86.Build.0 = Debug|Win32
+		{14E30335-5A5D-4696-9482-835A8EFB2A35}.Release|x64.ActiveCfg = Release|x64
+		{14E30335-5A5D-4696-9482-835A8EFB2A35}.Release|x64.Build.0 = Release|x64
+		{14E30335-5A5D-4696-9482-835A8EFB2A35}.Release|x86.ActiveCfg = Release|Win32
+		{14E30335-5A5D-4696-9482-835A8EFB2A35}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {2F7329E6-812D-4C8D-A999-C34E87A2C905}
 	EndGlobalSection
 EndGlobal
