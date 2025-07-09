@@ -9,7 +9,7 @@
 
 // reads series of sequential volume clusters starting from #lcnStart
 // dataBuf should be large enough to fit lcnCnt clusters of data
-bool ReadClusters(const VOLUME_DATA& volData, uint64_t lcnStart, uint32_t lcnCnt, PBYTE dataBuf)
+bool ReadClusters(const VOLUME_DATA& volData, CLST lcnStart, CLST lcnCnt, PBYTE dataBuf)
 {
     LARGE_INTEGER offset{0};
     DWORD bytesRead;
@@ -25,7 +25,7 @@ bool ReadClusters(const VOLUME_DATA& volData, uint64_t lcnStart, uint32_t lcnCnt
     }
 
     // read clusterCnt clusters
-    res = ReadFile(volData.hVolume, dataBuf, lcnCnt * volData.BytesPerCluster, &bytesRead, nullptr);
+    res = ReadFile(volData.hVolume, dataBuf, (DWORD)(lcnCnt * volData.BytesPerCluster), &bytesRead, nullptr);
     if (res)
     {
         assert(lcnCnt * volData.BytesPerCluster == bytesRead);
@@ -40,13 +40,13 @@ bool ReadClusters(const VOLUME_DATA& volData, uint64_t lcnStart, uint32_t lcnCnt
 }
 
 // dataBuf contains data for rlilen clusters
-bool FixupUSA(const VOLUME_DATA& volData, PBYTE dataBuf, DATA_RUN_ITEM& rli, uint32_t rlilen)
+bool FixupUSA(const VOLUME_DATA& volData, PBYTE dataBuf, DATA_RUN_ITEM& rli, uint64_t rlilen)
 {
     NTFS_RECORD_HEADER* indexRec = (NTFS_RECORD_HEADER*)dataBuf;
     uint32_t wordsPerSector = volData.BytesPerSector >> 1;
 
     // loop by LCNs loaded into dataBuf
-    for (size_t i = 0; i < rlilen; i++)
+    for (uint64_t i = 0; i < rlilen; i++)
     {
         if (!ntfs_is_indx_recp(indexRec->Signature)) // bypass non 'INDX' clusters (usually filled by zero)
         {
@@ -71,7 +71,7 @@ bool FixupUSA(const VOLUME_DATA& volData, PBYTE dataBuf, DATA_RUN_ITEM& rli, uin
 
         uint16_t* sectorEnd = (uint16_t*)(indexRec)+wordsPerSector - 1;
 
-        uint s = 0;
+        uint32_t s = 0;
         while (s < sectorsCnt)
         {
             assert(checkValue == *sectorEnd);
@@ -139,19 +139,16 @@ uint8_t* LoadMFTRecordCache(const VOLUME_DATA& volData, MFT_REF recID)
     return *result; // return mft record from cache
 }
 
-// attr parameter cannot be NULL here. It should be valid pointer to MFT_ATTR_HEADER structure
-bool DataRunsDecode(MFT_ATTR_HEADER* attr, THArray<DATA_RUN_ITEM>& runs)
+//TODO make it work with resident attributes too
+bool DataRunsDecode(MFT_ATTR_HEADER* attr, TDataRuns& runs)
 {
     GET_LOGGER;
 
-    // we do not need this assert because sometimes one ATTR_LIST list may contain two ATTR_ALLOC attributes for some reason
-    // it means we come here two times during parsing one MFT record with such ATTR_LIST 
-    //assert(runs.Count() == 0); // make sure that old data runs are cleared
-
-    if (!attr || !attr->NonResidentFlag) // parameters validation
+    // data runs exist in non-resident attributes only (ALLOC and DATA)
+    if (!attr || !attr->NonResidentFlag)
     {
-        // this in incorrect data in MFT
-        logger.Error("[DataRunsDecode] Attr (!currAttr || !currAttr->NonResidentFlag) = TRUE");
+        // looks like incorrect data in MFT
+        logger.Error("[DataRunsDecode] Attr parameter is NULL or is resident!!!");
         return false;
     }
 
@@ -215,9 +212,6 @@ bool DataRunsDecode(MFT_ATTR_HEADER* attr, THArray<DATA_RUN_ITEM>& runs)
 
     return true;
 }
-
-
-
 
 
 

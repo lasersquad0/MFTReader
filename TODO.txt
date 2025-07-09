@@ -1,0 +1,17 @@
+
+MFTReader incredibly fast reading NTFS 
+======================================
+
+CONTACTS
+------------
+
+Any questions or suggestions are welcome to this email: 
+   Andrey Romanchenko
+   lasersquad@gmail.com
+   
+
+TO DO
+--------
+- print to console all MFT record details (cmd option -m)  
+- how to deal wiht many DATA attributes in ATTR_LIST which compose one read DATA attribute
+- Investigate "many filenames" anomaly. How it is related to hard links count?

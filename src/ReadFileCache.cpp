@@ -39,7 +39,7 @@ bool ProcessAllocDataRuns(VOLUME_DATA& volData, DIR_NODE& node, FileListPred pre
 
     int64_t bitsCounter = 0;
     uint8_t* dataBuf = nullptr;
-    uint32_t dataBufLen = 0; // memory of how many clusters is allocated in dataBuf
+    uint64_t dataBufLen = 0; // memory of how many clusters is allocated in dataBuf
     uint32_t currRun = 0;
     while (currRun < node.DataRuns.Count())
     {
@@ -49,7 +49,7 @@ bool ProcessAllocDataRuns(VOLUME_DATA& volData, DIR_NODE& node, FileListPred pre
         DATA_RUN_ITEM& rli = node.DataRuns[currRun];
         logger.DebugFmt("Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
 
-        uint32_t rlilen = valuemin((uint32_t)(lastBit + 1 - bitsCounter), rli.len);
+        CLST rlilen = valuemin((CLST)(lastBit + 1 - bitsCounter), rli.len);
 
         if (rlilen > dataBufLen)
         {
@@ -123,9 +123,16 @@ bool ProcessAllocDataRuns(VOLUME_DATA& volData, DIR_NODE& node, FileListPred pre
 // ATTR_ROOT - gets list of files from this attr (usually this list is empty when appropriate ATTR_ALLOC exists)
 // ATTR_LIST_ATTR - goes to child records and parses attrs listed above from there
 // ATTR_ALLOC - only does data runs decoding, does not go to LCNs. 
-bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node, uint32_t parent, TFileCache::TLevel* level)
+bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node, uint32_t parentIdx, TFileCache::TLevel* level)
 {
     GET_LOGGER;
+
+    FileListPred pred = [parentIdx, &level](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
+        {
+            // do not add NTFS internal files that are in root dir and start from $
+            if (!AttrNTfsInternal(attr))
+                level->AddValue(parentIdx, level->Level(), ref, attr);
+        };
 
     MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecData;
 
@@ -192,17 +199,18 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node, u
                 assert(indexR->IndexBlockClst == 1);
                 assert(indexR->Rule == COLLATION_RULE::FILENAME);
 
-                logger.DebugFmt("IndexRoot attr type: {:#x} ({})", (uint32_t)indexR->AttrType, AttrName(indexR->AttrType));
+                logger.DebugFmt("IndexRoot indexed attr type: {:#x} ({})", (uint32_t)indexR->AttrType, AttrName(indexR->AttrType));
                 logger.DebugFmt("Collation rule: {}", (uint32_t)indexR->Rule);
                 logger.DebugFmt("Dir type: {} {}", indexR->ihdr.Flags, (indexR->ihdr.Flags == 0 ? " (small dir)" : " (big dir)"));
 
                 auto pihdr = &(indexR->ihdr);
 
                 // does not go to subnodes
-                GetFileList(pihdr, [parent, &level](const ATTR_FILE_NAME* attr, const MFT_REF& ref) 
+                GetFileList(pihdr, pred /*[parent, &level](const ATTR_FILE_NAME* attr, const MFT_REF& ref) 
                     {
-                        level->AddValue(parent, level->Level(), ref, attr); 
-                    } ); 
+                        if (!AttrNTfsInternal(attr))
+                            level->AddValue(parent, level->Level(), ref, attr); 
+                    } */); 
 
                 break;
             }
@@ -232,7 +240,7 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node, u
                         {
                             if (LoadMFTRecord(volData, attrEntry->ref, mftRecBuf)) //TODO shall we call LoadRecordCache here?
                             {
-                                if (ParseMFTRecord(volData, mftRecBuf, node, parent, level)) //TODO shall we break in case of an error in LoadMFTRecord or ParseMFTRecord 
+                                if (ParseMFTRecord(volData, mftRecBuf, node, parentIdx, level)) //TODO shall we break in case of an error in LoadMFTRecord or ParseMFTRecord 
                                     visitedMFTRec.AddValue(attrEntry->ref.sId.low);
                             }
                         }
@@ -247,7 +255,7 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node, u
                     assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
                 }
 
-                logger.Debug("resudent ATTR_LIST_ATTR FINISHED");
+                logger.Debug("resident ATTR_LIST_ATTR FINISHED");
 
                 break;
             }
@@ -337,17 +345,15 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node, u
                     break;
                 }
 
-                uint8_t* dataBuf = nullptr;
-
-                assert(dataRuns.Count() == 1); //assuming that one LCN is always enough for list of attributes
+                assert(dataRuns.Count() == 1); //assuming that one data run is always enough for directory attr list
 
                 DATA_RUN_ITEM& rli = dataRuns[0];
                 logger.DebugFmt("Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
 
-                assert(rli.len == 1);
-
-                uint dataBufSize = rli.len * volData.BytesPerCluster;
-                dataBuf = (uint8_t*)alloca(dataBufSize);
+                assert(rli.len == 1); // assuming that one LCN is enough for directory attr list
+                
+                auto dataBufSize = rli.len * volData.BytesPerCluster;
+                uint8_t* dataBuf = (uint8_t*)alloca(dataBufSize);
 
                 if (!ReadClusters(volData, rli.lcn, rli.len, dataBuf)) // ReadClusters writes a message into log file in case of an error
                 {
@@ -370,7 +376,7 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node, u
                     // attributes in attr list located in a separate cluster may refer back to the base record
                     // because some attributes reside in base mft record and the others in "child" mft record(s)
                     // the attr list attribute itself is located in cluster that is not mft record, it does not contain signature or Fixups values, etc.
-                    if ((attrListItem->ref.sId.low) != mftRec->IndexMFTRec)
+                    if (attrListItem->ref.sId.low != mftRec->IndexMFTRec)
                     {
                         if ((attrListItem->AttrType == ATTR_ALLOC) || (attrListItem->AttrType == ATTR_ROOT) || (attrListItem->AttrType == ATTR_BITMAP))
                         {
@@ -380,8 +386,9 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node, u
                                 assert(mftRecBuf != nullptr);
                                 if (mftRecBuf)
                                 {
-                                    //TODO There may be a case when 2 attributes located in a one child MFT record. They will be parsed twice now. Think of solution for it. 
-                                    if (!ParseMFTRecord(volData, mftRecBuf, node, parent, level))
+                                    //TODO There may be a case when 2 attributes located in a one child MFT record. 
+                                    // They will be parsed twice now. Think of solution for it. 
+                                    if (!ParseMFTRecord(volData, mftRecBuf, node, parentIdx, level))
                                         logger.Error("ParseMFTRecord finished with error.");
                                 }
                                 else
@@ -397,15 +404,10 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node, u
                     attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
                     if ((uint8_t*)attrListItem >= attrListEnd1) break;
                     if ((uint8_t*)attrListItem >= attrListEnd2) break;
-                    //if (attrEntry->AttrType == ATTR_ZERO) break;
                     //assert(attrEntry->AttrId > 0);
                     assert(attrListItem->AttrType > 0);
                     assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
                     assert(attrListItem->AttrSize > 0);
-
-                    //attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
-                    //if ( (attrListItem->AttrType == ATTR_ZERO) || ((uint8_t*)attrListItem >= dataBufEnd)) break;
-                    //assert(attrListItem->AttrSize > 0);
                 }
 
                 logger.Debug("nonres ATTR_LIST_ATTR FINISH");
@@ -510,7 +512,9 @@ bool ReadDirectoryV1(VOLUME_DATA& volData, /*MFT_REF mftRecID,*/ uint32_t parent
     {
         if (!ProcessAllocDataRuns(volData, node, [parentIdx, &level](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
             {
-                level->AddValue(parentIdx, level->Level(), ref, attr);
+                // do not add NTFS internal files that are in root dir and start from $
+                if (!AttrNTfsInternal(attr))
+                    level->AddValue(parentIdx, level->Level(), ref, attr);
             }))
         {
             logger.Error("ProcessAllocDataRuns finished with error.");
@@ -533,35 +537,34 @@ bool ReadDirectoryV1(VOLUME_DATA& volData, /*MFT_REF mftRecID,*/ uint32_t parent
     if (item != nullptr) 
         assert((item->FLevel == parentItem->FLevel + 1) && item->FParent == parentIdx);
     
-    assert(parentItem->Dir());
+    assert(parentItem->IsDir());
 
     dirSize = 0;
 
     for (uint32_t i = startPos; i < cnt; i++)
     {
-        if (!item->MetaFile() && !item->DotDir()) // do not add hidden metafiles into file list
+        assert(!item->NtfsInternal());
+
+        if (item->IsDir())
         {
-            if (item->Dir())
+            if (!item->IsReparse())
             {
-                if (!item->Reparse())
-                {
-                    uint64_t childDirSize{ 0 };
-                    if (!ReadDirectoryV1(volData, /*item->FMFTRecID,*/ i, item /*levelIdx + 1*/, childDirSize, gFileList))
-                        logger.ErrorFmt("ReadDirectoryV1 finished with error for MFT rec: {}", item->FMFTRecID.sId.low);
-                    dirSize += childDirSize;
-                }
+                uint64_t childDirSize{ 0 };
+                if (!ReadDirectoryV1(volData, /*item->FMFTRecID,*/ i, item /*levelIdx + 1*/, childDirSize, gFileList))
+                    logger.ErrorFmt("ReadDirectoryV1 finished with error for MFT rec: {}", item->FMFTRecID.sId.low);
+                dirSize += childDirSize;
             }
-            else // file, not a directory
-            {
-                dirSize += item->FileAttr.dup.FileSize;
-            }
-
-            // print only dirs of first and second levels.
-            if (parentItem->FLevel == 0)
-                logger.InfoFmt("{} - {}", wtos(std::wstring(item->Name(), item->FileAttr.FileNameLen)), toStringSepA(item->FileAttr.dup.FileSize));
-
-            //if (levelIdx == 2) logger.InfoFmt("\t{}", wtos(std::wstring(item->Name(), item->FileAttr.FileNameLen)));
         }
+        else // file, not a directory
+        {
+            dirSize += item->FileAttr.dup.FileSize;
+        }
+
+        // print only dirs of first and second levels.
+        if (parentItem->FLevel == 0)
+            logger.InfoFmt("{} - {}", wtos(std::wstring(item->Name(), item->FileAttr.FileNameLen)), toStringSepA(item->FileAttr.dup.FileSize));
+
+        //if (levelIdx == 2) logger.InfoFmt("\t{}", wtos(std::wstring(item->Name(), item->FileAttr.FileNameLen)));
 
         item = level->Next(item);
     }

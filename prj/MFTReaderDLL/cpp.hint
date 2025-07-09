@@ -1,0 +1,2 @@
+#define MFTREADERDLL_API __declspec(dllexport)
+#define MFTREADERDLL_API __declspec(dllimport)

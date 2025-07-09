@@ -49,7 +49,8 @@ IS_4          = 0x0004, // it is called RECORD_FLAG_SYSTEM in another source
 * MFTReader.exe -d C -m 32435   // вывод информации по MFT record ID. 
 * MFTReader.exe -p "c:\Program Files\Git\bin\git.exe" // здесь указывать диск опцией -d необязательно но можно
 * MFTReader.exe -d D -p "Git\bin\git.exe" // relative path. здесь указывать диск опцией -d нужно
-* 
+* MFTReader.exe -d D -s  // статистика по диску D
+*
 Вывод различной статистики по файловой системе.
 *   + нужна ли опция вывода статистики по папке (с подпапками)??
 * здесь подумать как правильно задавать КАКУЮ статистику хочу видеть и какие фильтры (сумматоры) хочу применить да сырые данные.
@@ -90,7 +91,7 @@ static void DefineOptions(COptionsList& options)
     pp.ShortName(OPT_P).LongName(_T("path")).Descr(_T("Show information about file/directory by specified path.")).Required(false).NumArgs(1).RequiredArgs(1);
     options.AddOption(pp);
 
-    options.AddOption(OPT_S, _T("stat"), _T("Show overall volume/disk statistics."), 1);
+    options.AddOption(OPT_S, _T("stat"), _T("Show overall volume/disk statistics."), 0);
     
     /*options.AddOption(OPT_L, _T("list"), _T("List content of archive"), 1);
     options.AddOption(OPT_T, _T("threads"), _T("Use specified number of threads during operation"), 1);
@@ -186,6 +187,19 @@ int _tmain(int argc, TCHAR* argv[])
 
             std::wcout << "here will be shown information about record: " << MFTRecID << "." << std::endl;
 
+            logger.SetLogLevel(LogEngine::Levels::llDebug);
+            
+            //uint8_t* mftRecBuf = (uint8_t*)alloca(vol.BytesPerMFTRec);
+
+            MFT_REF MFTRef{0};
+            MFTRef.sId.low = MFTRecID;
+
+            //if(!LoadMFTRecord(vol,  MFTRef, mftRecBuf))
+            //    throw std::runtime_error("LoadMFTRecord finished with error.");
+                
+            ITEM_INFO info{0};
+            ReadMftItemInfo(vol, MFTRef, info);
+
         }
         else if (cmd.HasOption(OPT_S)) // volume statistics requested.
         {
@@ -200,9 +214,9 @@ int _tmain(int argc, TCHAR* argv[])
 
             ResetCache();
 
-            ReadDirsV1(vol);
+            //ReadDirsV1(vol);
             //ReadDirsV2(vol);
-           // ReadItems(vol);
+            ReadItems(vol);
 
             auto stop = std::chrono::high_resolution_clock::now();
             logger.WarnFmt("Reading time : {}", MillisecToStr<std::string>(std::chrono::duration_cast<std::chrono::milliseconds>(stop - start1).count()));

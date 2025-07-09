@@ -47,6 +47,8 @@ static void ShutDownLogger()
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
+    UNREFERENCED_PARAMETER(lpReserved);
+
     try
     {
         switch (ul_reason_for_call)
@@ -105,3 +107,40 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
     return TRUE;
 }
 
+
+/*
+struct SensorDataPack {
+    time_t m_time;
+    float m_temperature;
+    float m_oxigen;
+    // ... other sensor data fields
+};
+
+
+void SendPacketToCloud(SensorDataPack* data) {
+    printf("Data Packet. Temp: %f, Oxigen: %f", data->m_temperature, data->m_oxigen);
+}
+
+int main() 
+{
+    SensorDataPack* sensorData; // uninitialized pointer
+
+    sensorData->m_temperature = ReadTemperatureFromSensor1(); // Undefined Behaviour
+    sensorData->m_oxigen = ReadOxigenFromSensor2();
+    
+    SendPacketToCloud(sensorData);
+
+    return 0;
+}
+
+int main()
+{
+    SensorDataPack sensorData; // uninitialized pointer
+
+    sensorData.m_temperature = ReadTemperatureFromSensor1(); // Undefined Behaviour
+ 
+    SendPacketToCloud(&sensorData);
+
+    return 0;
+}
+*/
