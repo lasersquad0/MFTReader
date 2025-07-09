@@ -463,6 +463,7 @@ static_assert(offsetof(ATTR_INDEX_ROOT, ihdr) == 0x10);
 #define NTFS_IE_LAST		 (2)
 
 // Directory entry structure. 
+// another name is INDEX_ENTRY_HEADER that contains INDEX_ENTRY entries inside it.
 struct NTFS_DE 
 {
     union 
@@ -508,7 +509,7 @@ typedef uint64_t CLST;
 
 struct DATA_RUN_ITEM 
 {
-    uint32_t len; // Length in clusters.
+    CLST len; // Length in clusters.
     CLST vcn; // Virtual cluster number.
     CLST lcn; // Logical cluster number.
 

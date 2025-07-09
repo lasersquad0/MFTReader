@@ -20,14 +20,8 @@
 #include "FileLevel.h"
 
 
-
-//#define IS_DOT_DIR(fname) (((fname[0]) == '.' && (fname[1]) == 0) || ((fname[0]) == '.' && (fname[1]) == '.' && (fname[2]) == 0))
-//#define FILEDATA WIN32_FIND_DATA
 #define MAX_DIR_LEVELS 100
 #define MAX_DIRS 100'000
-//#define MAKE_FULL_FILESIZE(_h,_l)  ((((ullong)_h) << 32) + (ullong)_l)
-//#define IS_DIR(_) (((_).dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) > 0)
-//#define IS_REPARSE(_) (((_).dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) > 0)
 
 struct CacheItemRef
 {
@@ -98,13 +92,13 @@ public:
 		assert(level->Level() == 0);
 		assert(level->Count() == 0); // cannot AddRoot several times
 		
-		MFT_REF rootId;
+		MFT_REF rootId{0};
 		rootId.Id = MFT_ROOT_REC_ID; // root MFT is is always 5.
 		
 		uint32_t idx = level->AddValue(0, 0, rootId, fileData);
 		assert(idx == 0);
 		
-		return CacheItemRef{ 0, 0};
+		return CacheItemRef{0, 0};
 	}
 
 	CacheItemRef AddItem(uint32_t parent, uint32_t itemLevel, MFT_REF MFTRecID, ATTR_FILE_NAME* fileData)
@@ -326,7 +320,7 @@ void FillFileData(const TCHAR* filePath, FILEDATA& fileData)
 			do
 			{
 				string_t fn(sitem->Name(), sitem->FileAttr.FileNameLen);
-				if (sitem->Dir())
+				if (sitem->IsDir())
 					fout << wtos(fn) << '\\' << EndLine;
 				else
 					fout << wtos(fn) << EndLine;
@@ -344,7 +338,7 @@ void FillFileData(const TCHAR* filePath, FILEDATA& fileData)
 			do
 			{
 				string_t fn(sitem->Name(), sitem->FileAttr.FileNameLen);
-				if (sitem->Dir())
+				if (sitem->IsDir())
 					array.AddValue(fn + L"\\");
 				else
 					array.AddValue(fn);
@@ -590,7 +584,7 @@ void FillFileData(const TCHAR* filePath, FILEDATA& fileData)
 					ftEncrypted, ftOffline, ftSparse, ftPinned, ftNotIndexed, ftLast};
 	void PrintStat()
 	{
-		uint stat[ftLast]{};
+		uint32_t stat[ftLast]{};
 		size_t totalItems = 0;
 		size_t countedItems = 0;
 		for (level_type& lv : FCacheData)

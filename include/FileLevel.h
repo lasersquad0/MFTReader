@@ -26,10 +26,11 @@ struct CACHE_ITEM
 	uint32_t Size() const {	return sizeof(CACHE_ITEM) + FileAttr.FileNameLen * sizeof(wchar_t); } // size in bytes of current item instance 
 	
 	wchar_t* Name() const { return (wchar_t*)((uint8_t*)this + sizeof(CACHE_ITEM)); }
-	bool MetaFile() const { return (FileAttr.ParentDir.sId.low == MFT_ROOT_REC_ID) && (Name()[0] == L'$'); }
-	bool DotDir() const { return (FileAttr.FileNameLen == 1) && (Name()[0] == L'.'); }
-	bool Dir() const { return (FileAttr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::DIRECTORY) > 0;	}
-	bool Reparse() const { return (FileAttr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::REPARSE_POINT) > 0; };
+	bool IsMetaFile() const { return (FileAttr.ParentDir.sId.low == MFT_ROOT_REC_ID) && (Name()[0] == L'$'); }
+	bool IsDotDir() const { return (FileAttr.FileNameLen == 1) && (Name()[0] == L'.'); }
+	bool IsDir() const { return (FileAttr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::DIRECTORY) > 0;	}
+	bool IsReparse() const { return (FileAttr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::REPARSE_POINT) > 0; };
+	bool NtfsInternal() const { return IsMetaFile() || IsDotDir(); }
 };
 
 class TFileLevelList
