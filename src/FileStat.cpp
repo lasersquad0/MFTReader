@@ -10,12 +10,11 @@
 #include "Functions.h"
 #include "NTFS.h"
 
-TItemInfoList gItemsList;
-
-bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirLevel, ITEM_INFO& itemInfo)
+// reads info about mftRecRef item ONLY
+// does not go to child items recursively
+// result is returned in parameter itemInfo 
+bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInfo)
 {
-    if (dirLevel > 60) throw std::runtime_error("dirLevel > 30 !!!!!!!");
-
     GET_LOGGER;
 
     FileListPred pred = [&itemInfo](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
@@ -25,7 +24,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
         };
 
     NTFS_FILE_RECORD_INPUT_BUFFER nfrib;
-    nfrib.FileReferenceNumber.QuadPart = parentDirRecID.sId.low;
+    nfrib.FileReferenceNumber.QuadPart = mftRecRef.sId.low;
     //nfrib.FileReferenceNumber.QuadPart = nvdb.MftValidDataLength.QuadPart / nvdb.BytesPerFileRecordSegment - 1;
 
     ULONG cb = __builtin_offsetof(NTFS_FILE_RECORD_OUTPUT_BUFFER, FileRecordBuffer[volData.BytesPerMFTRec]);
@@ -56,7 +55,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
     // Make sure DeviceIoControl returned exactly the MFT record number we requested.
     // DeviceIoControl may return closest existing MFT record when record with requested ID is "free".
     assert(pnfrob->FileReferenceNumber.QuadPart == pmftrec->IndexMFTRec);
-    assert(parentDirRecID.sId.low == pmftrec->IndexMFTRec);
+    assert(mftRecRef.sId.low == pmftrec->IndexMFTRec);
 
     assert(pmftrec->FileRecSize > pmftrec->FirstAttrOffset);
 
@@ -141,10 +140,17 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
                 logger.TraceFmt("Created: {}", wtos(buf));
                 */
 
+                assert((stdinfo->FileAttrib & 0x00000080) == 0);// check that NORMAL bit is always zero
+
+                logger.DebugFmt("File Attrib: {}", stdinfo->FileAttrib);
                 logger.DebugFmt("Version number: {}", stdinfo->VersionNum);
                 logger.DebugFmt("Max version num: {}", stdinfo->max_ver_num);
                 logger.DebugFmt("Class Id: {}", stdinfo->class_id);
                 logger.DebugFmt("Owner Id: {}", stdinfo->owner_id);
+                logger.DebugFmt("USN: {}", stdinfo->usn);
+                logger.DebugFmt("Security ID: {}", stdinfo->security_id);
+                logger.DebugFmt("Quota Charged: {}", stdinfo->quota_charged);
+
 
                 break;
             }
@@ -154,20 +160,21 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
                 wchar_t* tmp = GetFName(fname, sizeof(ATTR_FILE_NAME));
                 std::wstring name(tmp, fname->FileNameLen);
                 itemInfo.FileNames.AddValue(name);
-                itemInfo.FileNamesCount++;
+                //itemInfo.FileNamesCount++;
 
                 if (fname->NameType != FILE_NAME_DOS)
                 {
-                    itemInfo.MainName = name;
-                    itemInfo.FileAttr = fname->dup.FileAttrib;
+                    itemInfo.MainName = name.c_str();
+                    itemInfo.FileAttrib = fname->dup.FileAttrib;
                 }
 
-                assert(itemInfo.FileNamesCount < 200);
+                assert((fname->dup.FileAttrib & 0x00000080) == 0);// check that NORMAL bit is always zero
 
-                logger.DebugFmt("File parent rec ID : {:#x}", fname->ParentDir.Id);
-                logger.DebugFmt("File name type : {} ({})", fname->NameType, FileNameTypes[fname->NameType]);
-                logger.DebugFmt("File DOS attrib : {:#x}", fname->dup.FileAttrib);
+                logger.DebugFmt("File parent rec ID: {0} ({0:#x})", fname->ParentDir.Id);
+                logger.DebugFmt("File name type: {} ({})", fname->NameType, FileNameTypes[fname->NameType]);
+                logger.DebugFmt("File DOS attrib: {0} ({0:#x})", fname->dup.FileAttrib);
                 logger.DebugFmt("File name: '{}'", wtos(name));
+                logger.DebugFmt("File size: '{}'", fname->dup.FileSize);
 
                 break;
             }
@@ -192,7 +199,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
                 assert(indexR->IndexBlockClst == 1);
                 assert(indexR->Rule == COLLATION_RULE::FILENAME);
 
-                logger.DebugFmt("IndexRoot attr type: {:#x} ({})", (uint32_t)indexR->AttrType, AttrName(currAttr->AttrType));
+                logger.DebugFmt("IndexRoot indexed attr type: {:#x} ({})", (uint32_t)indexR->AttrType, AttrName(indexR->AttrType));
                 logger.DebugFmt("Collation rule: {}", (uint32_t)indexR->Rule);
                 logger.DebugFmt("Dir size: {} {}", indexR->ihdr.Flags, (indexR->ihdr.Flags == 0 ? " (SMALL DIR)" : " (BIG DIR)"));
 
@@ -234,7 +241,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
                     {
                         if (visitedMFTRec.IndexOf(attrEntry->ref.sId.low) == -1)
                         {
-                            if (!ReadMftItemInfo(volData, attrEntry->ref, dirLevel, itemInfo))
+                            if (!ReadMftItemInfo(volData, attrEntry->ref, itemInfo))
                             {
                                 logger.Error("ReadMftItemInfo() returned false!");
                             }
@@ -249,7 +256,6 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
                     assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
                     //assert(attrEntry->StartVCN == 0);
                     //if (attrEntry->AttrType == ATTR_ZERO) break;
-
                 }
 
                 logger.Debug("ATTR_LIST_ATTR FINISHED");
@@ -277,10 +283,9 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
                 itemInfo.ResidentData = true;
 
                 std::wstring name(GetAttrName(currAttr, AttrNameOffset), currAttr->AttrNameSize);
-                itemInfo.DataStreamNames[itemInfo.DataStreamsCount++] = name;
-                assert(itemInfo.DataStreamsCount < 20);
-
-                logger.DebugFmt("Resident Data size: {}", currAttr->res.DataSize);
+                itemInfo.DataStreamNames[name]++;
+                
+                logger.DebugFmt("Resident DATA size: {}", currAttr->res.DataSize);
 
                 break;
             }
@@ -296,12 +301,12 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
             case ATTR_PROPERTYSET:
             case ATTR_LOGGED_UTILITY_STREAM: // can be resident or non-resident
             {
-                logger.DebugFmt("Attr: {}, AttrName: {}. We do not process this attribute.", AttrName(currAttr->AttrType), nameOfAttr2);
+                logger.DebugFmt("We do not process this attribute. Attr: '{}', AttrName: '{}'.", AttrName(currAttr->AttrType), nameOfAttr2);
                 break;
             }
 
             default:
-                logger.WarnFmt("UNKNOWN Resident attr has been met. Type:{0}, Name:{1}, MFT Id:{2:#x} ({2})", AttrName(currAttr->AttrType), nameOfAttr2, pmftrec->IndexMFTRec);
+                logger.WarnFmt("UNKNOWN Resident attr has been met. Type:{0}, Name:'{1}', MFT Id:{2:#x} ({2})", AttrName(currAttr->AttrType), nameOfAttr2, pmftrec->IndexMFTRec);
 
             } // switch
 
@@ -323,10 +328,20 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
                 itemInfo.ResidentData = false;
 
                 std::wstring name(GetAttrName(currAttr, AttrNameOffset), currAttr->AttrNameSize);
-                itemInfo.DataStreamNames[itemInfo.DataStreamsCount++] = name;
-                assert(itemInfo.DataStreamsCount < 20);
+                itemInfo.DataStreamNames[name]++;
 
-                logger.DebugFmt("Attr: ATTR_DATA. Name: {}. We do not process this attribute.", nameOfAttr2);
+                logger.DebugFmt("We do not process this attribute. Attr: ATTR_DATA. Name: '{}'. ", nameOfAttr2);
+
+                if (DataRunsDecode(currAttr, itemInfo.Node.DataRuns)) // decode data runs for testing purposes
+                {
+                    logger.DebugFmt("Resident DATA data runs. StreamName: {}, Count: {}.", nameOfAttr2, itemInfo.Node.DataRuns.Count());
+                }
+                else
+                {
+                    logger.Error("DataRunsDecode finished with ERROR.");
+                    break;
+                }
+
                 break;
             }
 
@@ -345,10 +360,10 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
             }
             case ATTR_ALLOC: // NONresident. Only.
             {
-                if (itemInfo.NonResidentAlloc)
+                /*if (itemInfo.NonResidentAlloc)
                     logger.WarnFmt("Looks like two non-resident ALLOC attributes ('{}') have met in a single MFT record: {}.", nameOfAttr2, pmftrec->IndexMFTRec);
 
-                itemInfo.NonResidentAlloc = true;
+                itemInfo.NonResidentAlloc = true;*/
 
                 if (!DataRunsDecode(currAttr, itemInfo.Node.DataRuns))
                 {
@@ -376,25 +391,23 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
                     break;
                 }
 
-                uint8_t* dataBuf = nullptr;
-
-                //assert(dataRuns.Count() == 1); //assuming that one LCN is always enough for list of attributes
-
                 if (dataRuns.Count() > 1)
-                    logger.InfoFmt("Unusual case. ATTR_LIST occupies {} data runs", dataRuns.Count());
+                    logger.InfoFmt("UNUSUAL case. Non-resident ATTR_LIST occupies {} data runs", dataRuns.Count());
 
                 THArray<uint32_t> visitedMFTRec;
                 uint32_t currRun = 0;
+                uint64_t processedAttrSize = 0;
 
                 while (currRun < dataRuns.Count())
                 {
                     DATA_RUN_ITEM& rli = dataRuns[currRun];
                     logger.DebugFmt("[ReadMftItemInfo] Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
 
-                    //assert(rli.len == 1);
+                    if (rli.len > 1)
+                        logger.InfoFmt("UNUSUAL case. Non-resident ATTR_LIST datarun item occupies {} LCNs", rli.len);
 
-                    uint dataBufSize = rli.len * volData.BytesPerCluster;
-                    dataBuf = (uint8_t*)alloca(dataBufSize);
+                    auto dataBufSize = rli.len * volData.BytesPerCluster;
+                    uint8_t* dataBuf = (uint8_t*)alloca(dataBufSize);
 
                     if (!ReadClusters(volData, rli.lcn, rli.len, dataBuf)) // ReadClusters writes a message into log file in case of an error
                     {
@@ -404,8 +417,8 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
                     ATTR_LIST_ENTRY* attrEntry = (ATTR_LIST_ENTRY*)dataBuf;
 
                     //TODO probably we need to parse each cluster separately because end of last attrEntry in cluster#1 does not mean start of first attrEntry in cluster#2
-                    uint8_t* attrEntryEnd1 = dataBuf + currAttr->nonres.RealSize;
-                    uint8_t* attrEntryEnd2 = dataBuf + dataBufSize;
+                   
+                    uint8_t* attrEntryEnd = dataBuf + dataBufSize;
 
                     assert(attrEntry->AttrSize > 0);
                     assert(attrEntry->AttrType > 0);
@@ -422,12 +435,15 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
 
                         if (attrEntry->StartVCN == 0)
                         {
+                            // attributes in attr list located in a separate cluster may refer back to the base record
+                            // because some attributes reside in base mft record and the others in "child" mft record(s)
+                            // the attr list attribute itself is located in cluster that is not mft record, it does not contain signature or Fixups values, etc.
                             if (attrEntry->ref.sId.low != pmftrec->IndexMFTRec) // attrs located in current pmftrec either already parsed or will be parsed during usual cycle of parsing 
                             {
                                 if (visitedMFTRec.IndexOf(attrEntry->ref.sId.low) == -1) // whether we haven't parsed this attribute still
                                 {
                                     // attrEntry->ref is a MFT rec where attr value is located
-                                    if (!ReadMftItemInfo(volData, attrEntry->ref, dirLevel, itemInfo))
+                                    if (!ReadMftItemInfo(volData, attrEntry->ref, itemInfo))
                                     {
                                         logger.Error("ReadMftItemInfo() returned false!");
                                     }
@@ -443,13 +459,22 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
                                 logger.WarnFmt("StartVCN ({}) greater than max MFT index ({}).", attrEntry->StartVCN, volData.MaxMFTIndex);
                         }
 
+                        processedAttrSize += attrEntry->AttrSize;
+                        if (processedAttrSize >= currAttr->nonres.RealSize) break;
+
                         attrEntry = (ATTR_LIST_ENTRY*)Add2Ptr(attrEntry, attrEntry->AttrSize);
-                        if ((uint8_t*)attrEntry >= attrEntryEnd1) break;
-                        if ((uint8_t*)attrEntry >= attrEntryEnd2) break;
+                        if ((uint8_t*)attrEntry >= attrEntryEnd) break;
                         //assert(attrEntry->AttrId > 0);
                         assert(attrEntry->AttrType > 0);
                         assert(attrEntry->AttrSize > 0);
                         assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
+                    }
+
+                    // check again if we finished with ATTR_LIST attribute
+                    if (processedAttrSize >= currAttr->nonres.RealSize)
+                    {
+                        logger.DebugFmt("[ReadMftItemInfo] processedAttrSize:{} >= currAttr->nonres.RealSize:{}", processedAttrSize, currAttr->nonres.RealSize);
+                        break;
                     }
 
                     currRun++;
@@ -462,7 +487,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
             case ATTR_EA: // can be resident or non-resident 
             case ATTR_LOGGED_UTILITY_STREAM: // can be resident and non-resident
             {
-                logger.DebugFmt("Attr: {}, Name: {}. We do not process this attribute.", AttrName(currAttr->AttrType), nameOfAttr2);
+                logger.DebugFmt("We do not process this attribute. Attr: '{}', Name: '{}'.", AttrName(currAttr->AttrType), nameOfAttr2);
                 break;
             }
             default:
@@ -477,7 +502,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
 
     } while (*((DWORD*)currAttr) != ATTR_END /*0xFFFFFFFF*/);
 
-
+    // only for base MFT records
     if (pmftrec->ParentFileRec.Id == 0)
     {
         // once we read all attributes we are ready to process ALLOC data runs
@@ -485,119 +510,136 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF parentDirRecID, uint32_t dirL
         {
             // single function but different behaviour of adding files/dirs into lists
             // in other place where ProcessAllocDataRuns called lambda adds found dirs into another list
-            if (!ProcessAllocDataRuns(volData, itemInfo.Node, pred /*[&itemInfo](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
-                {
-                    ci_string ciwnm(GetFName(attr, sizeof(ATTR_FILE_NAME)), attr->FileNameLen);
-                    itemInfo.Node.FileList.AddValue({ ciwnm, *attr, ref });
-                } */)
-               )
+            if (!ProcessAllocDataRuns(volData, itemInfo.Node, pred))
             {
                 logger.Error("ProcessAllocDataRuns finished with error.");
                 //return is not needed here because node.FileList may contain items from INDEX_ROOT and partially from ALLOCATION
             }
         }
-
-        gItemsList.AddValue(itemInfo);
-
-        for (auto& item : itemInfo.Node.FileList)
-        {
-            ITEM_INFO newItemInfo{ 0 };
-
-            if (dirLevel == 0) std::wcout << item.ciName.c_str() << std::endl;
-
-            if (!IsMetaFile(item) && !IsDotDir(item.ciName)) // bypass hidden mft metafiles
-                if (!ReadMftItemInfo(volData, item.MFTRef, dirLevel + 1, newItemInfo))
-                {
-                    logger.ErrorFmt("ReadMftItemInfo() finished with error for MFT rec: {}", item.MFTRef.sId.low);
-                }
-        }
-
-        itemInfo.Node.Clear(); // list of subitems is not needed any more. save memory.
     }
 
     return true;
 }
 
+// reads all MFT items recursivelly starting from startMftRec.
+// if startMftRec is FILE then only info about this file will be read and added to the parameter 'list' (TItemInfoList)
+// if startMftRec is DIRECTORY the function will navigate all child items and child items of child items, read all info and add all those items into param 'list'
+bool ReadMftItems(VOLUME_DATA volData, MFT_REF startMmftRec, uint32_t dirLevel, TItemInfoList& list)
+{
+    GET_LOGGER;
 
+    ITEM_INFO itemInfo{ 0 };
+
+    if (!ReadMftItemInfo(volData, startMmftRec, itemInfo))
+    {
+        logger.ErrorFmt("ReadMftItemInfo() finished with error for MFT rec: {}", startMmftRec.sId.low);
+        return false;
+    }
+
+    list.AddValue(itemInfo);
+
+    for (auto& item : itemInfo.Node.FileList)
+    {
+        if (dirLevel == 0) std::wcout << item.ciName.c_str() << std::endl;
+        //TODO how to bypass Reparse dirs here?
+        if (!item.NtfsInternal()) // bypass hidden mft metafiles
+            if (!ReadMftItems(volData, item.MFTRef, dirLevel + 1, list))
+            {
+                logger.ErrorFmt("ReadMftItema() finished with error for MFT rec: {}", item.MFTRef.sId.low);
+            }
+    }
+
+    itemInfo.Node.Clear(); // list of subitems is not needed any more. save memory.
+
+   return true;
+}
 
 void ReadItems(VOLUME_DATA& volData)
 {
     GET_LOGGER;
 
-    extern TItemInfoList gItemsList;
-    gItemsList.SetCapacity(1'000'000); // Expect 1M files and dirs
+    TItemInfoList itemsList;
+    itemsList.SetCapacity(1'000'000); // Expect 1M files and dirs
 
     MFT_REF startId;
     startId.Id = MFT_ROOT_REC_ID;
-    ITEM_INFO iInfo{ 0 };
-
-    if (!ReadMftItemInfo(volData, startId, 0, iInfo))
+    
+    if (!ReadMftItems(volData, startId, 0, itemsList))
     {
-        logger.Error("ReadMftItemInfo() returned false!");
+        logger.Error("ReadMftItems() returned false!");
     }
 
 
-    auto AttrCountGreater7 = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.AttrsCount > 7; });
-    auto HardLinksGreater7 = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.HardLinksCount > 7; });
-    auto DataStreamsCountGreater2 = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.DataStreamsCount > 2; });
-    auto FilenamesCountGreater9 = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.FileNamesCount > 9; });
-    auto FilenamesCountGreater5 = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.FileNamesCount > 5; });
-    auto HasNonresAttrList = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.NonResidentAttrList; });
-    auto HasNonresBitmap = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.NonResidentBitmap; });
-    auto HasResidentData = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return a.ResidentData; });
+    auto AttrCountGreater9 = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.AttrsCount > 9; });
+    auto HardLinksGreater9 = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.HardLinksCount > 9; });
+    auto DataStreamsCountGreater2 = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.DataStreamNames.Count() > 2; });
+    auto FilenamesCountGreater13 = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.FileNames.Count() > 13; });
+    auto FilenamesCountGreater7 = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.FileNames.Count() > 7; });
+    auto HasNonresAttrList = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.NonResidentAttrList; });
+    auto HasNonresBitmap = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.NonResidentBitmap; });
+    auto HasResidentData = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.ResidentData; });
 
-    auto maxHardLinks = std::max_element(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) {return a.HardLinksCount < b.HardLinksCount; });
-    auto maxAttrs = std::max_element(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) {return a.AttrsCount < b.AttrsCount; });
-    auto maxFilenames = std::max_element(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) {return a.FileNamesCount < b.FileNamesCount; });
-    auto maxDataStreams = std::max_element(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) {return a.DataStreamsCount < b.DataStreamsCount; });
+    auto maxHardLinks = std::max_element(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) {return a.HardLinksCount < b.HardLinksCount; });
+    auto maxAttrs = std::max_element(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) {return a.AttrsCount < b.AttrsCount; });
+    auto maxFilenames = std::max_element(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) {return a.FileNames.Count() < b.FileNames.Count(); });
+    auto maxDataStreams = std::max_element(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) {return a.DataStreamNames.Count() < b.DataStreamNames.Count(); });
 
-    std::cout << "Total items count: " << gItemsList.Count() << std::endl;
-    std::cout << "Attrs count > 7: " << AttrCountGreater7 << std::endl;
-    std::cout << "Hard Links count > 7: " << HardLinksGreater7 << std::endl;
-    std::cout << "Data streams count > 2: " << DataStreamsCountGreater2 << std::endl;
-    std::cout << "Filenames count > 9: " << FilenamesCountGreater9 << std::endl;
-    std::cout << "Filenames count > 5: " << FilenamesCountGreater5 << std::endl;
-    std::cout << "Have non-resident attr_list: " << HasNonresAttrList << std::endl;
-    std::cout << "Have non-resident bitmap: " << HasNonresBitmap << std::endl;
-    std::cout << "Have resident data: " << HasResidentData << std::endl;
-    std::cout << "ITEM_INFO size:" << sizeof(ITEM_INFO) << std::endl;
-    std::cout << "DIR_NODE size:" << sizeof(DIR_NODE) << std::endl;
-    std::cout << std::format("Max hard links count: {}, file name: {}", (*maxHardLinks).HardLinksCount, wtos((*maxHardLinks).MainName)) << std::endl;
-    std::cout << std::format("Max attrs count: {}, file name: {}", (*maxAttrs).AttrsCount, wtos((*maxAttrs).MainName)) << std::endl;
-    std::cout << std::format("Max file names count:{}, file name: {}", (*maxFilenames).FileNamesCount, wtos((*maxFilenames).MainName)) << std::endl;
-    std::cout << std::format("Max data streams count:{}, filename:{}", (*maxDataStreams).DataStreamsCount, wtos((*maxDataStreams).MainName)) << std::endl;
+    std::cout << std::endl;
+    std::cout << "Total items Count: " << itemsList.Count() << std::endl;
+    std::cout << "Attrs Count > 9: " << AttrCountGreater9 << std::endl;
+    std::cout << "Hard links Count > 9: " << HardLinksGreater9 << std::endl;
+    std::cout << "Data streams Count > 2: " << DataStreamsCountGreater2 << std::endl;
+    std::cout << "Filenames Count > 13: " << FilenamesCountGreater13 << std::endl;
+    std::cout << "Filenames Count > 7: " << FilenamesCountGreater7 << std::endl;
+    std::cout << "Have non-resident ATTR_LIST: " << HasNonresAttrList << std::endl;
+    std::cout << "Have non-resident BITMAP: " << HasNonresBitmap << std::endl;
+    std::cout << "Have resident Data: " << HasResidentData << std::endl;
+  
+    std::cout << std::format("Max hard links Count: {}, file name: {} (mft:{})", (*maxHardLinks).HardLinksCount, wtos((*maxHardLinks).MainName), (*maxHardLinks).RecID.sId.low) << std::endl;
+    std::cout << std::format("Max attrs Count: {}, file name: {} (mft:{})", (*maxAttrs).AttrsCount, wtos((*maxAttrs).MainName), (*maxAttrs).RecID.sId.low) << std::endl;
+    std::cout << std::format("Max file names Count:{}, file name: {} (mft:{})", (*maxFilenames).FileNames.Count(), wtos((*maxFilenames).MainName), (*maxFilenames).RecID.sId.low) << std::endl;
+    std::cout << std::format("Max data streams Count:{}, filename:{} (mft:{})", (*maxDataStreams).DataStreamNames.Count(), wtos((*maxDataStreams).MainName), (*maxDataStreams).RecID.sId.low) << std::endl;
 
-    std::cout << "Datastream names:" << std::endl;
-    for (auto& ds : (*maxDataStreams).DataStreamNames)
+    std::wcout << L"Datastream names for "<< (*maxDataStreams).MainName.c_str() << ":" << std::endl;
+    for (auto ds : (*maxDataStreams).DataStreamNames)
     {
-        std::cout << wtos(ds) << std::endl;
+        if(ds.first.empty())
+            std::wcout << L"<empty> - " << ds.second << std::endl;
+        else
+            std::wcout << ds.first << " - " << ds.second << std::endl;
     }
 
-    std::cout << "File names:" << std::endl;
+    std::wcout << "File names for " << (*maxFilenames).MainName.c_str() << ":" << std::endl;
     for (auto& fn : (*maxFilenames).FileNames)
     {
-        std::cout << wtos(fn) << std::endl;
+        std::wcout << fn << std::endl;
     }
 
-    auto dirCount = std::count_if(gItemsList.begin(), gItemsList.end(), [](ITEM_INFO& a) { return IsItemDir(a); });
+    std::wcout << "Attribute counts for " << (*maxAttrs).MainName.c_str() << ":" << std::endl;
+    for (int i = 1; i < ATTR_TYPE_CNT; i++) // bypass ATTR_ZERO
+    {
+        std::wcout << AttrTypeNames[i] << " = " <<(*maxAttrs).AttrCounters[i] << std::endl;
+    }
 
-    std::cout << toStringSepA(gItemsList.Count()) + " - total" << std::endl;
-    std::cout << toStringSepA(gItemsList.Count() - dirCount) + " - files" << std::endl; // only files 
+    auto dirCount = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.IsDir(); });
+
+    std::cout << toStringSepA(itemsList.Count()) + " - total" << std::endl;
+    std::cout << toStringSepA(itemsList.Count() - dirCount) + " - files" << std::endl; // only files 
     std::cout << toStringSepA(dirCount) + " - dirs" << std::endl; // only dirs 
 
     /*std::cout << "Sorting... " << std::endl;
-    std::sort(gItemsList.begin(), gItemsList.end());
+    std::sort(itemsList.begin(), itemsList.end());
 
     std::string filename = "ListMFTFile_sorted.log";
     LogEngine::TFileStream ff(filename);
 
-    ff << toStringSepW(gItemsList.Count()) + L" - total";
-    ff << toStringSepW(gItemsList.Count() - dirCount) + L" - files"; // only files
+    ff << toStringSepW(itemsList.Count()) + L" - total";
+    ff << toStringSepW(itemsList.Count() - dirCount) + L" - files"; // only files
     ff << toStringSepW(dirCount) + L" - dirs"; // only dirs
 
     std::cout << "Saving list of files to " << filename << std::endl;
 
-    for (auto& item : gItemsList)
+    for (auto& item : itemsList)
     {
         if (IsItemDir(item))
             item.MainName += L'\\';
@@ -605,5 +647,8 @@ void ReadItems(VOLUME_DATA& volData)
         ff << item.MainName;
     }*/
 
-    gItemsList.ClearMem();
+    std::cout << "Freeing memory..." << std::endl;
+    itemsList.ClearMem();
+    std::cout << "Freed" << std::endl;
 }
+
