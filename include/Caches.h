@@ -18,7 +18,7 @@ class TMFTRecCache : public THash<uint64_t, uint8_t*>
 public:
     ~TMFTRecCache() override
     {
-        for (uint i = 0; i < FAValues.Count(); i++) delete[] FAValues[i];
+        for (uint32_t i = 0; i < FAValues.Count(); i++) delete[] FAValues[i];
     }
 };
 
@@ -33,16 +33,16 @@ private:
     THash2<CLST, CLST, uint8_t*> FHash; // mapping mft records to VCNs and LCNs
 public:
     using rec_type = decltype(FHash)::ValuesHash::iterator::value_type;
-    TLCNRecs(uint recSize, uint capacity) : FRecs(recSize) { SetCapacity(capacity); }
+    TLCNRecs(uint32_t recSize, uint32_t capacity) : FRecs(recSize) { SetCapacity(capacity); }
 
-    void SetCapacity(uint capacity)  { FRecs.SetCapacity(capacity); FHash.SetCapacity(capacity); }
-    void SetRecordSize(uint recSize) { FRecs.SetItemSize(recSize); }
+    void SetCapacity(uint32_t capacity)  { FRecs.SetCapacity(capacity); FHash.SetCapacity(capacity); }
+    void SetRecordSize(uint32_t recSize) { FRecs.SetItemSize(recSize); }
 
     // adds LCN record to the hash
     // returns pointer to the LCN record from FRecs storage, it differs from mftRecData pointer
     uint8_t* AddRec(uint8_t* lcnRecData, CLST VCN, CLST LCN)
     {
-        uint index = FRecs.Add(lcnRecData);
+        uint32_t index = FRecs.Add(lcnRecData);
         uint8_t* p = (uint8_t*)FRecs.GetPointer(index);
         FHash.SetValue(VCN, LCN, p);
         return p;
@@ -79,7 +79,7 @@ public:
 
         int64_t LCNCounter = 0;
         uint8_t* dataBuf = nullptr;
-        uint32_t dataBufLen = 0; // memory size in clusters, how many clusters is allocated in dataBuf
+        uint64_t dataBufLen = 0; // memory size in clusters, how many clusters is allocated in dataBuf
         uint32_t currRun = 0;
         while (currRun < node.DataRuns.Count())
         {
@@ -89,7 +89,7 @@ public:
             DATA_RUN_ITEM& rli = node.DataRuns[currRun];
             //logger.DebugFmt("Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
 
-            uint32_t rlilen = valuemin((uint32_t)(lastBit + 1 - LCNCounter), rli.len);
+            CLST rlilen = valuemin((CLST)(lastBit + 1 - LCNCounter), rli.len);
 
             if (rlilen > dataBufLen)
             {
