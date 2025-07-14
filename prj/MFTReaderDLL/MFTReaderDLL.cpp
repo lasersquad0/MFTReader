@@ -10,19 +10,22 @@
 #include "framework.h"
 
 
-
 // This is an example of an exported variable
 //MFTREADERDLL_API int nMFTReaderDLL=0;
 
+// this cache variable needs to be global because cache needs to exist after ReadVolume call
+// because cache is returned to outer function. 
 TFileCache gFileCache;
 
 // This is an example of an exported function.
-MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint64_t* volSize, uint32_t* count, uint32_t** data)
+MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint32_t* count, uint32_t** data, ProgressCallbackPtr callback)
 {
     GET_LOGGER;
 
     try
     {
+        gFileCache.Clear(); //clear previous data if any
+        
         logger.InfoFmt("Reading volume data for: {}", wtos(volume));
 
         std::wstring vol = ParseVolume(volume);
@@ -31,16 +34,11 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint64_t* volSize, uint32_t*
         ReadVolumeData(vol, volData); //throws exptions in case of errors
 
         auto start1 = std::chrono::high_resolution_clock::now();
-       
-        //MFT_REF startId{ 0 };
-        //startId.Id = MFT_ROOT_REC_ID;
 
         logger.InfoFmt("Reading file system: {}", wtos(vol));
 
-        gFileCache.Clear();
-
         uint64_t rootDirSize{0};
-        if (!ReadDirectoryV1(volData, 0, nullptr, rootDirSize, gFileCache))
+        if (!ReadDirectoryV1(volData, 0, nullptr, rootDirSize, gFileCache, callback))
             throw std::runtime_error("ReadDirectoryV1 finished with error.");
 
         // pcache - array of pointers to levels
@@ -49,18 +47,17 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint64_t* volSize, uint32_t*
         
         *data = (uint32_t*)pcache;
         *count = gFileCache.LevelsCount();
-        *volSize = rootDirSize;
 
         logger.InfoFmt("data: {:#X}", (uint64_t)(*data));
 
-        for (uint32_t i = 0; i < gFileCache.LevelsCount(); i++)
+        /*for (uint32_t i = 0; i < gFileCache.LevelsCount(); i++)
         {
             auto lev = (TFileCache::TLevel*)pcache[i];//fileCache.GetLevel(i);
            // pcache[i] = (uint32_t*)lev;
             logger.InfoFmt("data[{}] = {:#X}", i, (uint64_t)(pcache[i]));
             logger.InfoFmt("data[{}].FCount = {}", i, (uint64_t)(lev->FCount));
             logger.InfoFmt("data[{}].FStart = {:#X}", i, (uint64_t)(lev->FStart));
-        }
+        }*/
 
         //fileCache.SaveTo("MFTReader_items.txt");
 
@@ -93,6 +90,7 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint64_t* volSize, uint32_t*
         auto stop = std::chrono::high_resolution_clock::now();
         logger.InfoFmt("Volume reading time : {}", MillisecToStr<std::string>(std::chrono::duration_cast<std::chrono::milliseconds>(stop - start1).count()));
 
+        CloseHandle(volData.hVolume);
         //Singleton<TMFTRecCache>::Release();
     }
     catch (std::runtime_error& ex)
