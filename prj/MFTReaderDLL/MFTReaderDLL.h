@@ -26,4 +26,4 @@ struct TError
 	wchar_t ErrText[256];
 };
 
-MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint64_t* volSize, uint32_t* count, uint32_t** data);
+MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint32_t* count, uint32_t** data, ProgressCallbackPtr callback);
