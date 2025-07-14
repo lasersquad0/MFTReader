@@ -99,7 +99,7 @@ void GetFileList(INDEX_HDR* ihdr, FileListPred pred)
 
             if (fattr->NameType != FILE_NAME_DOS) // bypass DOS filenames
             {
-                ci_string ciwnm(GetFName(fattr, sizeof(ATTR_FILE_NAME)), fattr->FileNameLen);
+                ci_string ciwnm(GetFName(fattr), fattr->FileNameLen);
                 if (logger.ShouldLog(LogEngine::Levels::llDebug))
                 {
                     logger.DebugFmt("DE ATTR Parent rec: {0} ({0:#x})", fattr->ParentDir.Id);//TODO check that parent of each file refers to MFT rec we are currently parsing
@@ -178,7 +178,7 @@ void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnames)
 
             if (fattr->NameType != FILE_NAME_DOS) // bypass DOS filenames
             {
-                ci_string ciwnm(GetFName(fattr, sizeof(ATTR_FILE_NAME)), fattr->FileNameLen);
+                ci_string ciwnm(GetFName(fattr), fattr->FileNameLen);
                 logger.DebugFmt("[GetFileListFromNode] Dir Entry Parent rec ID: {0} ({0:#x})", fattr->ParentDir.Id);
                 logger.DebugFmt("[GetFileListFromNode] Dir Entry File/Dir name: '{}'", wtos(ciwnm));
                 logger.DebugFmt("[GetFileListFromNode] Dir Entry File Attrib: {0} (0:#x)", fattr->dup.FileAttrib);
