@@ -22,9 +22,9 @@
 #define Add2Ptr(P, I)		((uint8_t*)(P) + (I))
 
 #define GetAttrName(pRec, field)  ( (wchar_t*)((uint8_t*)(pRec) + (pRec->field)) )
-#define GetFName(pRec, offset) ( (wchar_t*)((uint8_t*)(pRec) + (offset)) )
-#define AttrMetaFile(_) ( ((_)->ParentDir.sId.low == MFT_ROOT_REC_ID) && (GetFName(_, sizeof(*_))[0] == L'$') )
-#define AttrDotDir(_) ( ((_)->FileNameLen == 1) && (GetFName(_, sizeof(*_))[0] == L'.')  )
+#define GetFName(pRec) ( (wchar_t*)((uint8_t*)(pRec) + sizeof(ATTR_FILE_NAME)) )
+#define AttrMetaFile(_) ( ((_)->ParentDir.sId.low == MFT_ROOT_REC_ID) && (GetFName(_)[0] == L'$') )
+#define AttrDotDir(_) ( ((_)->FileNameLen == 1) && (GetFName(_)[0] == L'.')  )
 #define AttrNTfsInternal(_) (AttrMetaFile(_) || AttrDotDir(_))
 
 // ANSI chaset for logging purposes only
@@ -125,12 +125,14 @@ struct ITEM_INFO
 typedef THArray<ITEM_INFO> TItemInfoList;
 typedef std::function<void(const ATTR_FILE_NAME*, const MFT_REF&)> FileListPred;
 
+typedef int32_t (__stdcall *ProgressCallbackPtr)(int32_t progress);
+
 LogEngine::Logger& GetLoggerFunc();
 std::wstring ParseVolume(const std::wstring& vol);
 void ReadVolumeData(const std::wstring& volume, VOLUME_DATA& volumeData);
 bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitField& bitmap);
 bool ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrList, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result);
-bool ReadDirectoryV1(VOLUME_DATA& volData, /*MFT_REF mftRecID,*/ uint32_t parentIdx, CACHE_ITEM* parentItem /*uint32_t levelIdx*/, uint64_t& dirSize, TFileCache& gFileList);
+bool ReadDirectoryV1(VOLUME_DATA& volData, uint32_t parentIdx, CACHE_ITEM* parentItem , uint64_t& dirSize, TFileCache& gFileList, ProgressCallbackPtr callback);
 bool ReadDirectoryV2(VOLUME_DATA& volData, MFT_REF parentMftRecID, uint32_t dirLevel, TFileList& gDirList);
 bool DataRunsDecode(MFT_ATTR_HEADER* attr, TDataRuns& runs);
 bool ReadClusters(const VOLUME_DATA& volData, CLST lcnStart, CLST lcnCnt, PBYTE dataBuf);
