@@ -38,6 +38,7 @@ public:
         FCount = wordsCount;
         FBitsCount = wordsCount * 64;
         auto res = memcpy_s(FBits, wordsCount * sizeof(uint64_t), bits, wordsCount * sizeof(uint64_t));
+        UNREFERENCED_PARAMETER(res);
         assert(!res);
     }
 

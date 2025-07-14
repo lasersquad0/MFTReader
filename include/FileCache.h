@@ -96,6 +96,7 @@ public:
 		rootId.Id = MFT_ROOT_REC_ID; // root MFT is is always 5.
 		
 		uint32_t idx = level->AddValue(0, 0, rootId, fileData);
+		UNREFERENCED_PARAMETER(idx);
 		assert(idx == 0);
 		
 		return CacheItemRef{0, 0};
