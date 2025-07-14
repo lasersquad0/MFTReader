@@ -441,11 +441,11 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node, u
 }
 
 // parentIdx - index of parent item (in previous level) in gFileList
-// levelIdx - level number for being added items
-// DirSize passed by ref because we return dir size to upper directory 
-bool ReadDirectoryV1(VOLUME_DATA& volData, /*MFT_REF mftRecID,*/ uint32_t parentIdx, CACHE_ITEM* parentItem, uint64_t& dirSize, TFileCache& gFileList)
+// parentItem - item (directory) whose files will be read. NULL for root item.
+// dirSize passed by ref because we return dir size to upper directory 
+bool ReadDirectoryV1(VOLUME_DATA& volData, uint32_t parentIdx, CACHE_ITEM* parentItem, uint64_t& dirSize, TFileCache& gFileList, ProgressCallbackPtr callback)
 {
-//    if (parentItem->FLevel + 1 > 30) throw std::runtime_error("dirLevel > 30 !!!!!!!");
+    static int32_t ProgressCounter = 0;
 
     GET_LOGGER;
 
@@ -463,37 +463,43 @@ bool ReadDirectoryV1(VOLUME_DATA& volData, /*MFT_REF mftRecID,*/ uint32_t parent
         return false;
     }
 
-    if (parentItem == nullptr) assert(parentIdx == 0);
+    if (parentItem == nullptr) assert(parentIdx == 0); // parentIdx must be 0 for root item
 
     // we are on the root dir - add root item into gFileList
     // then change levelIdx to 1 to properly read root dirs/files into level 1 instead of 0
     if (parentItem == nullptr)
     {
+        ProgressCounter = 0;
         MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
         MFT_ATTR_HEADER* currAttr = (MFT_ATTR_HEADER*)Add2Ptr(mftRec, mftRec->FirstAttrOffset);
         ATTR_STD_INFO5* stdinfo = (ATTR_STD_INFO5*)Add2Ptr(currAttr, currAttr->res.DataOffset);
         
+        assert(currAttr->AttrType == ATTR_STD_INFO);
+
         auto level0 = gFileList.GetLevel(0);
         assert(level0->Count() == 0);
 
-        ATTR_FILE_NAME* fattr = (ATTR_FILE_NAME*)alloca(sizeof(ATTR_FILE_NAME) + (volData.Name.size())*sizeof(wchar_t));
-        
-        fattr->FileNameLen = (uint8_t)volData.Name.size();
+        auto fattrSize = sizeof(ATTR_FILE_NAME) + (volData.Name.size()) * sizeof(wchar_t);
+        ATTR_FILE_NAME* fattr = (ATTR_FILE_NAME*)alloca(fattrSize);
+        ZeroMemory(fattr, fattrSize);
+
+        fattr->FileNameLen = (uint8_t)volData.Name.size(); //name of disk C: or D:
         fattr->NameType = FILE_NAME_UNICODE_AND_DOS;
         fattr->ParentDir = MFTRec;
         fattr->dup.CreateTime = stdinfo->CreateTime;
         fattr->dup.ModifyTime = stdinfo->ModifyTime;
         fattr->dup.ModifyAttrTime = stdinfo->ModifyAttrTime;
         fattr->dup.LastAccessTime = stdinfo->LastAccessTime;
-        fattr->dup.FileAttrib = stdinfo->FileAttrib | (uint32_t)FILE_ATTR_FLAGS::DIRECTORY; //this is HACK because STD attr does not contain dir flag for '.' directory for some reason. while FILENAME attr for '.' does contain dir flag.
-        //wcsncpy_s((wchar_t*)Add2Ptr(fattr, sizeof(ATTR_FILE_NAME)), fattr->FileNameLen, volData.Name.c_str(), fattr->FileNameLen);
+        
+        // this is HACK because STD attr does not contain dir flag for '.' directory for some reason. while FILENAME attr for '.' does contain dir flag.
+        // many articles about NTFS tell us that STD attr does not contain DIR flag while FILENAME does 
+        fattr->dup.FileAttrib = stdinfo->FileAttrib | (uint32_t)FILE_ATTR_FLAGS::DIRECTORY; 
         wmemcpy_s((wchar_t*)Add2Ptr(fattr, sizeof(ATTR_FILE_NAME)), fattr->FileNameLen, volData.Name.c_str(), fattr->FileNameLen);
 
         level0->AddValue(0, 0, MFTRec, fattr);
+
+        //IMPORTANT: change parentItem to new parent to proper read files from root dir into level 1 (level 0 is a root dir like C: or D:) 
         parentItem = level0->GetValue(0);
-        
-        //IMPORTANT: change levelIdx to 1 to proper read files from root dir into level 1 instead of 0 
-        //levelIdx = 1;
     }
 
     auto level = gFileList.GetLevel(parentItem->FLevel + 1);
@@ -547,10 +553,10 @@ bool ReadDirectoryV1(VOLUME_DATA& volData, /*MFT_REF mftRecID,*/ uint32_t parent
 
         if (item->IsDir())
         {
-            if (!item->IsReparse())
+            if (!item->IsReparse()) //bypass reparse items
             {
                 uint64_t childDirSize{ 0 };
-                if (!ReadDirectoryV1(volData, /*item->FMFTRecID,*/ i, item /*levelIdx + 1*/, childDirSize, gFileList))
+                if (!ReadDirectoryV1(volData, i, item, childDirSize, gFileList, callback))
                     logger.ErrorFmt("ReadDirectoryV1 finished with error for MFT rec: {}", item->FMFTRecID.sId.low);
                 dirSize += childDirSize;
             }
@@ -562,7 +568,11 @@ bool ReadDirectoryV1(VOLUME_DATA& volData, /*MFT_REF mftRecID,*/ uint32_t parent
 
         // print only dirs of first and second levels.
         if (parentItem->FLevel == 0)
+        {
+            // callback can be NULL
+            if(callback) callback(ProgressCounter++); //call callback only for items from root directory
             logger.InfoFmt("{} - {}", wtos(std::wstring(item->Name(), item->FileAttr.FileNameLen)), toStringSepA(item->FileAttr.dup.FileSize));
+        }
 
         //if (levelIdx == 2) logger.InfoFmt("\t{}", wtos(std::wstring(item->Name(), item->FileAttr.FileNameLen)));
 
@@ -579,7 +589,7 @@ void ReadDirsV1(VOLUME_DATA& volData)
     TFileCache fileCache;
     uint64_t rootDirSize{0};
 
-    if (!ReadDirectoryV1(volData, 0, nullptr, rootDirSize, fileCache))
+    if (!ReadDirectoryV1(volData, 0, nullptr, rootDirSize, fileCache, nullptr))
     {
         throw std::runtime_error("ReadDirectoryV1 finished with error.");
     }
