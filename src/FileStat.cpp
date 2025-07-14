@@ -19,7 +19,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
 
     FileListPred pred = [&itemInfo](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
         {
-            ci_string ciwnm(GetFName(attr, sizeof(ATTR_FILE_NAME)), attr->FileNameLen);
+            ci_string ciwnm(GetFName(attr), attr->FileNameLen);
             itemInfo.Node.FileList.AddValue({ ciwnm, *attr, ref });
         };
 
@@ -157,8 +157,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
             case ATTR_FILENAME: // resident. Only.
             {
                 ATTR_FILE_NAME* fname = (ATTR_FILE_NAME*)attrValue;
-                wchar_t* tmp = GetFName(fname, sizeof(ATTR_FILE_NAME));
-                std::wstring name(tmp, fname->FileNameLen);
+                std::wstring name(GetFName(fname), fname->FileNameLen);
                 itemInfo.FileNames.AddValue(name);
                 //itemInfo.FileNamesCount++;
 
