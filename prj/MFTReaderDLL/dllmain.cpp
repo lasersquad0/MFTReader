@@ -1,6 +1,8 @@
 // dllmain.cpp : Defines the entry point for the DLL application.
 #include "framework.h"
 
+HMODULE THIS_DLL_HANDLE = nullptr;
+
 static void InitLogger()
 {
     try
@@ -12,11 +14,21 @@ static void InitLogger()
         }
         else*/ // otherwise configure loggers in code 
         {
+            // when run when windows starts current dir=Windows/System32 or similar.
+            // DLL cannot create log file in this directory, that is why we get DLL folder and create log file there
+            // it is assumed that DLL is located in a folder where it is possible to create log file
+            std::string dllpath;
+            dllpath.resize(MAX_PATH);
+            DWORD res = GetModuleFileNameA(THIS_DLL_HANDLE, dllpath.data(), (DWORD)dllpath.size());
+            assert(res > 0);
+            dllpath = ExtractFileDir(dllpath);
+            //OutputDebugStringA(dllpath.c_str());
+
             using namespace LogEngine;
             auto& logger = GetLogger(MFT_LOGGER_NAME);
-            std::shared_ptr<FileLockSinkST> sink(new FileLockSinkST("filelocksink", "LogMFTReaderDLL.log"));
+            std::shared_ptr<FileLockSinkST> sink(new FileLockSinkST("filelocksink", dllpath + "LogMFTReaderDLL.log"));
             logger.AddSink(sink);
-            //logger.SetAsyncMode(true);
+           // logger.SetAsyncMode(true);
             logger.SetLogLevel(LogEngine::Levels::llInfo);
         }
     }
@@ -55,6 +67,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         {
         case DLL_PROCESS_ATTACH:
         {
+            THIS_DLL_HANDLE = hModule;
+
             std::string s = "DLL_PROCESS_ATTACH. hModule: " + std::to_string((uint64_t)hModule);
             OutputDebugStringA(s.c_str());
     
@@ -78,7 +92,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             OutputDebugStringA(s.c_str());
 
             logger.InfoFmt("DLL_PROCESS_DETACH hModule: {}", (uint64_t)hModule);
-            //ShutDownLogger();
+            ShutDownLogger();
+
+            THIS_DLL_HANDLE = nullptr;
+            
             break;
         }
         }
