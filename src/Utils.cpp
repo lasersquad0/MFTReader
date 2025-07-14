@@ -11,12 +11,15 @@
 
 std::string GetErrorMessageTextA(ulong lastError, const std::string& errorPlace)
 {
+    const uint32_t BUF_SIZE = 2048; // should be enough for all error messages
     std::string buf, buf2;
-    buf.resize(1000);
-    buf2.resize(2000);
+    buf.resize(BUF_SIZE);
+    buf2.resize(BUF_SIZE);
 
     BOOL_CHECK(FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        nullptr, lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)buf.data(), 1000, nullptr));
+        nullptr, lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)buf.data(), BUF_SIZE, nullptr));
+
+    //TODO better solution: return std::format(_T("%s failed with error code %d as follows:\n%s"), errorPlace, lastError, buf);
 
     HR_CHECK(StringCchPrintfA(buf2.data(), buf2.size(), "%s failed with error code %d as follows:\n%s", errorPlace.c_str(), lastError, buf.data()));
 
@@ -25,12 +28,15 @@ std::string GetErrorMessageTextA(ulong lastError, const std::string& errorPlace)
 
 string_t GetErrorMessageText(ulong lastError, const string_t& errorPlace)
 {
+    const uint32_t BUF_SIZE = 2048; // should be enough for all error messages
     string_t buf, buf2;
-    buf.resize(1000);
-    buf2.resize(2000);
+    buf.resize(BUF_SIZE);
+    buf2.resize(BUF_SIZE);
 
     BOOL_CHECK(FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        nullptr, lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR)buf.data(), 1000, nullptr));
+        nullptr, lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR)buf.data(), BUF_SIZE, nullptr));
+
+    //TODO better solution: return std::format(_T("%s failed with error code %d as follows:\n%s"), errorPlace, lastError, buf);
 
     HR_CHECK(StringCchPrintf(buf2.data(), buf2.size(), TEXT("%s failed with error code %d as follows:\n%s"), errorPlace.c_str(), lastError, buf.data()));
 
