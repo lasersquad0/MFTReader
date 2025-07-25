@@ -4,8 +4,9 @@
 #include "BuferedFileStream.h"
 #include "PrimesFIO.h"
 
+using namespace std;
 
-//Загружаем либо весь файл либо up to len простых чисел из файла 
+// Loading either entire file or up to len prime numbers from TXT file
 size_t PrimesFIO::LoadFromTXT(uint64_t* arr, size_t len, fstream& f)
 {
 	string line;
@@ -169,7 +170,6 @@ size_t PrimesFIO::BypassBINDiff(size_t bypassCount, uint64_t& lastPrime, fstream
 	return cnt;
 }
 
-
 void PrimesFIO::SaveAsTXT(uint64_t* arr, size_t len, fstream& f)
 {
 	uint32_t chunk = 10'000'000;
@@ -187,7 +187,7 @@ void PrimesFIO::SaveAsTXT(uint64_t* arr, size_t len, fstream& f)
 		{
 			f.write(s.c_str(), s.length());
 			// f.flush();
-			s.clear(); // очищаем строку но оставляем capacity
+			s.clear(); // make string empty leaving capacity as is
 		}
 	}
 
@@ -219,7 +219,7 @@ void PrimesFIO::SaveAsTXTDiff(uint64_t* arr, size_t len, uint64_t& lastPrime, ui
 		{
 			f.write(s.c_str(), s.length());
 			// f.flush();
-			s.clear(); // очищаем строку но оставляем capacity
+			s.clear(); // make string empty leaving capacity as is
 		}
 	}
 
@@ -251,7 +251,7 @@ void PrimesFIO::SaveAsBINDiff(uint64_t* arr, size_t len, uint64_t& lastPrime, ui
 		}
 		else
 		{
-			uint16_t diff = (uint16_t)(arr[i] - lastPrime); // diff должен вместиться в 2байта
+			uint16_t diff = (uint16_t)(arr[i] - lastPrime); // diff should fit into 2 bytes
 			if (maxDiff < diff) maxDiff = diff;
 
 			f.write((char*)&diff, sizeof(uint16_t));
@@ -290,7 +290,6 @@ void PrimesFIO::SaveAsBINDiffVar(uint64_t* arr, size_t len, uint64_t& lastPrime,
 	f.flush();
 }
 
-
 size_t PrimesFIO::LoadFromBINDiffVar(uint64_t* arr, size_t len, uint64_t& lastPrime, IBuferedFileStream& bf)
 {
 	uint64_t diff;
@@ -306,11 +305,11 @@ size_t PrimesFIO::LoadFromBINDiffVar(uint64_t* arr, size_t len, uint64_t& lastPr
 		{
 			//f.read((char*)(buf + maxSize), 1);
 			bf.ReadByte(*(buf + maxSize));
-			if (bf.eof()) break;
+			if (bf.Eof()) break;
 			if ((buf[maxSize++] & 0x80) == 0) break;
 		}
 
-		if (bf.eof()) break;
+		if (bf.Eof()) break;
 
 		size_t res = var_len_decode(buf, maxSize, &diff);
 		if (lastPrime > 0)
@@ -346,11 +345,11 @@ size_t PrimesFIO::BypassBINDiffVar(uint64_t bypassCount, uint64_t& lastPrime, IB
 		{
 			//f.read((char*)(buf + maxSize), 1);
 			bf.ReadByte(*(buf + maxSize));
-			if (bf.eof()) break;
+			if (bf.Eof()) break;
 			if ((buf[maxSize++] & 0x80) == 0) break;
 		}
 
-		if (bf.eof()) break;
+		if (bf.Eof()) break;
 
 		size_t res = var_len_decode(buf, maxSize, &diff);
 		if (lastPrime > 0) 
@@ -396,7 +395,7 @@ size_t PrimesFIO::BypassBINDiffVarOLD(uint64_t bypassCount, uint64_t& lastPrime,
 
 		assert(res > 0);
 
-		// здесь нету умножения на 2. старый формат
+		// old format, without multiplication by 2 
 
 		lastPrime = diff + lastPrime;
 		cnt++;
@@ -407,7 +406,7 @@ size_t PrimesFIO::BypassBINDiffVarOLD(uint64_t bypassCount, uint64_t& lastPrime,
 	return cnt;
 }
 
-// ***!!!! старая версия без умножения на 2 !!!! *****
+// ***!!!! OLD version without multiplier by 2 !!!! *****
 size_t PrimesFIO::LoadFromBINDiffVarOLD(uint64_t* arr, size_t len, uint64_t& lastPrime, fstream& f)
 {
 	uint64_t diff;
@@ -439,7 +438,7 @@ size_t PrimesFIO::LoadFromBINDiffVarOLD(uint64_t* arr, size_t len, uint64_t& las
 	return cnt;
 }
 
-size_t PrimesFIO::var_len_encode(uint8_t buf[9], uint64_t num)
+size_t var_len_encode(uint8_t buf[9], uint64_t num)
 {
 	if (num > UINT64_MAX / 2)
 		return 0;
@@ -457,7 +456,7 @@ size_t PrimesFIO::var_len_encode(uint8_t buf[9], uint64_t num)
 	return i;
 }
 
-size_t PrimesFIO::var_len_decode(const uint8_t buf[], size_t size_max, uint64_t* num)
+size_t var_len_decode(const uint8_t buf[], size_t size_max, uint64_t* num)
 {
 	if (size_max == 0)
 		return 0;
