@@ -136,7 +136,7 @@ static void InitLogger()
 }
 
 
-#define TRYCATCH(_,__) try {(_);}catch(...){logger.Warn(__);}
+//#define TRYCATCH(_,__) try {(_);}catch(...){logger.Warn(__);}
 
 int _tmain(int argc, TCHAR* argv[])
 //int main()
@@ -182,7 +182,7 @@ int _tmain(int argc, TCHAR* argv[])
         ReadVolumeData(volume, vol);
 
         if (cmd.HasOption(OPT_M))
-        {            
+        { 
             int MFTRecID = std::stoi(cmd.GetOptionValue(OPT_M, 0)); // exception will be thrown if option value cannot be converted into int
 
             std::wcout << "here will be shown information about record: " << MFTRecID << "." << std::endl;
@@ -193,24 +193,16 @@ int _tmain(int argc, TCHAR* argv[])
 
             MFT_REF MFTRef{0};
             MFTRef.sId.low = MFTRecID;
-
-            //if(!LoadMFTRecord(vol,  MFTRef, mftRecBuf))
-            //    throw std::runtime_error("LoadMFTRecord finished with error.");
-                
+    
             ITEM_INFO info{0};
             ReadMftItemInfo(vol, MFTRef, info);
 
         }
         else if (cmd.HasOption(OPT_S)) // volume statistics requested.
         {
-            //std::wcout << "Here will be shown statistics about volume " << volume << "." << std::endl;
-
-           // MFT_REF startId;
-           // startId.Id = MFT_ROOT_REC_ID;
-
             auto start1 = std::chrono::high_resolution_clock::now();
 
-            std::wcout << _T("Reading volume: ") << volume << std::endl;
+            //std::wcout << _T("Reading volume: ") << volume << std::endl;
 
             ResetCache();
 

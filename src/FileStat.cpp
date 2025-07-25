@@ -104,7 +104,6 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
         std::wstring nameOfAttr;
         if (currAttr->AttrNameSize > 0) // if attr has a name - show it
         {
-            //std::wstring name(GetAttrName(currAttr, AttrNameOffset), currAttr->AttrNameSize);
             nameOfAttr.assign(GetAttrName(currAttr, AttrNameOffset), currAttr->AttrNameSize);
             logger.DebugFmt("Attr name: '{}'", wtos(nameOfAttr));
         }
