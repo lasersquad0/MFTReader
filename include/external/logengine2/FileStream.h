@@ -14,6 +14,8 @@
 #include <string>
 #include <exception>
 #include <locale>
+#include <share.h>
+
 #include "Common.h"
 
 LOGENGINE_NS_BEGIN
@@ -21,6 +23,15 @@ LOGENGINE_NS_BEGIN
 enum TFileMode:int { fmRead, fmWrite, fmReadWrite, fmWriteTrunc };
 enum TSharingMode:int { shDefault, shDenyNo, shDenyRead, shDenyWrite, shDenyReadWrite };
 enum class TSeekMode { smFromBegin, smFromEnd, smFromCurrent };
+
+
+#if defined (__BORLANDC__)
+#define _SH_DENYRW SH_DENYRW
+#define _SH_DENYWR SH_DENYWR
+#define _SH_DENYRD SH_DENYRD
+#define _SH_DENYNO SH_DENYNO
+#endif
+
 
 // this is my special sharing mode
 #define _SH_DEFAULT 0
@@ -194,7 +205,7 @@ public:
 };
 
 
-class TFileStream :public TStream
+class TFileStream: public TStream
 {
 private:
 	std::string FFileName;

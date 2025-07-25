@@ -224,11 +224,21 @@ LOGENGINE_INLINE void TMemoryStream::UnsetBuffer()
 #define myread _read
 #define mywrite _write
 #define myclose _close
+#define myflush _commit
+
+#ifdef __BORLANDC__
+#define mylocking locking
 #else
+#define mylocking _locking
+#endif
+
+#else
+
 #define mylseek lseek
 #define myread read
 #define mywrite write
-#define myclose close
+#define myclose clos
+#define myflush fsync
 #endif
 
 
@@ -381,18 +391,14 @@ LOGENGINE_INLINE size_t TFileStream::Length() const
 
 LOGENGINE_INLINE void TFileStream::Flush() const
 {
-#ifdef WIN32
-	_commit(hf);
-#else
-	fsync(hf);
-#endif
+	myflush(hf);
 }
 
 // SIDE EFFECT: Lock looses current file position, moves it to the beginning of the file
 LOGENGINE_INLINE void TFileStream::Lock()
 {
 	Seek(0, TSeekMode::smFromBegin);
-	BOOL res = _locking(hf, _LK_LOCK, MAXLONG); // _locking uses current position only for lock/unlock operations, that is why we need Seek() before _locking
+	BOOL res = mylocking(hf, LK_LOCK, MAXLONG); // _locking uses current position only for lock/unlock operations, that is why we need Seek() before _locking
 	if (res)
 	{
 		int ecode = errno;
@@ -411,7 +417,7 @@ LOGENGINE_INLINE void TFileStream::Lock()
 LOGENGINE_INLINE void TFileStream::Unlock()
 {
 	Seek(0, TSeekMode::smFromBegin);
-	BOOL res = _locking(hf, _LK_UNLCK, MAXLONG);
+	BOOL res = mylocking(hf, LK_UNLCK, MAXLONG);
 	if (res)
 	{
 		int ecode = errno;
