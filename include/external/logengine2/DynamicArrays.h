@@ -11,7 +11,7 @@
 
 #include <exception> 
 #include <string>
-#include <format>
+//#include <format>
 #include "Compare.h"
 
 #define valuemin(v1,v2) (((v1)<(v2))?(v1):(v2))
@@ -1128,13 +1128,20 @@ int THArraySorted<T, Cmp>::InternalIndexOfFrom(const T& Value, const uint Start)
 {
 	if (Start >= this->FCount && this->FCount != 0)
 	{
-/*		char str[100];
-#ifdef WIN32 
+/*
+#ifdef WIN32
 		sprintf_s(str, 100, "Error in THArraySorted: Start index %i is out of bounds!", Start);
 #else
 		sprintf(str, "Error in THArraySorted: Start index %i is out of bounds!", Start);
 #endif*/
+
+#if __cplusplus >= 202002L
 		throw THArrayException(std::format("[THArraySorted] Start index {} is out of bounds!", Start));
+#else
+		//char str[100];
+		//sprintf(str, "Error in THArraySorted: Start index %i is out of bounds!", Start);
+		throw THArrayException(std::string("Error in THArraySorted: Start index ") + std::to_string(Start) + " is out of bounds!");
+#endif
 	}
 
 	if (this->FCount == 0) return THArray<T>::NPOS;
@@ -1200,7 +1207,7 @@ inline void THArrayRaw::Error(const uint Value, /*const uint vmin,*/ const uint 
 #else
 		sprintf(str, "Error in HArray: Element with index %i not found!", Value);
 #endif*/
-		throw THArrayException(std::format("Error in THArray: Element with index {} not found!", Value));
+		throw THArrayException(std::string("Error in THArray: Element with index ") + std::to_string(Value) +" not found!");
 	}
 }
 
@@ -1249,7 +1256,7 @@ inline void THArrayRaw::AddMany(const void* pValue, const uint Count)
 #else
 		sprintf(str, "AddMany(): invalid parameter 'Count'=%i !", Count);
 #endif  */
-		throw THArrayException(std::format("[AddMany] Invalid parameter 'Count'={} !", Count));
+		throw THArrayException(std::string("[AddMany] Invalid parameter 'Count'= ") + std::to_string(Count));
 	}
 
 	InsertMany(FCount, pValue, Count);
