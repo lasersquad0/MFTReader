@@ -5,6 +5,9 @@
 
 #pragma once
 
+// this is to remove defines min, max in windows headers because they conflict with std::min std::max 
+#define NOMINMAX
+
 #include <windows.h>
 #include <iostream>
 #include <string>
