@@ -94,6 +94,7 @@ public:
 	}
 };
 
+
 template<class Mutex>
 class StderrSink : public BaseSink<Mutex>
 {

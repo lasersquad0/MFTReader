@@ -92,6 +92,7 @@ void Info(const std::string& msg);
 void Debug(const std::string& msg);
 void Trace(const std::string& msg);
 
+#if defined(WIN32) && _HAS_CXX20==1 && !defined(__BORLANDC__)
 template<class... Args>
 void LogFmt(Levels::LogLevel ll, const std::format_string<Args...> fmt, Args&&... args)
 {
@@ -133,6 +134,58 @@ void TraceFmt(const std::format_string<Args...> fmt, Args&& ...args)
 {
 	LogFmt(Levels::llTrace, fmt, std::forward<Args>(args)...);
 }
+
+#else
+
+LOGENGINE_INLINE void LogFmt(Levels::LogLevel ll, const char* fmt,  ...)
+{
+	va_list va;
+	va_start(va, fmt);
+	GetDefaultLogger().LogFmt(ll, fmt, va);
+	va_end(va);
+}
+
+LOGENGINE_INLINE void CritFmt(const char* fmt, ...)
+{
+	va_list va;
+	va_start(va, fmt);
+	LogFmt(Levels::llCritical, fmt, va);
+	va_end(va);
+}
+
+LOGENGINE_INLINE void WarnFmt(const char* fmt, ...)
+{
+	va_list va;
+	va_start(va, fmt);
+	LogFmt(Levels::llWarning, fmt, va);
+	va_end(va);
+}
+
+LOGENGINE_INLINE void InfoFmt(const char* fmt, ...)
+{
+	va_list va;
+	va_start(va, fmt);
+	LogFmt(Levels::llInfo, fmt, va);
+	va_end(va);
+}
+
+LOGENGINE_INLINE void DebugFmt(const char* fmt, ...)
+{
+	va_list va;
+	va_start(va, fmt);
+	LogFmt(Levels::llDebug, fmt, va);
+	va_end(va);
+}
+
+LOGENGINE_INLINE void TraceFmt(const char* fmt, ...)
+{
+	va_list va;
+	va_start(va, fmt);
+	LogFmt(Levels::llTrace, fmt, va);
+	va_end(va);
+}
+
+#endif
 
 
 // parameters for loggers

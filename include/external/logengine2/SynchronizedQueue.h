@@ -25,19 +25,16 @@ private:
 public:
     SafeQueue(uint capacity) { this->SetCapacity(capacity); }
 
-    T WaitForElement()
+    T WaitForElement() // T=LogEvent*
     {
         std::unique_lock<std::mutex> lock(mtx);
         while (this->Count() == 0)
             cv.wait(lock);
 
-        //    T out = this->GetValue(0);
-        //    this->DeleteValue(0);
-
         return this->PopFront(); // THArray works well with PopFront without moving elements in memory 
     }
 
-    void PushElement(T in_element)
+    void PushElement(T in_element) // T=LogEvent*, that is why passing by value
     {
         std::lock_guard<std::mutex> lock(mtx);
 

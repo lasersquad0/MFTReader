@@ -86,10 +86,6 @@ public:
 
 		if (amode == true)
 		{
-			//LoggerThreadInfo* info = new LoggerThreadInfo;
-			//info->queue = &FQueue;
-			//info->logger = this;
-
 			std::thread thr(ThreadProc, this, &FQueue);
 			FThread.swap(thr);
 			FAsync = amode;
@@ -276,6 +272,21 @@ public:
 		}
 	}
 
+	void InternalLogFmt(Levels::LogLevel ll, const char* fmt,  va_list args)
+	{
+		//TODO think how to pass all args into SendToAllSinks and create final string there
+		if (FAsync)
+		{
+			LogEvent* event = new LogEvent(this, vformat(fmt, args), ll, GetThreadID(), GetCurrDateTime());
+			FQueue.PushElement(event);
+		}
+		else
+		{
+			LogEvent ev(this, vformat(fmt, args), ll, GetThreadID(), GetCurrDateTime());
+			InternalLog(ev);
+		}
+	}
+
 public:	
 	void CritFmt(const char* fmt, ...)
 	{
@@ -283,7 +294,7 @@ public:
 
 		va_list va;
 		va_start(va, fmt);
-		LogFmt(Levels::llCritical, fmt, va);
+		InternalLogFmt(Levels::llCritical, fmt, va);
 		va_end(va);
 	}
 
@@ -293,7 +304,7 @@ public:
 
 		va_list va;
 		va_start(va, fmt);
-		LogFmt(Levels::llError, fmt, va);
+		InternalLogFmt(Levels::llError, fmt, va);
 		va_end(va);
 	}
 
@@ -303,7 +314,7 @@ public:
 
 		va_list va;
 		va_start(va, fmt);
-		LogFmt(Levels::llWarning, fmt, va);
+		InternalLogFmt(Levels::llWarning, fmt, va);
 		va_end(va);
 	}
 
@@ -313,7 +324,7 @@ public:
 
 		va_list va;
 		va_start(va, fmt);
-		LogFmt(Levels::llInfo, fmt, va);
+		InternalLogFmt(Levels::llInfo, fmt, va);
 		va_end(va);
 	}
 
@@ -323,7 +334,7 @@ public:
 
 		va_list va;
 		va_start(va, fmt);
-		LogFmt(Levels::llDebug, fmt, va);
+		InternalLogFmt(Levels::llDebug, fmt, va);
 		va_end(va);
 	}
 
@@ -333,31 +344,20 @@ public:
 
 		va_list va;
 		va_start(va, fmt);
-		LogFmt(Levels::llTrace, fmt, va);
+		InternalLogFmt(Levels::llTrace, fmt, va);
 		va_end(va);
 	}
 
 	void LogFmt(Levels::LogLevel ll, const char* fmt,  ...)
 	{
 		if (!ShouldLog(ll)) return;
-		
+
 		va_list va;
 		va_start(va, fmt);
-
-		// TODO think how to pass all args into SendToAllSinks and create final string there
-		if (FAsync)
-		{
-			LogEvent* event = new LogEvent(this, vformat(fmt, va), ll, GetThreadID(), GetCurrDateTime());
-			FQueue.PushElement(event);
-		}
-		else
-		{
-			LogEvent ev(this, vformat(fmt, va), ll, GetThreadID(), GetCurrDateTime());
-			InternalLog(ev);
-		}
-		//LogEvent ev(vformat(fmt, va), ll, GetThreadID(), GetCurrDateTime());
+		InternalLogFmt(ll, fmt, va);
 		va_end(va);
 	}
+
 #endif
 
 	void Crit (const std::string& msg) { Log(msg, Levels::llCritical); }
@@ -462,7 +462,7 @@ public:
 				delete event;
 			}
 
-		} while (current_msg); // null as msg means that we need to stop this thread
+		} while (current_msg); // nullptr as msg means that we need to stop this thread
 
 		return 0;
 	}

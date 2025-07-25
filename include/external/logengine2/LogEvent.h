@@ -73,7 +73,7 @@ inline LogSinkType STfromString(std::string name) // parameter needs to be passe
 	if (it != std::end(SinkTypeNames))
 		return static_cast<LogSinkType>(std::distance(std::begin(SinkTypeNames), it));
 
-	throw LogException(std::format("Sink Type '{}' is not valid sink type name.", name));
+	throw LogException(std::string("Sink Type '") + name + "' is not valid sink type name.");
 	//return ST_DEFAULT;
 }
 

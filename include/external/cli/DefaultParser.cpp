@@ -64,7 +64,7 @@ bool CDefaultParser::HandleToken(const cli_string &token)
     {
         m_LastError = _T("Unknown argument in command line: ") + token;
         return false;
-        // TODO(Andrei): Handle unknown token
+		//TODO(Andrei): Handle unknown token
     }
 
     return true;
@@ -109,7 +109,7 @@ void CDefaultParser::UpdateOptionsWithArguments(COption *option)
     size_t neededArgs = option->GetNumRequiredArgs();
     size_t availableArgs = option->GetArgs().size();  // actual number of option arguments added at the current moment of time
 
-    //bool argsAvailable = availableArgs >= neededArgs;// TODO shall we exit immediately if argsAvailable==false? no need doing 'for' in this case.
+	//bool argsAvailable = availableArgs >= neededArgs;//TODO shall we exit immediately if argsAvailable==false? no need doing 'for' in this case.
 
     if (availableArgs < neededArgs) return;
 
