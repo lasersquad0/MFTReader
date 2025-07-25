@@ -39,19 +39,19 @@
     <ClCompile Include="..\..\src\Utils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\command-line-argument-parser\cli\CommandLine.cpp">
+    <ClCompile Include="..\..\include\external\cli\CommandLine.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\command-line-argument-parser\cli\DefaultParser.cpp">
+    <ClCompile Include="..\..\include\external\cli\DefaultParser.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\command-line-argument-parser\cli\HelpFormatter.cpp">
+    <ClCompile Include="..\..\include\external\cli\HelpFormatter.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\command-line-argument-parser\cli\Option.cpp">
+    <ClCompile Include="..\..\include\external\cli\Option.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\command-line-argument-parser\cli\OptionsList.cpp">
+    <ClCompile Include="..\..\include\external\cli\OptionsList.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>
   </ItemGroup>
@@ -80,19 +80,19 @@
     <ClInclude Include="..\..\include\Utils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\command-line-argument-parser\cli\CommandLine.h">
+    <ClInclude Include="..\..\include\external\cli\CommandLine.h">
       <Filter>Header Files\CLI</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\command-line-argument-parser\cli\DefaultParser.h">
+    <ClInclude Include="..\..\include\external\cli\DefaultParser.h">
       <Filter>Header Files\CLI</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\command-line-argument-parser\cli\HelpFormatter.h">
+    <ClInclude Include="..\..\include\external\cli\HelpFormatter.h">
       <Filter>Header Files\CLI</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\command-line-argument-parser\cli\Option.h">
+    <ClInclude Include="..\..\include\external\cli\Option.h">
       <Filter>Header Files\CLI</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\command-line-argument-parser\cli\OptionsList.h">
+    <ClInclude Include="..\..\include\external\cli\OptionsList.h">
       <Filter>Header Files\CLI</Filter>
     </ClInclude>
   </ItemGroup>

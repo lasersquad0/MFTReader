@@ -152,11 +152,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\command-line-argument-parser\cli\CommandLine.cpp" />
-    <ClCompile Include="..\..\..\command-line-argument-parser\cli\DefaultParser.cpp" />
-    <ClCompile Include="..\..\..\command-line-argument-parser\cli\HelpFormatter.cpp" />
-    <ClCompile Include="..\..\..\command-line-argument-parser\cli\Option.cpp" />
-    <ClCompile Include="..\..\..\command-line-argument-parser\cli\OptionsList.cpp" />
+    <ClCompile Include="..\..\include\external\cli\CommandLine.cpp" />
+    <ClCompile Include="..\..\include\external\cli\DefaultParser.cpp" />
+    <ClCompile Include="..\..\include\external\cli\HelpFormatter.cpp" />
+    <ClCompile Include="..\..\include\external\cli\Option.cpp" />
+    <ClCompile Include="..\..\include\external\cli\OptionsList.cpp" />
     <ClCompile Include="..\..\src\FileStat.cpp" />
     <ClCompile Include="..\..\src\Functions.cpp" />
     <ClCompile Include="..\..\src\MFTReader.cpp" />
@@ -165,14 +165,14 @@
     <ClCompile Include="..\..\src\Utils.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\command-line-argument-parser\cli\CommandLine.h" />
-    <ClInclude Include="..\..\..\command-line-argument-parser\cli\DefaultParser.h" />
-    <ClInclude Include="..\..\..\command-line-argument-parser\cli\HelpFormatter.h" />
-    <ClInclude Include="..\..\..\command-line-argument-parser\cli\Option.h" />
-    <ClInclude Include="..\..\..\command-line-argument-parser\cli\OptionsList.h" />
     <ClInclude Include="..\..\include\BitField.h" />
     <ClInclude Include="..\..\include\Caches.h" />
     <ClInclude Include="..\..\include\Debug.h" />
+    <ClInclude Include="..\..\include\external\cli\CommandLine.h" />
+    <ClInclude Include="..\..\include\external\cli\DefaultParser.h" />
+    <ClInclude Include="..\..\include\external\cli\HelpFormatter.h" />
+    <ClInclude Include="..\..\include\external\cli\Option.h" />
+    <ClInclude Include="..\..\include\external\cli\OptionsList.h" />
     <ClInclude Include="..\..\include\FileCache.h" />
     <ClInclude Include="..\..\include\FileLevel.h" />
     <ClInclude Include="..\..\include\Functions.h" />
