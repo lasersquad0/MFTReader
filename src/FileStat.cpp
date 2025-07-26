@@ -225,7 +225,9 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
 
                 while (true)
                 {
-                    if (attrEntry->AttrType != ATTR_DATA)  // StartVCN should be 0 for all attrs except DATA
+                    // StartVCN should be 0 for all attrs except DATA and ALLOC
+                    // ATTR_LIST can contain several ALLOC attributes, first such attr contains StartVCN=0 second - StartVCN>0
+                    if ( (attrEntry->AttrType != ATTR_DATA) && (attrEntry->AttrType != ATTR_ALLOC) )  
                     {
                         assert(attrEntry->StartVCN == 0);
                         if (attrEntry->StartVCN != 0)
