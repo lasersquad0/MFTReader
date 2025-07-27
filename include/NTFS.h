@@ -358,10 +358,9 @@ struct NTFS_DUP_INFO
     uint64_t AllocSize;      // 0x20 Data attribute allocated size (for unnamed $DATA attribute), multiple of cluster size.
     uint64_t FileSize;	     // 0x28 Actual data attribute size <= AllocSize.
     uint32_t FileAttrib;     // 0x30 Standard DOS attributes & more.
-    //FILE_ATTRIBUTE FileAttrib;
-    uint16_t ea_size;		 // 0x34 Packed EAs.
+    uint16_t ea_size;		 // 0x34 Size of the buffer needed to pack the extended attributes (EAs), if such are present..
     uint16_t reparse;		 // 0x36 Used by Reparse.
-
+    //TODO check if ea_size and reparse fields are correct. looks like they both should be union {}
 }; // 0x38
  
 static_assert(sizeof(NTFS_DUP_INFO) == 0x38);
@@ -377,6 +376,41 @@ struct ATTR_FILE_NAME
 }; //0x42   
 
 static_assert(sizeof(ATTR_FILE_NAME) == 0x42);
+
+/**
+ * struct REPARSE_POINT - Attribute: Reparse point (0xc0).
+ * NOTE: Can be resident or non-resident.
+ */
+struct REPARSE_POINT
+{
+    uint32_t reparse_tag;		    // Reparse point type (inc. flags).
+    uint16_t reparse_data_length;	// Byte size of reparse data. 
+    uint16_t reserved;		   	    // Align to 8-byte boundary. 
+    uint8_t  reparse_data[0];		// Meaning depends on reparse_tag. 
+};
+
+struct fsntfs_mount_point_reparse_data
+{
+    /* The substitute name offset
+     * Consists of 2 bytes
+     */
+    uint8_t substitute_name_offset[2];
+
+    /* The substitute name size
+     * Consists of 2 bytes
+     */
+    uint8_t substitute_name_size[2];
+
+    /* The print name offset
+     * Consists of 2 bytes
+     */
+    uint8_t print_name_offset[2];
+
+    /* The print name size
+     * Consists of 2 bytes
+     */
+    uint8_t print_name_size[2];
+};
 
 // resident only????
 /*struct VOLUME_INFO
