@@ -294,8 +294,8 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
                 logger.Warn("Warning! Resident ATTR_ALLOC has been met!");
                 break;
             }
-            case ATTR_SECURE:
             case ATTR_REPARSE:  // can be resident or non-resident
+            case ATTR_SECURE: 
             case ATTR_EA:       // can be resident or non-resident
             case ATTR_EA_INFO:  // can be resident or non-resident
             case ATTR_PROPERTYSET:
@@ -578,6 +578,7 @@ void ReadItems(VOLUME_DATA& volData)
     auto HasNonresAttrList = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.NonResidentAttrList; });
     auto HasNonresBitmap = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.NonResidentBitmap; });
     auto HasResidentData = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.ResidentData; });
+    auto ReparsePointsCount = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MakeAttrTypeIndex(ATTR_REPARSE)]; });
 
     auto maxHardLinks = std::max_element(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) {return a.HardLinksCount < b.HardLinksCount; });
     auto maxAttrs = std::max_element(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) {return a.AttrsCount < b.AttrsCount; });
@@ -591,6 +592,7 @@ void ReadItems(VOLUME_DATA& volData)
     std::cout << "Data streams Count > 2: " << DataStreamsCountGreater2 << std::endl;
     std::cout << "Filenames Count > 13: " << FilenamesCountGreater13 << std::endl;
     std::cout << "Filenames Count > 7: " << FilenamesCountGreater7 << std::endl;
+    std::cout << "Reparse Points Count: " << ReparsePointsCount << std::endl;
     std::cout << "Have non-resident ATTR_LIST: " << HasNonresAttrList << std::endl;
     std::cout << "Have non-resident BITMAP: " << HasNonresBitmap << std::endl;
     std::cout << "Have resident Data: " << HasResidentData << std::endl;
@@ -600,7 +602,7 @@ void ReadItems(VOLUME_DATA& volData)
     std::cout << std::format("Max file names Count:{}, file name: {} (mft:{})", (*maxFilenames).FileNames.Count(), wtos((*maxFilenames).MainName), (*maxFilenames).RecID.sId.low) << std::endl;
     std::cout << std::format("Max data streams Count:{}, filename:{} (mft:{})", (*maxDataStreams).DataStreamNames.Count(), wtos((*maxDataStreams).MainName), (*maxDataStreams).RecID.sId.low) << std::endl;
 
-    std::wcout << L"Datastream names for "<< (*maxDataStreams).MainName.c_str() << ":" << std::endl;
+    std::wcout << std::endl << L"Datastream names for "<< (*maxDataStreams).MainName.c_str() << ":" << std::endl;
     for (auto ds : (*maxDataStreams).DataStreamNames)
     {
         if(ds.first.empty())
@@ -609,11 +611,11 @@ void ReadItems(VOLUME_DATA& volData)
             std::wcout << ds.first << " - " << ds.second << std::endl;
     }
 
-    std::wcout << "File names for " << (*maxFilenames).MainName.c_str() << ":" << std::endl;
+   /* std::wcout << std::endl << "File names for " << (*maxFilenames).MainName.c_str() << ":" << std::endl;
     for (auto& fn : (*maxFilenames).FileNames)
     {
         std::wcout << fn << std::endl;
-    }
+    }*/
 
     std::wcout << "Attribute counts for " << (*maxAttrs).MainName.c_str() << ":" << std::endl;
     for (int i = 1; i < ATTR_TYPE_CNT; i++) // bypass ATTR_ZERO
