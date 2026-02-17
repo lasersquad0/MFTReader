@@ -54,8 +54,8 @@ struct VOLUME_DATA
 struct FILE_NAME
 {
     ci_string ciName;
-    struct ATTR_FILE_NAME Attr;
-    struct MFT_REF MFTRef; // MFT Id of this file
+    struct ATTR_FILE_NAME Attr{0};
+    struct MFT_REF MFTRef{0}; // MFT Id of this file
 
     //bool operator>(const FILE_NAME& other) const { return ciName > other.ciName; }
     bool operator<(const FILE_NAME& other) const { return ciName < other.ciName; }

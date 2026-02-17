@@ -19,6 +19,7 @@ struct CACHE_ITEM
 {
 	uint32_t FParent;
 	uint32_t FLevel;
+	int32_t FFilesCount;
 	MFT_REF FMFTRecID; // MFT Id of this file
 	ATTR_FILE_NAME FileAttr; // 66 bytes. must be last field in FILELIST_ITEM because it has variable size
 
@@ -50,7 +51,7 @@ public:
 		if (Value >= vmax) throw std::out_of_range("Element with index " + std::to_string(Value) + " not found!"); 
 	}
 
-	// checks if there is anough allocated memoty to add structure if addBytes size 
+	// checks if there is enough allocated memory to add structure if addBytes size 
     // in case not enough memory EnsureCapacity allocates additional memory, and copies content there  
 	void EnsureCapacity(uint32_t addBytes)
 	{
@@ -108,18 +109,20 @@ public:
 	}
 	*/
 
+	
 	// each structure has different size because of file name string
 	uint32_t AddValue(const uint32_t parent, const uint32_t itemLevel, const MFT_REF MFTRecID, const ATTR_FILE_NAME* data)
 	{
 		assert(itemLevel == FLevel); //TODO remove itemLevel from parameters since it is not needed
 
 		uint32_t itemSize = CalcItemSize(data); // this is total item size: ITEM + filename size
-		assert(itemSize < 260 * sizeof(wchar_t) + sizeof(CACHE_ITEM) + 2); // 260 max file name length. 2 extra bytes just in case
+		assert(itemSize < MAX_PATH * sizeof(wchar_t) + sizeof(CACHE_ITEM) + 2); // 260 max file name length. 2 extra bytes just in case
 
 		EnsureCapacity(itemSize);
 
 		((CACHE_ITEM*)FHead)->FParent = parent;
 		((CACHE_ITEM*)FHead)->FLevel = itemLevel;
+		((CACHE_ITEM*)FHead)->FFilesCount = -1;  // -1 is to differ from empty folders where FFilesCount=0
 		((CACHE_ITEM*)FHead)->FMFTRecID = MFTRecID;
 
 		uint32_t size = CalcFileAttrSize(data); // this is size of ATTR_FILE_NAME + filename size, needed only for memcpy

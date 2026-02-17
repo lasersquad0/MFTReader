@@ -3,8 +3,8 @@
 #include <iostream>
 #include <string>
 
-#include "strutils/include/string_utils.h"
-#include "logengine2/DynamicArrays.h"
+#include "strutils/include/string_utils.h" // for string_t
+#include "logengine2/DynamicArrays.h" // for ulong type
 
 //TODO think how can we report here error in general way for non-console applications
 #define LOG_CHECK_ERROR(_msg) std::cout << (_msg)
@@ -19,8 +19,8 @@
 
 void WCHARtoChar(char* dest, wchar_t* src);
 void CharToWCHAR(wchar_t* dest, const char* src);
-std::string GetErrorMessageTextA(ulong lastError, const std::string& errorPlace);
-string_t GetErrorMessageText(ulong lastError, const string_t& errorPlace);
+std::string GetErrorMessageTextA(ulong lastErrorCode, const std::string& errorPlace);
+string_t GetErrorMessageText(ulong lastErrorCode, const string_t& errorPlace);
 //void PrintWindowsErrorMessage(const std::string& functionName);
 
 
