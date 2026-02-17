@@ -9,11 +9,12 @@
 #include <cassert>
 #include <vector>
 #include <stdexcept>
+#include <system_error>
 
 #include "strutils/include/string_utils.h"
 #include "strutils/include/ci_string.h"
 #include "logengine2/LogEngine.h"
-#include "logengine2/FileStream.h"
+//#include "logengine2/FileStream.h"
 #include "NTFS.h"
 #include "Functions.h"
 #include "Caches.h"
@@ -38,18 +39,24 @@ void ReadVolumeData(const std::wstring& volume, VOLUME_DATA& volumeData)
 
     if (hVolume == INVALID_HANDLE_VALUE)
     {
-        auto errMsg = GetErrorMessageTextA(GetLastError(), "CreateFile");
+        DWORD err = GetLastError();
+        auto errMsg = GetErrorMessageTextA(err, "CreateFile");
         logger.Error(errMsg);
-        throw std::runtime_error(errMsg); // "Error opening volume.");
+        throw std::system_error(std::error_code(err, std::system_category()), errMsg);
+        //throw std::runtime_error(errMsg); // "Error opening volume.");
     }
-
+    
     NTFS_VOLUME_DATA_BUFFER nvdb{0};
+    DWORD bytesReturned;
 
-    if (!DeviceIoControl(hVolume, FSCTL_GET_NTFS_VOLUME_DATA, 0, 0, &nvdb, sizeof(nvdb), 0, nullptr))
+    if (!DeviceIoControl(hVolume, FSCTL_GET_NTFS_VOLUME_DATA, 0, 0, &nvdb, sizeof(nvdb), &bytesReturned, nullptr))
     {
-        std::string errMsg = std::format("[DeviceIoControl] Error reading volume data. Volume: {} error: {}", wtos(volume), GetLastError());
+        DWORD err = GetLastError();
+        
+        std::string errMsg = GetErrorMessageTextA(err, "DeviceIoControl"); //std::format("[DeviceIoControl] Error reading volume data. Volume: {}, error: {}", wtos(volume), GetLastError());
         logger.Error(errMsg);
-        throw std::runtime_error(errMsg); // "Error reading volume data.");
+        throw std::system_error(std::error_code(err, std::system_category()), errMsg);
+        //throw std::runtime_error(errMsg); // "Error reading volume data.");
     }
 
     volumeData.hVolume = hVolume;
@@ -198,6 +205,8 @@ void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnames)
     }
 }
 
+// fills array attrValues[] with pointers to all attributes which mftRec contains
+// assume that attrValues has allocated size for ATTR_TYPE_CNT items
 void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues)
 {
     PMFT_ATTR_HEADER currAttr = (MFT_ATTR_HEADER*)Add2Ptr(mftRec, mftRec->FirstAttrOffset);
@@ -235,7 +244,7 @@ bool ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrLi
         return false;
     }
 
-    assert(dataRuns.Count() == 1); //assuming that one LCN is always enough for list of attributes
+    assert(dataRuns.Count() == 1); // assuming that one LCN is always enough for list of attributes
 
     DATA_RUN_ITEM& rli = dataRuns[0];
     logger.DebugFmt("[ParseNonresAttrList] Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
@@ -534,10 +543,10 @@ int32_t GetFileListFromMFTRec(const VOLUME_DATA& volData, MFT_FILE_RECORD* mftRe
 {
     GET_LOGGER;
 
-    assert(mftRec->Flags == 0x03); // only "directory" record should go here
-    if (mftRec->Flags != 0x03)
+    assert(mftRec->Flags == (MFT_FLAG_IN_USE | MFT_FLAG_IS_DIRECTORY)); // only "directory" record should go here
+    if (mftRec->Flags != (MFT_FLAG_IN_USE | MFT_FLAG_IS_DIRECTORY))
     {
-        logger.Error("[GetFileListFromMFTRec] Error: mftRec->Flags != 0x03 !");
+        logger.Error("[GetFileListFromMFTRec] Error: mftRec->Flags != MFT_FLAG_IN_USE | MFT_FLAG_IS_DIRECTORY !");
         return -1; // error
     }
 
