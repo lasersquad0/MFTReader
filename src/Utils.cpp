@@ -9,9 +9,13 @@
 #include "Utils.h"
 
 
-std::string GetErrorMessageTextA(ulong lastError, const std::string& errorPlace)
+std::string GetErrorMessageTextA(ulong lastErrorCode, const std::string& errorPlace)
 {
-    const uint32_t BUF_SIZE = 2048; // should be enough for all error messages
+    //std::string errMsg = std::system_category().message(lastErrorCode);
+
+    return std::format("[{}] failed with error code {}", errorPlace, lastErrorCode);
+
+   /* const uint32_t BUF_SIZE = 2048; // should be enough for all error messages
     std::string buf, buf2;
     buf.resize(BUF_SIZE);
     buf2.resize(BUF_SIZE);
@@ -23,10 +27,10 @@ std::string GetErrorMessageTextA(ulong lastError, const std::string& errorPlace)
 
     HR_CHECK(StringCchPrintfA(buf2.data(), buf2.size(), "%s failed with error code %d as follows:\n%s", errorPlace.c_str(), lastError, buf.data()));
 
-    return buf2;
+    return buf2;*/
 }
 
-string_t GetErrorMessageText(ulong lastError, const string_t& errorPlace)
+string_t GetErrorMessageText(ulong lastErrorCode, const string_t& errorPlace)
 {
     const uint32_t BUF_SIZE = 2048; // should be enough for all error messages
     string_t buf, buf2;
@@ -34,11 +38,11 @@ string_t GetErrorMessageText(ulong lastError, const string_t& errorPlace)
     buf2.resize(BUF_SIZE);
 
     BOOL_CHECK(FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        nullptr, lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR)buf.data(), BUF_SIZE, nullptr));
+        nullptr, lastErrorCode, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR)buf.data(), BUF_SIZE, nullptr));
 
     //TODO better solution: return std::format(_T("%s failed with error code %d as follows:\n%s"), errorPlace, lastError, buf);
 
-    HR_CHECK(StringCchPrintf(buf2.data(), buf2.size(), TEXT("%s failed with error code %d as follows:\n%s"), errorPlace.c_str(), lastError, buf.data()));
+    HR_CHECK(StringCchPrintf(buf2.data(), buf2.size(), TEXT("%s failed with error code %d as follows:\n%s"), errorPlace.c_str(), lastErrorCode, buf.data()));
 
     return buf2;
 }
