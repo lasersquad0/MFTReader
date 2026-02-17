@@ -8,12 +8,12 @@
 #include <cassert>
 #include <cstdint>
 #include <string>
-#include <algorithm>
+#include <utility>
 
 #include "strutils/include/string_utils.h"
 #include "LogEngine2/DynamicArrays.h"
 #include "LogEngine2/LogEngine.h"
-#include "logengine2/FileStream.h"
+//#include "logengine2/FileStream.h"
 #include "Caches.h"
 #include "FileLevel.h"
 #include "FileCache.h"
@@ -148,19 +148,20 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node, u
 
     switch (mftRec->Flags)
     {
-    case (uint16_t)MFT_RECORD_FLAGS::IN_USE: logger.Debug("MFT Rec type: IN USE (file or anything else)"); break;
-    case (uint16_t)MFT_RECORD_FLAGS::IS_DIRECTORY: logger.Debug("MFT Rec type: DIRECTORY"); break;
-    case (int16_t)MFT_RECORD_FLAGS::IN_USE | (int16_t)MFT_RECORD_FLAGS::IS_DIRECTORY: logger.DebugFmt("MFT Rec type: IN_USE & DIRECTORY {:#x}", (uint16_t)mftRec->Flags); break;
+    case MFT_FLAG_IN_USE: logger.Debug("MFT Rec type: IN USE (file or anything else)"); break;
+    case MFT_FLAG_IS_DIRECTORY: logger.Debug("MFT Rec type: DIRECTORY"); break;
+    case MFT_FLAG_IN_USE | MFT_FLAG_IS_DIRECTORY: logger.DebugFmt("MFT Rec type: IN_USE & DIRECTORY {:#x}", (uint16_t)mftRec->Flags); break;
     default:
         logger.WarnFmt("MFT Rec type: UNKNOWN {:#x}", (uint16_t)mftRec->Flags);
     }
 
+    
     // usually we call ParseMFTRecord ONLY for directories (for base MFT records).
     // somethimes ParseMFTRecord can be called for special kinds of records e.g. when attributes do not fit into base record and moved into a another "special" record.
     // such special MFT records may be either IN_USE or IN_USE|IS_DIRECTORY type
     // therefore I added if before assert
     if(mftRec->ParentFileRec.Id == 0)
-        assert(mftRec->Flags == 0x03); // only "directory" record should go here for base records
+        assert(mftRec->Flags == (MFT_FLAG_IN_USE | MFT_FLAG_IS_DIRECTORY)); // only "directory" record should go here for base records
 
     MFT_ATTR_HEADER* currAttr = (MFT_ATTR_HEADER*)Add2Ptr(mftRec, mftRec->FirstAttrOffset);
 
@@ -206,11 +207,7 @@ bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node, u
                 auto pihdr = &(indexR->ihdr);
 
                 // does not go to subnodes
-                GetFileList(pihdr, pred /*[parent, &level](const ATTR_FILE_NAME* attr, const MFT_REF& ref) 
-                    {
-                        if (!AttrNTfsInternal(attr))
-                            level->AddValue(parent, level->Level(), ref, attr); 
-                    } */); 
+                GetFileList(pihdr, pred); 
 
                 break;
             }
@@ -529,7 +526,7 @@ bool ReadDirectoryV1(VOLUME_DATA& volData, uint32_t parentIdx, CACHE_ITEM* paren
         }
     }
 
-    auto cnt = level->Count(); // count will be changing duing for loop below 
+    auto cnt = level->Count(); // count will be changing during for loop below 
     CACHE_ITEM* item{nullptr};
 
     // this is check if realloc has happened in level array during ParseMFTRecord and ProcessAllocDataRuns calls
@@ -546,6 +543,7 @@ bool ReadDirectoryV1(VOLUME_DATA& volData, uint32_t parentIdx, CACHE_ITEM* paren
     assert(parentItem->IsDir());
 
     dirSize = 0;
+    parentItem->FFilesCount = cnt - startPos;
 
     for (uint32_t i = startPos; i < cnt; i++)
     {
