@@ -58,6 +58,7 @@ static_assert(sizeof(MFT_REF) == 0x08);
  * index, that means an INDEX_ROOT and an INDEX_ALLOCATION with a name other
  * than "$I30". It is unknown if it is limited to metadata files only.
  */
+/*
 enum class MFT_RECORD_FLAGS : uint16_t
 {
     IN_USE        = 0x0001, //MY: IN_USE used for files AND for special "child" records when some attributes do not fit into base record
@@ -65,6 +66,15 @@ enum class MFT_RECORD_FLAGS : uint16_t
     IS_4          = 0x0004, // it is called RECORD_FLAG_SYSTEM in another source
     IS_VIEW_INDEX = 0x0008, // it is called RECORD_FLAG_UNKNOWN in another source
     SPACE_FILLER  = 0xFFFF, //TODO Just to make flags 16-bit. Do we really need it since we have uint16_t in enum definition?
+};
+*/
+enum MFT_RECORD_FLAGS : uint16_t
+{
+    MFT_FLAG_IN_USE = 0x0001, //MY: IN_USE used for files AND for special "child" records when some attributes do not fit into base record
+    MFT_FLAG_IS_DIRECTORY = 0x0002, //MY: for directories flag value is set to 0x03 (IN_USE | IS_DIRECTORY)
+    MFT_FLAG_IS_4 = 0x0004, // it is called RECORD_FLAG_SYSTEM in another source
+    MFT_FLAG_IS_VIEW_INDEX = 0x0008, // it is called RECORD_FLAG_UNKNOWN in another source
+    MFT_FLAG_SPACE_FILLER = 0xFFFF, //TODO Just to make flags 16-bit. Do we really need it since we have uint16_t in enum definition?
 };
 
 static_assert(sizeof(MFT_RECORD_FLAGS) == 2);
@@ -381,12 +391,12 @@ static_assert(sizeof(ATTR_FILE_NAME) == 0x42);
  * struct REPARSE_POINT - Attribute: Reparse point (0xc0).
  * NOTE: Can be resident or non-resident.
  */
-struct REPARSE_POINT
+struct ATTR_REPARSE_POINT
 {
     uint32_t reparse_tag;		    // Reparse point type (inc. flags).
     uint16_t reparse_data_length;	// Byte size of reparse data. 
     uint16_t reserved;		   	    // Align to 8-byte boundary. 
-    uint8_t  reparse_data[0];		// Meaning depends on reparse_tag. 
+    //uint8_t  reparse_data[0];		// Meaning depends on reparse_tag. 
 };
 
 struct fsntfs_mount_point_reparse_data
