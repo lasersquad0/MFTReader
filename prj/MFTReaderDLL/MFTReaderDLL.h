@@ -24,6 +24,7 @@ struct TError
 {
 	int32_t ErrCode;
 	wchar_t ErrText[256];
+	char Important;
 };
 
 MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint32_t* count, uint32_t** data, ProgressCallbackPtr callback);

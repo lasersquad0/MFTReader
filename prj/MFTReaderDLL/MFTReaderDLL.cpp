@@ -17,7 +17,8 @@
 // because cache is returned to outer function. 
 TFileCache gFileCache;
 
-// This is an example of an exported function.
+// volume parameter can be any of these: C, C:, c:\, c:\folder
+// only first two symbols from volume will be used as volume name. if volume contains single symbol ("C") one symbol will be used.
 MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint32_t* count, uint32_t** data, ProgressCallbackPtr callback)
 {
     GET_LOGGER;
@@ -28,10 +29,10 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint32_t* count, uint32_t** 
         
         logger.InfoFmt("Reading volume data for: {}", wtos(volume));
 
-        std::wstring vol = ParseVolume(volume);
+        std::wstring vol = ParseVolume(volume); // gets first two symbols of volume (e.g. C:) and adds prefix "\\.\" in front of it 
 
         VOLUME_DATA volData{0};
-        ReadVolumeData(vol, volData); //throws exptions in case of errors
+        ReadVolumeData(vol, volData); // throws exptions in case of errors
 
         auto start1 = std::chrono::high_resolution_clock::now();
 
@@ -93,27 +94,34 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint32_t* count, uint32_t** 
         CloseHandle(volData.hVolume);
         //Singleton<TMFTRecCache>::Release();
     }
+
+    catch (std::system_error& ex) 
+    {
+        logger.ErrorFmt("MFTReaderDLL system_error. {}", ex.what());
+        TError err{ 0 };
+        err.ErrCode = ex.code().value();
+        err.Important = 1; // all errors from DLL are important
+        wcscpy_s(err.ErrText, sizeof(err.ErrText) / sizeof(err.ErrText[0]), stow(ex.what()).c_str());
+        return err;
+    }
     catch (std::runtime_error& ex)
     {
         logger.ErrorFmt("MFTReaderDLL runtime_error. {}", ex.what());
-        TError err{0};
-        err.ErrCode = 1;
+        TError err{ .ErrCode = 1, .Important = 1 }; // all errors from DLL are important
         wcscpy_s(err.ErrText, sizeof(err.ErrText)/sizeof(err.ErrText[0]), stow(ex.what()).c_str());
         return err;
     }
     catch (std::exception& ex)
     {
         logger.ErrorFmt("MFTReaderDLL std::exception. {}", ex.what());
-        TError err{0};
-        err.ErrCode = 1;
+        TError err{.ErrCode=1, .Important=1}; // all errors from DLL are important
         wcscpy_s(err.ErrText, sizeof(err.ErrText) / sizeof(err.ErrText[0]), stow(ex.what()).c_str());
         return err;
     }
     catch (...)
     {
         logger.Error("MFTReaderDLL error: UNKNOWN.");
-        TError err{ 0 };
-        err.ErrCode = 1;
+        TError err{ 1, L"MFTReaderDLL error : UNKNOWN.", 1 };
         return err;
     }
 
