@@ -16,7 +16,7 @@ bool ReadClusters(const VOLUME_DATA& volData, CLST lcnStart, CLST lcnCnt, PBYTE 
 
     offset.QuadPart = lcnStart * volData.BytesPerCluster;
 
-    BOOL res = SetFilePointerEx(volData.hVolume, offset, NULL, FILE_BEGIN);
+    BOOL res = SetFilePointerEx(volData.hVolume, offset, nullptr, FILE_BEGIN);
     if (!res)
     {
         GET_LOGGER;
@@ -102,8 +102,9 @@ bool LoadMFTRecord(const VOLUME_DATA& volData, MFT_REF recID, uint8_t* mftRec)
     ULONG cb = offsetof(NTFS_FILE_RECORD_OUTPUT_BUFFER, FileRecordBuffer[volData.BytesPerMFTRec]);
 
     auto pnfrob = (PNTFS_FILE_RECORD_OUTPUT_BUFFER)alloca(cb);
+    DWORD bytesReturned;
 
-    if (!DeviceIoControl(volData.hVolume, FSCTL_GET_NTFS_FILE_RECORD, &nfrib, sizeof(nfrib), pnfrob, cb, 0, nullptr))
+    if (!DeviceIoControl(volData.hVolume, FSCTL_GET_NTFS_FILE_RECORD, &nfrib, sizeof(nfrib), pnfrob, cb, &bytesReturned, nullptr))
     {
         logger.ErrorFmt("DeviceIoControl failed with error. Error code: {}", GetLastError());
         return false;
@@ -232,8 +233,8 @@ bool ReadAllMftRecords(PCWSTR szVolume, TLCNRecs& mftRecs)
     NTFS_VOLUME_DATA_BUFFER vdb;
     //OVERLAPPED ov = {};
     int cnt = 0;
-
-    if (DeviceIoControl(hVolume, FSCTL_GET_NTFS_VOLUME_DATA, 0, 0, &vdb, sizeof(vdb), 0, nullptr/*&ov*/))
+    DWORD bytesReturned;
+    if (DeviceIoControl(hVolume, FSCTL_GET_NTFS_VOLUME_DATA, 0, 0, &vdb, sizeof(vdb), &bytesReturned, nullptr/*&ov*/))
     {
         NTFS_FILE_RECORD_INPUT_BUFFER inputBuf;
         // calculate MFT last record number
@@ -249,7 +250,7 @@ bool ReadAllMftRecords(PCWSTR szVolume, TLCNRecs& mftRecs)
 
         do
         {
-            if (!DeviceIoControl(hVolume, FSCTL_GET_NTFS_FILE_RECORD, &inputBuf, sizeof(inputBuf), pOutputBuf, cb, 0, nullptr/*&ov*/))
+            if (!DeviceIoControl(hVolume, FSCTL_GET_NTFS_FILE_RECORD, &inputBuf, sizeof(inputBuf), pOutputBuf, cb, &bytesReturned, nullptr/*&ov*/))
             {
                 std::wcout << L"DeviceIoControl failed with error: " << GetLastError() << std::endl;
                 free(pOutputBuf);
@@ -327,7 +328,7 @@ void ReadMft2(PCWSTR szVolume, HANDLE hVolume, PNTFS_VOLUME_DATA_BUFFER nvdb)
                 buf = alloca(rcb - cb);
                 cb = Diff2Ptr(buf, stack); // PBYTE(stack) - PBYTE(buf); // RtlPointerToOffset(buf = alloca(rcb - cb), stack);
             }
-
+            
             if (DeviceIoControl(hFile, FSCTL_GET_RETRIEVAL_POINTERS, &vcn, sizeof(vcn), buf, cb, 0, &ov))
             {
                 /* if (rpb->Extents->Lcn.QuadPart != nvdb->MftStartLcn.QuadPart)
@@ -367,7 +368,7 @@ void ReadMft2(PCWSTR szVolume, HANDLE hVolume, PNTFS_VOLUME_DATA_BUFFER nvdb)
                             //ov.OffsetHigh = off.HighPart;// Extents->Lcn.HighPart;
 
                             // Set the file pointer to the desired cluster
-                            SetFilePointerEx(hVolume, off, NULL, FILE_BEGIN);
+                            SetFilePointerEx(hVolume, off, nullptr, FILE_BEGIN); //TODO error handling here?
 
                             // read 1 record
                             BOOL res = ReadFile(hVolume, FileRecordBuffer, BytesPerFileRecordSegment, 0, nullptr/*&ov*/);
