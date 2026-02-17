@@ -112,6 +112,8 @@ static void ResetCache()
 
 static void InitLogger()
 {
+    LogEngine::Levels::LogLevel llevel = LogEngine::Levels::llInfo;
+
     // if MFTReader.lfg exists load loggers from that file
     if (std::filesystem::exists("MFTReader.lfg"))
     {
@@ -120,14 +122,14 @@ static void InitLogger()
     else // otherwise configure loggers in code 
     {
         std::shared_ptr<LogEngine::Sink> consoleSink(DBG_NEW LogEngine::StdoutSinkST("consolesink"));
-        consoleSink->SetLogLevel(LogEngine::Levels::llInfo);
+        consoleSink->SetLogLevel(llevel);
 
         std::shared_ptr<LogEngine::Sink> fileSink(DBG_NEW LogEngine::FileSinkMT(MFT_LOGGER_NAME, "LogMFTReader.log"));
-        fileSink->SetLogLevel(LogEngine::Levels::llInfo);
+        fileSink->SetLogLevel(llevel);
 
         LogEngine::Logger& logger = LogEngine::GetMultiLogger(MFT_LOGGER_NAME, {fileSink, consoleSink});
         logger.SetAsyncMode(true);
-        logger.SetLogLevel(LogEngine::Levels::llInfo, false); // do not overwrite sink's log levels.
+        logger.SetLogLevel(llevel, false); // do not overwrite sink's log levels.
 
         //std::shared_ptr<LogEngine::Sink> sink(DBG_NEW LogEngine::StdoutSinkST(MFT_LOGGER_NAME));
         //sink->SetLogLevel(LogEngine::Levels::llError);
