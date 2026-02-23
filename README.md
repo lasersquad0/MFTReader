@@ -10,13 +10,13 @@ MFTReader application is mostly based on this information.
 What MFTReader app can do:
 - read single file/folder information by MFT record ID.
 - read single file/folder information by full path
-- read entire NTFS filesystem (all files and folders and their attributes) and build statistic that cannot built with other methods of reading
+- read entire NTFS filesystem (all files and folders, their attributes, without file data) and build statistic that cannot built with using other methods
 
 Statistic that is built by MFTReader app includes:
 - number of hard links for file
 - number of names assigned to the file/folder (you will discover many interesting thing here!)
-- number and names of data streams assigned to file/folder
-- number of NTFS attributes that file/folder has (do not mix it with file DOS file attributes, NTFS attributes is a different thing)
+- number and names of data streams assigned to file/folder (very interesting too)
+- number of NTFS attributes that file/folder has (do not mix with file DOS file attributes, NTFS attributes is a different thing)
 - statistic of files having either resident or non-resident NTFS attributes
 - number of reparse points for the file/folder
 - etc.
