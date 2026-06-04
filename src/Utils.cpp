@@ -9,6 +9,22 @@
 #include "Utils.h"
 
 
+// removes all leading and trailing \n \r and space symbols from string
+std::wstring TrimSPCRLF(std::wstring str) // str passed by value here intentionally
+{
+    // remove any leading and traling spaces, tabs and \n, \r.
+    size_t strBegin = str.find_first_not_of(_T(" \t\r\n"));
+    if (strBegin == std::string::npos) return _T("");
+
+    size_t strEnd = str.find_last_not_of(_T(" \t\r\n"));
+    assert(strEnd != std::string::npos);
+
+    str.erase(strEnd + 1 /*, S.size() - strEnd*/); // erase till end of string
+    str.erase(0, strBegin);
+
+    return str;
+}
+
 std::string GetErrorMessageTextA(ulong lastErrorCode, const std::string& errorPlace)
 {
     //std::string errMsg = std::system_category().message(lastErrorCode);
