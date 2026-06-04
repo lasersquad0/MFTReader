@@ -1,13 +1,26 @@
 /*
-STANDARD_INFO attr always present in each base MFT record, it always goes first
-ATTR_LIST if presert put between STANDARD_INFO and FILENAME 
-FILENAME - one mft record can contain 1 or more such attributes (one such attr is for DOS 8.3 name)
-INDEX_ROOT always present in each record that contains directory, may contain zero elements, in this case all elements will be in ALLOCATION attribute
-ALLOCATION attr is present in directory MFT record only if there are several (more than two?) files in the dir. INDEX_ROOT is also present together wiht ALLOC
-BITMAP present in directory MFT record only when ALLOCATION is present
-BITMAP attr can be 0 in some cases (which cases?)
+STANDARD_INFO attr always present in each base MFT record, it always goes first, only one such attribute allowed.
+
+ATTR_LIST if present put between STANDARD_INFO and FILENAME. Can be resident or non-resident.
+when resident then it is a number of ATTR_LIST_ENTRY structures (32bytes long each) inside current MFT record. 
+Each ATTR_LIST_ENTRY structure has reference to another MFT record (index? or child?) where actual attribute is located. Several ATTR_LIST_ENTRY may 
+refer to one child MFT record that contain several actual attributes.
+When all ATTR_LIST_ENTRY structures cannot fir into single base MFT record then non-resident ATTR_LIST is created.
+Non-resident ATTR_LIST_ENTRY is just a reference to one or several LCNs where list of ATTR_LIST_ENTRY structures is stored. Each such ATTR_LIST_ENTRY
+structure contains reference to child MFT record where actual attribute can be found.
+
+FILENAME - one MFT record can contain 1 or more such attributes. Usually MFT record contains 2 FILENAME attributes. One of them is for DOS 8.3 name, 
+another one either POSIX or UNICODE type for modern file name. When 1 such attribute, it has UNICODE_AND_DOS name type. If more than two - these are hard 
+links to several files that all refer to the same data. They have different ParentDir values but data for these files is stores in a single place.  
+
+INDEX_ROOT always present in each record that contains directory, may contain zero elements, in this case all elements will be stored in ALLOCATION attribute.
+ALLOCATION attribute is present in directory MFT record only if there are several (more than two?) files in the dir. INDEX_ROOT is also present together with ALLOC.
+There can be several ALLOC attributes in one MFT record.
+
+BITMAP present in directory MFT record only when ALLOCATION is present. BITMAP attr can be 0 in some cases (which cases?).
 BITMAP sometimes contains zero bits inside a sequence of 1 bits (why? - some LCNs are avoided in the list?)
-Some records contain EA and/or EA_INFO attributes (what is this for in windows?)
+
+MFT records can contain EA and/or EA_INFO attributes (what is this for in windows?)
 
 */
 
@@ -15,7 +28,7 @@ Some records contain EA and/or EA_INFO attributes (what is this for in windows?)
 
 #include <guiddef.h>
 #include <cstdint>
-
+#include <format>
 
 // mask to remove sequence number of MFT_REF
 #define MFT_REF_MASK 0x0000FFFFFFFFFFFF
@@ -23,8 +36,11 @@ Some records contain EA and/or EA_INFO attributes (what is this for in windows?)
 // volume root MFT rec ID. This is ID of '.' (or c:\) directory
 #define MFT_ROOT_REC_ID 5
 
-// structure fields aligment set to 1 byte.
-// by default aligment is 16 bytes but here we need 1
+// max file name length, this is because length is stored in uint8_t in FILE_ATTR
+#define MAX_FILE_NAME 255
+
+// structure fields alignment set to 1 byte.
+// by default alignment is 16 bytes but here we need 1
 #pragma pack(push, 1)
 
 /* MFT record number structure. */
@@ -32,14 +48,30 @@ struct MFT_REF
 {
     union 
     {
-    struct 
-    {
-        uint32_t low;	// The low part of the file number.
-        uint16_t high;	// The high part of the file number.
-        uint16_t seq;	// The sequence number of MFT record.
-    } sId;
-    uint64_t Id;
+        struct
+        {
+            uint32_t low;	// The low part of the file number.
+            uint16_t high;	// The high part of the file number.
+            uint16_t seq;	// The sequence number of MFT record.
+        } sId;
+
+        uint64_t Id;
     };
+
+    std::string toString() const
+    {
+        return std::format("s:{}, h:{} l:{}", sId.seq, sId.high, sId.low);
+    }
+
+    std::string toHexString() const
+    {
+        return std::format("{:#x} s:{:#x} h:{:#x} l:{:#x}", Id, sId.seq, sId.high, sId.low);
+    }
+
+    operator std::string() const 
+    {
+        return toString();
+    }
 };
 
 static_assert(sizeof(MFT_REF) == 0x08);
@@ -58,23 +90,14 @@ static_assert(sizeof(MFT_REF) == 0x08);
  * index, that means an INDEX_ROOT and an INDEX_ALLOCATION with a name other
  * than "$I30". It is unknown if it is limited to metadata files only.
  */
-/*
-enum class MFT_RECORD_FLAGS : uint16_t
-{
-    IN_USE        = 0x0001, //MY: IN_USE used for files AND for special "child" records when some attributes do not fit into base record
-    IS_DIRECTORY  = 0x0002, //MY: for directories flag value is set to 0x03 (IN_USE | IS_DIRECTORY)
-    IS_4          = 0x0004, // it is called RECORD_FLAG_SYSTEM in another source
-    IS_VIEW_INDEX = 0x0008, // it is called RECORD_FLAG_UNKNOWN in another source
-    SPACE_FILLER  = 0xFFFF, //TODO Just to make flags 16-bit. Do we really need it since we have uint16_t in enum definition?
-};
-*/
+
 enum MFT_RECORD_FLAGS : uint16_t
 {
-    MFT_FLAG_IN_USE = 0x0001, //MY: IN_USE used for files AND for special "child" records when some attributes do not fit into base record
-    MFT_FLAG_IS_DIRECTORY = 0x0002, //MY: for directories flag value is set to 0x03 (IN_USE | IS_DIRECTORY)
-    MFT_FLAG_IS_4 = 0x0004, // it is called RECORD_FLAG_SYSTEM in another source
+    MFT_FLAG_IN_USE = 0x0001,        //MY: IN_USE used for files AND for special "child" records when some attributes do not fit into base record
+    MFT_FLAG_IS_DIRECTORY = 0x0002,  //MY: for directories flag value is set to 0x03 (IN_USE | IS_DIRECTORY)
+    MFT_FLAG_IS_4 = 0x0004,          // it is called RECORD_FLAG_SYSTEM in another source
     MFT_FLAG_IS_VIEW_INDEX = 0x0008, // it is called RECORD_FLAG_UNKNOWN in another source
-    MFT_FLAG_SPACE_FILLER = 0xFFFF, //TODO Just to make flags 16-bit. Do we really need it since we have uint16_t in enum definition?
+    MFT_FLAG_SPACE_FILLER = 0xFFFF,  //TODO Just to make flags 16-bit. Do we really need it since we have uint16_t in enum definition?
 };
 
 static_assert(sizeof(MFT_RECORD_FLAGS) == 2);
@@ -147,7 +170,7 @@ struct MFT_FILE_RECORD
                                         is done when the file is deleted. NOTE: If this is zero it is left zero. */
     uint16_t HardLinksCnt;     /* 0x12: Number of hard links, i.e. the number of directory entries referencing this record.
                                         NOTE: Only used in mft base records. NOTE: When deleting a directory entry we check the link_count 
-                                        and if it is 1 we delete the file.Otherwise we delete the FILE_NAME_ATTR being referenced by the
+                                        and if it is 1 we delete the file. Otherwise we delete the FILE_NAME_ATTR being referenced by the
                                         directory entry from the mft record and decrement the link_count. */
     uint16_t FirstAttrOffset;  // 0x14: Offset to the first attribute.
     uint16_t Flags;            // 0x16: See MFT_RECORD_FLAGS. 
@@ -170,6 +193,8 @@ struct MFT_FILE_RECORD
 };
 
 static_assert(sizeof(MFT_FILE_RECORD) == 0x30);
+
+#define ATTR_TYPE_CNT 18  // includes ATTR_ZERO but does NOT include ATTR_END
 
 enum ATTR_TYPE : uint32_t
 {
@@ -194,9 +219,8 @@ enum ATTR_TYPE : uint32_t
     ATTR_END         = 0xFFFFFFFF
 };
 
-#define ATTR_TYPE_CNT 0x12
-
 static_assert(sizeof(enum ATTR_TYPE) == 4);
+
 struct MFT_ATTR_RESIDENT
 {
     uint32_t DataSize;      //0x10 Byte size of attribute value. 
@@ -205,7 +229,7 @@ struct MFT_ATTR_RESIDENT
                             //     not have a length of a multiple of 8 - bytes.
     uint8_t  IndexedFlag;   //0x16
     uint8_t  Align;         //0x17 
-}; // 0x18
+}; // 0x08
 
 static_assert(sizeof(MFT_ATTR_RESIDENT) == 0x08);
 
@@ -287,7 +311,7 @@ enum class FILE_ATTR_FLAGS : uint32_t
     ENCRYPTED     = 0x00004000,
     VALID_FLAGS   = 0x00007fb7, // VALID_FLAGS masks out the old DOS VolId and the DEVICE and preserves everything else. This mask is used to obtain all flags that are valid for reading.
     VALID_SET_FLAGS = 0x000031a7, // VALID_SET_FLAGS masks out the old DOS VolId, the DEVICE, DIRECTORY, SPARSE_FILE, REPARSE_POINT, COMPRESSED and ENCRYPTED
-                                  // and preserves the rest. This mask is used to to obtain all flags that are valid for setting.
+                                  // and preserves the rest. This mask is used to obtain all flags that are valid for setting.
 
     DIRECTORY     = 0x10000000, // Better name of this attr is I30_INDEX_PRESENT
                                 // This is a copy of the MFT_RECORD_IS_DIRECTORY bit from the mft record, telling us whether this is a directory or not, 
@@ -311,9 +335,10 @@ static_assert(sizeof(enum FILE_ATTR_FLAGS) == 4);
  * 00:00:00 UTC and is stored as the number of 1-second intervals since then.)
  */
 
-// NOTE: Always resident.
-// NOTE: Present in all base file records on a volume.
-// NOTE: There is conflicting information about the meaning of each of the time fields but the meaning as defined below has been verified to be
+// Always resident.
+// Always first attribute in MFT record
+// Present in all base file records.
+// There is conflicting information about the meaning of each of the time fields but the meaning as defined below has been verified to be
 // correct by practical experimentation on Windows NT4 SP6a and is hence assumed to be the one and only correct interpretation.
 struct ATTR_STD_INFO5
 {
@@ -330,7 +355,7 @@ struct ATTR_STD_INFO5
     uint32_t security_id;	  // 0x34 Security_id for the file. Translate via $SII index and $SDS data stream in FILE_Secure to the security descriptor.
     uint64_t quota_charged;   // 0x38 Byte size of the charge to the quota for all streams of the file. Note: Is zero if quotas are disabled.
     uint64_t usn;		      // 0x40: Last Update Sequence Number of the file. This is a direct index into the file $UsnJrnl. If zero, the USN Journal is disabled.
-};
+}; // 0x48
 
 static_assert(sizeof(ATTR_STD_INFO5) == 0x48);
 
@@ -388,7 +413,7 @@ struct ATTR_FILE_NAME
 static_assert(sizeof(ATTR_FILE_NAME) == 0x42);
 
 /**
- * struct REPARSE_POINT - Attribute: Reparse point (0xc0).
+ * struct REPARSE_POINT - Attribute: Reparse point (0xC0).
  * NOTE: Can be resident or non-resident.
  */
 struct ATTR_REPARSE_POINT
@@ -397,7 +422,9 @@ struct ATTR_REPARSE_POINT
     uint16_t reparse_data_length;	// Byte size of reparse data. 
     uint16_t reserved;		   	    // Align to 8-byte boundary. 
     //uint8_t  reparse_data[0];		// Meaning depends on reparse_tag. 
-};
+}; //0x08
+
+static_assert(sizeof(ATTR_REPARSE_POINT) == 0x08);
 
 struct fsntfs_mount_point_reparse_data
 {
@@ -437,18 +464,18 @@ struct fsntfs_mount_point_reparse_data
 // Object ID (0x40). Resident only???? 
 struct ATTR_OBJECT_ID
 {
-    GUID ObjId;	// 0x00: Unique Id assigned to file.
+    GUID ObjId;	        // 0x00: Unique Id assigned to file.
     GUID BirthVolumeId; // 0x10: Birth Volume Id is the Object Id of the Volume on.
     // which the Object Id was allocated. It never changes.
     GUID BirthObjectId; // 0x20: Birth Object Id is the first Object Id that was
     // ever assigned to this MFT Record. I.e. If the Object Id
     // is changed for some reason, this field will reflect the
     // original value of the Object Id.
-    GUID DomainId;	// 0x30: Domain Id is currently unused but it is intended to be
+    GUID DomainId;	    // 0x30: Domain Id is currently unused but it is intended to be
     // used in a network environment where the local machine is
     // part of a Windows 2000 Domain. This may be used in a Windows
     // 2000 Advanced Server managed domain.
-};
+}; // 0x40
 
 static_assert(sizeof(ATTR_OBJECT_ID) == 0x40);
 
@@ -462,7 +489,7 @@ struct INDEX_HDR
     //
     // DEOffset + Used <= Allocated
     //
-};
+}; // 0x10
 
 static_assert(sizeof(INDEX_HDR) == 0x10);
 
@@ -493,10 +520,10 @@ struct ATTR_INDEX_ROOT
     enum ATTR_TYPE AttrType;  // 0x00: The type of attribute to index on. 0 if entry does not use an attribute
     enum COLLATION_RULE Rule; // 0x04: The rule.
     uint32_t IndexBlockSize;  // 0x08: The size of entire index record in bytes (usually 4096 bytes).
-    uint8_t IndexBlockClst; // 0x0C: The number of clusters or sectors per index record.
+    uint8_t IndexBlockClst;   // 0x0C: The number of clusters or sectors per index record.
     uint8_t res[3];
     struct INDEX_HDR ihdr;    // 0x10:
-};
+}; // 0x10
 
 static_assert(sizeof(ATTR_INDEX_ROOT) == 0x20);
 static_assert(offsetof(ATTR_INDEX_ROOT, ihdr) == 0x10);
@@ -522,19 +549,16 @@ struct NTFS_DE
     };
     uint16_t size;		// 0x08: The size of this entry.
     uint16_t key_size;	// 0x0A: The size of File name attr in bytes (sizeof(ATTR_FILE_NAME) + length of file name).
-    uint16_t flags;		// 0x0C: Entry flags: NTFS_IE_XXX.
+    uint16_t flags;		// 0x0C: Entry flags: NTFS_IE_***.
     uint16_t res;		// 0x0E:
 
     // Here any indexed attribute can be placed.
     // One of them is:
     // struct ATTR_FILE_NAME 
-    //
 
-    // The last 8 bytes of this structure contains the VBN of subnode.
-    // !!! Note !!!
+    // The last 8 bytes of this structure can contain the VCN of subnode.
     // This field is presented only if (flags & NTFS_IE_HAS_SUBNODES)
-    // __le64 vbn;
-}; // 0x10
+}; // 0x10 or 0x18
 
 static_assert(sizeof(NTFS_DE) == 0x10);
 
@@ -544,7 +568,7 @@ struct INDEX_BUFFER
     NTFS_RECORD_HEADER RecHeader; // 'INDX'
     uint64_t vcn;   // 0x10: Virtual cluster number of the index buffer. vcn if index >= cluster or vsn id index < cluster
     INDEX_HDR ihdr; // 0x18:
-};
+}; // 0x28
 
 static_assert(sizeof(INDEX_BUFFER) == 0x28);
 
