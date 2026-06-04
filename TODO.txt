@@ -15,3 +15,33 @@ TO DO
 - print to console all MFT record details (cmd option -m)  
 - how to deal wiht many DATA attributes in ATTR_LIST which compose one read DATA attribute
 - Investigate "many filenames" anomaly. How it is related to hard links count?
+
+- Ideas for funny analysis of file system
+  - MFT records with rare flags
+      IS_4 = 0x0004, // it is called RECORD_FLAG_SYSTEM in another source
+      IS_VIEW_INDEX = 0x0008, // it is called RECORD_FLAG_UNKNOWN in another source
+      SPACE_FILLER 
+  - Files with additional data streams - show these stream names and their sizes
+  - folders with big number of files (let say >1000)
+  - Files that has 3 and more names 
+  - Files that have 2 and more hard links (two and more different names)
+  - files and folders having sparse attribute in its MFT record
+  - files and folders that have 5 and more atrbiutes in its MFT records
+  - files and folder with rare attributes such as: EA, EA_INFO, SECURE_ID, ATTR_LOGGED_UTILITY_STREAM
+  - files and folders with non-resident attributes other than DATA
+  - files and folder having long data run lists (3 and more items in data runs list)
+
+- ideas for command line tool
+  -  show all attributes by MFT Rec ID
+  -  show all attributes by file path 
+     + option whether show DOS file name 
+  - specify volume/disk (c:, d:, etc) which we will work on
+
+ MFTReader.exe -v C -m 32435   // show file info by MFT Rec ID. 
+ MFTReader.exe -p "c:\Program Files\Git\bin\git.exe" // option -d is not needed here because volume is in file path
+ MFTReader.exe -d D -p "Git\bin\git.exe" // relative path. we have to specify option -d here
+ MFTReader.exe -d D -s  // read entire filesystem and collect statistic for volume D:
+
+- Show different statistic for file system 
+   + do we need to calc and show statistic for folder (with all subfolders)?
+   + think how can I define WHAT statistic I would like to see, and how define filters and aggregators (summ, count, etc).
