@@ -11,8 +11,8 @@
 #include "Utils.h"
 #include "NTFS.h"
 
-// structure fields aligment set to 1 byte.
-// by default aligment is 16 bytes but here we need 1
+// structure fields alignment set to 1 byte.
+// by default alignment is 16 bytes but here we need 1
 #pragma pack(push, 1)
 
 struct CACHE_ITEM
@@ -20,8 +20,8 @@ struct CACHE_ITEM
 	uint32_t FParent;
 	uint32_t FLevel;
 	int32_t FFilesCount;
-	MFT_REF FMFTRecID; // MFT Id of this file
-	ATTR_FILE_NAME FileAttr; // 66 bytes. must be last field in FILELIST_ITEM because it has variable size
+	MFT_REF FMFTRecID; // MFT Rec ID of this file
+	ATTR_FILE_NAME FileAttr; // 66 bytes. must be last field in CACHE_ITEM because it has variable size
 
 	//uint32_t FileAttrSize() const { return sizeof(ATTR_FILE_NAME) + FileAttr.FileNameLen * sizeof(wchar_t); } // size in bytes of current item instance 
 	uint32_t Size() const {	return sizeof(CACHE_ITEM) + FileAttr.FileNameLen * sizeof(wchar_t); } // size in bytes of current item instance 
@@ -51,7 +51,7 @@ public:
 		if (Value >= vmax) throw std::out_of_range("Element with index " + std::to_string(Value) + " not found!"); 
 	}
 
-	// checks if there is enough allocated memory to add structure if addBytes size 
+	// checks if there is enough allocated memory to add structure of addBytes size 
     // in case not enough memory EnsureCapacity allocates additional memory, and copies content there  
 	void EnsureCapacity(uint32_t addBytes)
 	{
@@ -111,27 +111,35 @@ public:
 
 	
 	// each structure has different size because of file name string
-	uint32_t AddValue(const uint32_t parent, const uint32_t itemLevel, const MFT_REF MFTRecID, const ATTR_FILE_NAME* data)
+	uint32_t AddValue(const uint32_t parent, /*const uint32_t itemLevel,*/ const MFT_REF MFTRecID, const ATTR_FILE_NAME* data)
 	{
-		assert(itemLevel == FLevel); //TODO remove itemLevel from parameters since it is not needed
+		//assert(itemLevel == FLevel); //TODO remove itemLevel from parameters since it is not needed
 
-		uint32_t itemSize = CalcItemSize(data); // this is total item size: ITEM + filename size
-		assert(itemSize < MAX_PATH * sizeof(wchar_t) + sizeof(CACHE_ITEM) + 2); // 260 max file name length. 2 extra bytes just in case
+		uint32_t itemSize = CalcItemSize(data); // this is total item size: sizeof(CACHE_ITEM) + filename size
+		assert(itemSize < MAX_FILE_NAME * sizeof(wchar_t) + sizeof(CACHE_ITEM) + 1); // 260 max file name length. 1 extra byte just in case
 
 		EnsureCapacity(itemSize);
 
 		((CACHE_ITEM*)FHead)->FParent = parent;
-		((CACHE_ITEM*)FHead)->FLevel = itemLevel;
+		((CACHE_ITEM*)FHead)->FLevel = FLevel; // itemLevel;
 		((CACHE_ITEM*)FHead)->FFilesCount = -1;  // -1 is to differ from empty folders where FFilesCount=0
-		((CACHE_ITEM*)FHead)->FMFTRecID = MFTRecID;
+		((CACHE_ITEM*)FHead)->FMFTRecID = MFTRecID;//TODO may be we could store MFTRectID as uint32_t (4 bytes) here instead of 8 bytes structure
 
-		uint32_t size = CalcFileAttrSize(data); // this is size of ATTR_FILE_NAME + filename size, needed only for memcpy
-		memcpy_s(FHead + offsetof(CACHE_ITEM, FileAttr), size, data, size);// TODO add error check?
+		uint32_t dataSize = CalcFileAttrSize(data); // this is size of ATTR_FILE_NAME + filename size, needed only for memcpy
+		memcpy_s(FHead + offsetof(CACHE_ITEM, FileAttr), dataSize, data, dataSize);// TODO add error check?
 		
 		FHead += itemSize; // move head to total ITEM + filename size bytes.
 		FCount++;
 
 		return FCount - 1; // index of added item
+	}
+
+	CACHE_ITEM* Next(CACHE_ITEM* item) const
+	{
+		assert((uint8_t*)item < FHead);
+		assert((uint8_t*)item >= FStart);
+		auto res = (CACHE_ITEM*)((uint8_t*)item + item->Size());
+		return res;
 	}
 
 	uint32_t Level() const { return FLevel; }
@@ -140,13 +148,6 @@ public:
 	CACHE_ITEM* Last() const  { return (CACHE_ITEM*)FHead; } // this is not really pointer to the last existing item. this is pointer to next item that will be added.
 	bool IsEnd(CACHE_ITEM* item) const { return (uint8_t*)item >= FHead; }
 	bool Belongs(CACHE_ITEM* item) const { return ((uint8_t*)item >= FStart) && ((uint8_t*)item < FHead); }
-	CACHE_ITEM* Next(CACHE_ITEM* item) const 
-	{ 
-		assert((uint8_t*)item < FHead); 
-		assert((uint8_t*)item >= FStart); 
-		auto res = (CACHE_ITEM*)((uint8_t*)item + item->Size()); 
-		return res;
-	}
 
 };
 
