@@ -32,9 +32,10 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint32_t* count, uint32_t** 
         std::wstring vol = ParseVolume(volume); // gets first two symbols of volume (e.g. C:) and adds prefix "\\.\" in front of it 
 
         VOLUME_DATA volData{0};
-        ReadVolumeData(vol, volData); // throws exptions in case of errors
+        ReadVolumeData(vol, volData); // throws exceptions in case of errors
 
-        auto start1 = std::chrono::high_resolution_clock::now();
+        //auto start1 = std::chrono::high_resolution_clock::now();
+        Ticks::Start(_T("ReadVolumeTime"));
 
         logger.InfoFmt("Reading file system: {}", wtos(vol));
 
@@ -88,11 +89,14 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint32_t* count, uint32_t** 
             ff << item << endl;
         }
         */
-        auto stop = std::chrono::high_resolution_clock::now();
-        logger.InfoFmt("Volume reading time : {}", MillisecToStr<std::string>(std::chrono::duration_cast<std::chrono::milliseconds>(stop - start1).count()));
 
         CloseHandle(volData.hVolume);
         //Singleton<TMFTRecCache>::Release();
+        auto stop = std::chrono::high_resolution_clock::now();
+        Ticks::Finish(_T("ReadVolumeTime"));
+
+        logger.InfoFmt("Volume reading time : {}", MillisecToStr<std::string>(Ticks::GetTick(_T("ReadVolumeTime")))); //std::chrono::duration_cast<std::chrono::milliseconds>(stop - start1).count()));
+
     }
 
     catch (std::system_error& ex) 
