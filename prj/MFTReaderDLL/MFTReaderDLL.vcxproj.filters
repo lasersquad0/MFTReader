@@ -39,6 +39,9 @@
     <ClInclude Include="..\..\include\FileLevel.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\include\external\strutils\include\Ticks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="MFTReaderDLL.cpp">
