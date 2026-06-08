@@ -4,6 +4,7 @@
 
 #include <windows.h>
 #include <strutils/include/string_utils.h>
+#include <strutils/include/Ticks.h>
 #include "logengine2/DynamicArrays.h"
 #include "logengine2/FileStream.h"
 #include "NTFS.h"
