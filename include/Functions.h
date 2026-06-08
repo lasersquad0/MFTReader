@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 
 #include "strutils/include/ci_string.h"
 #include "logengine2/LogEngine.h"
@@ -32,6 +33,7 @@
                           "VOLUME INFO", "DATA", "INDEX ROOT", "ALLOCATION", "BITMAP", "REPARSE", "EA INFORMATION", \
                           "EA", "PROPERTYSHEET", "LOGGED UTILITY STREAM", "USER ATTRIBUTE" }
 
+
 // Attr types have numbers 0x10, 0x20, 0x30, etc. - convert them into consecutive indexes in the array
 // used for indexing ATTR_TYPE_NAMES array and in some other places
 #define MakeAttrTypeIndex(_) ((_)>>4) 
@@ -39,6 +41,10 @@
 
 static const char* AttrTypeNames[ATTR_TYPE_CNT] ATTR_TYPE_NAMES;
 static const char* FileNameTypes[]{ "POSIX", "UNICODE", "DOS", "UNICODE_AND_DOS" };
+static const char* CollationRuleNames[]{ "BINARY",  "FILENAME", "UINT", "SID",  "SECURITY_HASH", "UINTS", "UNKNOWN"};
+
+#define MakeCollationRuleIndex(_) ((_)==0?0:(_)==1?1:(_)==0x10?2:(_)==0x11?3:(_)==0x12?4:(_)==0x13?5:6) 
+#define CollRuleName(_) (CollationRuleNames[MakeCollationRuleIndex(_)])
 
 struct VOLUME_DATA
 {
@@ -55,7 +61,7 @@ struct FILE_NAME
 {
     ci_string ciName;
     struct ATTR_FILE_NAME Attr{0};
-    struct MFT_REF MFTRef{0}; // MFT Id of this file
+    struct MFT_REF MFTRef{0}; // MFT Rec ID of this file
 
     //bool operator>(const FILE_NAME& other) const { return ciName > other.ciName; }
     bool operator<(const FILE_NAME& other) const { return ciName < other.ciName; }
@@ -76,7 +82,7 @@ struct DIR_NODE
     TFileList FileList; // filled from INDEX_ROOT attribute and then from ALLOCATE after processing data runs 
     TDataRuns DataRuns; // from ALLOCATE attribute
     TBitField Bitmap;   // tells us which LCNs from data runs are valid ones
-    uint64_t DirSize{0};
+    uint64_t DirSize = 0;
 
     void Clear() 
     {
@@ -91,8 +97,8 @@ struct ITEM_INFO
 {
     MFT_REF RecID;
     uint16_t AttrCounters[ATTR_TYPE_CNT];
-    bool NonResidentAttrList; // rare case. has an ATTR_LIST attribute that is non-resident
-    bool NonResidentBitmap;   // rare case. has an BITMAP attribute that is non-resident
+    std::optional<bool> NonResidentAttrList = std::nullopt; // rare case. has an ATTR_LIST attribute that is non-resident
+    std::optional<bool> NonResidentBitmap = std::nullopt;   // rare case. has an BITMAP attribute that is non-resident
     //bool NonResidentAlloc;    
     bool ResidentData;   // Has an DATA attribute that is resident. Not so rare case.
     uint32_t FileAttrib;
@@ -123,11 +129,14 @@ struct ITEM_INFO
 };
 
 typedef THArray<ITEM_INFO> TItemInfoList;
+
 typedef std::function<void(const ATTR_FILE_NAME*, const MFT_REF&)> FileListPred;
 
 typedef int32_t (__stdcall *ProgressCallbackPtr)(int32_t progress);
 
 LogEngine::Logger& GetLoggerFunc();
+std::string FormatFileAttributes(uint32_t a);
+
 std::wstring ParseVolume(const std::wstring& vol);
 void ReadVolumeData(const std::wstring& volume, VOLUME_DATA& volumeData);
 bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitField& bitmap);
@@ -139,16 +148,18 @@ bool ReadClusters(const VOLUME_DATA& volData, CLST lcnStart, CLST lcnCnt, PBYTE 
 bool FixupUSA(const VOLUME_DATA& volData, PBYTE dataBuf, DATA_RUN_ITEM& rli, uint64_t rlilen);
 bool LoadMFTRecord(const VOLUME_DATA& volData, MFT_REF recID, uint8_t* mftRec);
 uint8_t* LoadMFTRecordCache(const VOLUME_DATA& volData, MFT_REF recID);
-void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues, PMFT_ATTR_HEADER* result);
-void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues);
+//void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues, PMFT_ATTR_HEADER* result);
+//void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues);
 //int32_t GetFileListFromMFTRec(const VOLUME_DATA& volData, MFT_FILE_RECORD* mftRec, DIR_NODE& node);
 void GetFileList(INDEX_HDR* ihdr, FileListPred pred);
 bool ProcessAllocDataRuns(VOLUME_DATA& volData, DIR_NODE& node, FileListPred pred);
 void ReadDirsV2(VOLUME_DATA& volData);
 void ReadDirsV1(VOLUME_DATA& volData);
 void ReadItems(VOLUME_DATA& volData);
-uint32_t MFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path);
 bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInfo);
 
+uint32_t GetMFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path);
+bool GetPathByMFTRecID(VOLUME_DATA& volData, MFT_REF mftRecID, THArray<std::wstring>& paths);
 
+//void GetPointersToFileNameAttrs(MFT_FILE_RECORD* mftRec, THArray<ATTR_FILE_NAME*>& attrFileNames);
 //void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnames);
