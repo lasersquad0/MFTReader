@@ -30,6 +30,7 @@ static void InitLogger()
             logger.AddSink(sink);
            // logger.SetAsyncMode(true);
             logger.SetLogLevel(LogEngine::Levels::llInfo);
+            logger.Info("LogEngine STARTED");
         }
     }
     // catching various LogEngine exceptions
