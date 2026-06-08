@@ -9,7 +9,7 @@ class TBitField
 {
 private:
     uint64_t* FBits;
-    uint64_t FCount;
+    uint32_t FCount;
     uint64_t FBitsCount;
 public:
     TBitField()
@@ -19,7 +19,7 @@ public:
         FBitsCount = 0;
     }
 
-    TBitField(const uint64_t* bits, const uint64_t wordsCount) : TBitField() // count is in uint64_t words here
+    TBitField(const uint64_t* bits, const uint32_t wordsCount) : TBitField() // count is in uint64_t words here
     {
         SetData(bits, wordsCount);
     }
@@ -31,7 +31,7 @@ public:
 
     ~TBitField() { delete[] FBits; FBits = nullptr; }
 
-    void SetData(const uint64_t* bits, const uint64_t wordsCount) // count is in uint64_t words here
+    void SetData(const uint64_t* bits, const uint32_t wordsCount) // count is in uint64_t words here
     {
         delete[] FBits; // free previously allocated memory if any
         FBits = DBG_NEW uint64_t[wordsCount];
@@ -53,7 +53,7 @@ public:
         return (uint8_t*)FBits;
     }
 
-    uint64_t Count() const { return FCount; }
+    uint32_t Count() const { return FCount; }
 
     void Clear()
     {
