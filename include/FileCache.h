@@ -14,7 +14,7 @@
 #include <string>
 
 #include "strutils/include/string_utils.h"
-#include "logengine2/DynamicArrays.h"
+//#include "logengine2/DynamicArrays.h"
 #include "logengine2/FileStream.h"
 #include "NTFS.h"
 #include "FileLevel.h"
@@ -22,6 +22,7 @@
 
 #define MAX_DIR_LEVELS 100
 #define MAX_DIRS 100'000
+#define AVG_FILE_LEN 46   //in bytes
 
 struct CacheItemRef
 {
@@ -76,11 +77,8 @@ public:
 		else
 		{
 			assert(level == FCacheData.Count());
-			//level_type vLevel(level, MAX_DIRS * sizeof(CACHE_ITEM)); // approximate capacity in bytes 
-			//vLevel.reserve(MAX_DIRS);
-			auto resultLevel = DBG_NEW TLevel(level, MAX_DIRS * sizeof(CACHE_ITEM));
+			auto resultLevel = DBG_NEW TLevel(level, MAX_DIRS * (sizeof(CACHE_ITEM) + AVG_FILE_LEN)); // remember that Filename goes in the end of CACHE_ITEM
 			FCacheData.AddValue(resultLevel);
-			//level_type& resultLevel = FCacheData.GetValue(level);
 			return resultLevel;
 		}
 	}
@@ -95,7 +93,7 @@ public:
 		MFT_REF rootId{0};
 		rootId.Id = MFT_ROOT_REC_ID; // root MFT is is always 5.
 		
-		uint32_t idx = level->AddValue(0, 0, rootId, fileData);
+		uint32_t idx = level->AddValue(0, rootId, fileData);
 		UNREFERENCED_PARAMETER(idx);
 		assert(idx == 0);
 		
@@ -106,7 +104,7 @@ public:
 	{
 		TLevel* level = GetLevel(itemLevel);
 		assert(level->Level() == itemLevel);
-		return CacheItemRef{ itemLevel, level->AddValue(parent, itemLevel, MFTRecID, fileData) };
+		return CacheItemRef{ itemLevel, level->AddValue(parent, /*itemLevel,*/ MFTRecID, fileData) };
 	}
 
 	uint32_t TotalCount()
@@ -352,17 +350,19 @@ void FillFileData(const TCHAR* filePath, FILEDATA& fileData)
 
 	void PrintLevelsStat()
 	{
-		std::cout << "Levels Count: " << FCacheData.Count() << std::endl;
+		std::cout << "----- STATISTIC BY LEVELS -----" << std::endl;
+
+		std::cout << "Levels Count: " << FCacheData.Count() << std::endl << std::endl;
 
 		size_t i = 0, sum = 0;
 		for (auto level : FCacheData)
 		{
-			std::cout << "Level" << i << " : " << level->Count() << std::endl;
+			std::cout << "Level" << i << std::setw(4) << ": " << level->Count() << std::endl;
 			i++;
 			sum += level->Count();
 		}
 
-		std::cout << "SUMM of Levels : " << sum << std::endl;
+		std::cout << std::endl << "SUMM of Levels : " << sum << std::endl;
 	}
 
 	/*
