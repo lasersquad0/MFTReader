@@ -124,20 +124,20 @@ uint8_t* LoadMFTRecordCache(const VOLUME_DATA& volData, MFT_REF recID)
 {
     TMFTRecCache* cache = Singleton<TMFTRecCache>::getInstance();
 
-    uint8_t** result = cache->GetValuePointer(recID.Id);
-    if (result == nullptr) // no value in cache, load mft record from disk
+    uint8_t** result = cache->GetValuePointer(recID.sId.low);
+    if (result == nullptr) // no value in cache, load MFT record from disk
     {
         uint8_t* mftRecBuf = DBG_NEW uint8_t[volData.BytesPerMFTRec];
         if (!LoadMFTRecord(volData, recID, mftRecBuf))
-            return nullptr; // error loading mft record, it means that DeviceIoControl failed with error
+            return nullptr; // error loading MFT record, it means that DeviceIoControl failed with error
 
-        //TODO shall we use recID.sId.low here because high part of recID.Id may change when MFT record is modified
-        cache->SetValue(recID.Id, mftRecBuf); // update cache
+        //we use recID.sId.low here because high part of recID.Id may change when MFT record is modified
+        cache->SetValue(recID.sId.low, mftRecBuf); // update cache
 
         return mftRecBuf;
     }
 
-    return *result; // return mft record from cache
+    return *result; // return MFT record from cache
 }
 
 //TODO make it work with resident attributes too
@@ -164,15 +164,16 @@ bool DataRunsDecode(MFT_ATTR_HEADER* attr, TDataRuns& runs)
     while ((datarun < attrEnd) && *datarun) // stop if we reached zero in both half bytes
     {
         DATA_RUN_ITEM ri;
-        int64_t deltaxcn;
+        int64_t deltaxcn; // can be negative, it's ok
 
-        ri.lcn = currLCN;
         ri.vcn = currVCN;
+        ri.lcn = currLCN;
 
         uint8_t lens = *datarun;
         uint8_t b = lens & 0x0F; // minor half byte is length (in bytes) of the following int value "number of clusters in current data run"
         if (b)
         {
+            assert(b <= 8);
             // reading number of bytes specified in minor half byte and interpret it as integer "number of clusters"
             for (deltaxcn = datarun[b--]; b; b--)
                 deltaxcn = (deltaxcn << 8) + datarun[b];
@@ -204,12 +205,12 @@ bool DataRunsDecode(MFT_ATTR_HEADER* attr, TDataRuns& runs)
 
         datarun += b3 + 1; // move to the next data run
 
-        logger.DebugFmt("DataRunsDecode VCN: {}", ri.vcn);
-        logger.DebugFmt("DataRunsDecode LCN: {}", ri.lcn);
-        logger.DebugFmt("DataRunsDecode Length: {}", ri.len);
+        logger.DebugFmt("[DataRunsDecode] Data Run. VCN: {}, LCN: {}, Len: {}", ri.vcn, ri.lcn, ri.len);
+       // logger.DebugFmt("[DataRunsDecode] LCN: {}", ri.lcn);
+       // logger.DebugFmt("[DataRunsDecode] Length: {}", ri.len);
     }
 
-    logger.DebugFmt("[DataRunsDecode] Data Runs Count: {}", runs.Count());
+    logger.DebugFmt("[DataRunsDecode] Data Runs Count: {}, Last VCN: {}", runs.Count(), currVCN);
 
     return true;
 }
@@ -268,7 +269,7 @@ bool ReadAllMftRecords(PCWSTR szVolume, TLCNRecs& mftRecs)
 
             if (!ntfs_is_file_recp(pmftrec->RecHeader.Signature))
             {
-                std::string str = std::format("Signature do NOT MATCH. MFT RecID: {}, Expected: {}, Actual: {}", pmftrec->IndexMFTRec, (uint32_t)NTFS_SIGNATURE::magic_FILE, (char*)pmftrec->RecHeader.Signature);
+                std::string str = std::format("Signature do NOT MATCH. MFT RecID: {}, Expected: {}, Actual: {}", pmftrec->IndexMFTRec, (uint32_t)NTFS_SIGNATURE::magic_FILE, std::string((char*)pmftrec->RecHeader.Signature, 4));
                 std::cout << str << std::endl;
             }
 
