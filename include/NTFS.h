@@ -65,7 +65,12 @@ struct MFT_REF
 
     std::string toHexString() const
     {
-        return std::format("{:#x} s:{:#x} h:{:#x} l:{:#x}", Id, sId.seq, sId.high, sId.low);
+        return std::format("s:{:#x} h:{:#x} l:{:#x} ({})", sId.seq, sId.high, sId.low, sId.low);
+    }
+
+    static std::string toHexString(uint32_t indexMFTRec)
+    {
+        return std::format("l:{0:#x} ({0})", indexMFTRec);
     }
 
     operator std::string() const 
