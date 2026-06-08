@@ -54,6 +54,9 @@
     <ClCompile Include="..\..\include\external\cli\OptionsList.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\common\src\string_utils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\BitField.h">
@@ -94,6 +97,12 @@
     </ClInclude>
     <ClInclude Include="..\..\include\external\cli\OptionsList.h">
       <Filter>Header Files\CLI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\common\include\string_utils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\common\include\Ticks.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
