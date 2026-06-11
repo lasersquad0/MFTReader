@@ -871,7 +871,7 @@ static int32_t GetFileListFromMFTRec(const VOLUME_DATA& volData, MFT_FILE_RECORD
 // goes through path dirs in path, reads files in SORTED order, goes to subdirs and so on, until end of path
 // returns MFT Record ID (low part of it)
 // if path is incorrect function returns 0 (zero).
-uint32_t GetMFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path) // ci_string is for case INsensitive search here
+MFTRecIndex GetMFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path) // ci_string is for case INsensitive search here
 {
     if (path.size() == 0) return 0;
 
