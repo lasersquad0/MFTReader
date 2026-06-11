@@ -17,9 +17,11 @@
 #define LODWORD(_) static_cast<uint32_t>(_)
 
 
-static bool ParseAttrList(const VOLUME_DATA& volData, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd)
+static void ParseAttrList(MFTRecIndex indexMFTRec, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, AttrListPred pred)
 {
     GET_LOGGER;
+
+    uint64_t processedAttrSize = 0;
 
     ATTR_LIST_ENTRY* attrEntry = startListItem;
 
@@ -42,61 +44,69 @@ static bool ParseAttrList(const VOLUME_DATA& volData, ATTR_LIST_ENTRY* startList
         {
             assert(attrEntry->StartVCN == 0);
             if (attrEntry->StartVCN != 0)
-                logger.WarnFmt("Looks like we have met incorrect case. StartVCN({}) <> 0 for {} attribute. MFT Rec ID: {}.", attrEntry->StartVCN, AttrName(attrEntry->AttrType), MFT_REF::toHexString(pmftrec->IndexMFTRec));
+                logger.WarnFmt("Looks like we have met incorrect case. StartVCN({}) <> 0 for {} attribute. MFT Rec ID: {}.", 
+                          attrEntry->StartVCN, AttrName(attrEntry->AttrType), MFT_REF::toHexString(indexMFTRec));
         }
 
-        if (attrEntry->StartVCN > volData.MaxMFTIndex)
-            logger.WarnFmt("StartVCN ({}) for {} attribute is greater than max MFT Index ({:#x}).", attrEntry->StartVCN, AttrName(attrEntry->AttrType), volData.MaxMFTIndex);
+       // if (attrEntry->StartVCN > volData.MaxMFTIndex)
+       //     logger.WarnFmt("StartVCN ({}) for {} attribute is greater than max MFT Index ({:#x}).", attrEntry->StartVCN, AttrName(attrEntry->AttrType), volData.MaxMFTIndex);
 
         // count only first portion of such attributes
-        if (attrEntry->StartVCN == 0)
+        //if (attrEntry->StartVCN == 0)
         {
             // attributes in attr list located in a separate cluster may refer back to the base record
             // because some attributes reside in base mft record and the others in "child" mft record(s)
             // the attr list attribute itself is located in cluster that is not mft record, it does not contain signature or Fixups values, etc.
             //TODO may be good idea to add pmftrec->IndexMFTRec into visitedMFTRec as a first item and remove this "if"
-            if (attrEntry->ref.sId.low != pmftrec->IndexMFTRec) // attrs located in current pmftrec either already parsed or will be parsed during usual cycle of parsing 
+            if (attrEntry->ref.sId.low != indexMFTRec) // attrs located in current pmftrec either already parsed or will be parsed during usual cycle of parsing 
             {
                 if (visitedMFTRec.IndexOf(attrEntry->ref.sId.low) == -1) // whether we haven't parsed this MFT record yet
                 {
+                    pred(attrEntry->ref);
                     // attrEntry->ref is a MFT rec where attr value is located
-                    if (!ReadMftItemInfo(volData, attrEntry->ref, itemInfo))
-                    {
-                        logger.Error("ReadMftItemInfo() returned false!");
-                    }
+                    //if (!ReadMftItemInfo(volData, attrEntry->ref, itemInfo))
+                    //{
+                    //    logger.Error("ReadMftItemInfo() returned false!");
+                    //}
                     visitedMFTRec.AddValue(attrEntry->ref.sId.low);
                 }
             }
         }
-        else // StartVCN is a cluster where attribute portion value is located
+        //else // StartVCN is a cluster where attribute portion value is located
+        if (attrEntry->StartVCN != 0)
         {
             logger.WarnFmt("ATTR_LIST_ENTRY.StartVCN <> 0! StartVCN: {}, AttrType: {}, ref: {}, MFT Rec ID: {}",
-                attrEntry->StartVCN, AttrName(attrEntry->AttrType), attrEntry->ref.toHexString(), MFT_REF::toHexString(pmftrec->IndexMFTRec));
+                attrEntry->StartVCN, AttrName(attrEntry->AttrType), attrEntry->ref.toHexString(), MFT_REF::toHexString(indexMFTRec));
 
-            if (attrEntry->StartVCN > volData.MaxMFTIndex)
-                logger.WarnFmt("StartVCN ({}) for {} attribute is greater than MAXimum MFT Index ({}).", attrEntry->StartVCN, AttrName(attrEntry->AttrType), volData.MaxMFTIndex);
+            //pred(attrEntry->ref);
+
+            //if (attrEntry->StartVCN > volData.MaxMFTIndex)
+            //    logger.WarnFmt("StartVCN ({}) for {} attribute is greater than MAXimum MFT Index ({}).", attrEntry->StartVCN, AttrName(attrEntry->AttrType), volData.MaxMFTIndex);
         }
 
         processedAttrSize += attrEntry->AttrSize;
-        if (processedAttrSize >= currAttr->nonres.RealSize) break;
+        if (processedAttrSize >= realSize)
+        {
+            logger.InfoFmt("Loop is finished by this condition: 'processedAttrSize >= realSize'. Last Attr: {}, realSize: {}", AttrName(attrEntry->AttrType), realSize);
+            break;
+        }
 
         attrEntry = (ATTR_LIST_ENTRY*)Add2Ptr(attrEntry, attrEntry->AttrSize);
-        if ((uint8_t*)attrEntry >= attrEntryEnd) break;
+        
+        if ((uint8_t*)attrEntry >= attrListEnd)
+        {
+            logger.InfoFmt("Loop is finished by this condition: 'attrEntry >= attrEntryEnd' (end of buffer with clusters). Last Attr: {}, currAttr->nonres.RealSize: {}",
+                AttrName(attrEntry->AttrType), realSize);
+            break;
+        }
+
+
         //assert(attrEntry->AttrId > 0);
         assert(attrEntry->AttrType > 0);
         assert(attrEntry->AttrSize > 0);
         assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
         assert(attrEntry->AttrType != ATTR_ZERO);
         assert(attrEntry->AttrType != ATTR_END);
-    }
-
-
-    // check again if we finished with ATTR_LIST attribute
-    if ((uint8_t*)attrEntry >= attrListEnd)
-    {
-        logger.InfoFmt("Loop is finished by this condition: 'attrEntry >= attrEntryEnd' (end of buffer with clusters). Last Attr: {}, currAttr->nonres.RealSize:",
-            AttrName(attrEntry->AttrType), currAttr->nonres.RealSize);
-        break;
     }
 }
 
@@ -340,6 +350,18 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
                 ATTR_LIST_ENTRY* attrEntry = (ATTR_LIST_ENTRY*)attrValue;
                 uint8_t* attrEntryEnd = Add2Ptr(currAttr, currAttr->AttrSize);
 
+                AttrListPred CallReadMftItemInfo = [&itemInfo, &visitedMFTRec, &volData](const MFT_REF& ref)
+                    {
+                        GET_LOGGER;
+                        // ref - is a MFT rec where attr value is located
+                        if (!ReadMftItemInfo(volData, ref, itemInfo))
+                        {
+                            logger.Error("ReadMftItemInfo() returned false!");
+                        }
+                    };
+
+                ParseAttrList(pmftrec->IndexMFTRec, attrEntry, attrEntryEnd, currAttr->nonres.RealSize, CallReadMftItemInfo);
+                /*
                 assert(attrEntry->AttrType > 0);
                 assert(attrEntry->AttrSize > 0);
                 assert(attrEntry->AttrType != ATTR_ZERO);
@@ -366,10 +388,12 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
                         // several attrEntries can refer to one MFT record, we want to parse MFT record only once
                         if (visitedMFTRec.IndexOf(attrEntry->ref.sId.low) == -1)
                         {
-                            if (!ReadMftItemInfo(volData, attrEntry->ref, itemInfo))
-                            {
-                                logger.Error("ReadMftItemInfo() returned false!");
-                            }
+                            CallReadMftItemInfo(attrEntry->ref);
+                            // attrEntry->ref is a MFT rec where attr value is located
+                            //if (!ReadMftItemInfo(volData, attrEntry->ref, itemInfo))
+                            //{
+                            //    logger.Error("ReadMftItemInfo() returned false!");
+                            //}
                             visitedMFTRec.AddValue(attrEntry->ref.sId.low);
                         }
                     }
@@ -382,7 +406,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
                     //assert(attrEntry->StartVCN == 0);
                     assert(attrEntry->AttrType != ATTR_ZERO);
                     assert(attrEntry->AttrType != ATTR_END);
-                }
+                }*/
 
                 logger.Debug("resident ATTR_LIST_ATTR FINISHED");
 
@@ -442,13 +466,18 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
             } // switch
 
         }
-        else // Attribute is NON-resident
+        else // Attribute is NON-Resident
         {
             logger.DebugFmt("Attr StartVCN: {}",     currAttr->nonres.StartVCN);
             logger.DebugFmt("Attr LastVCN: {}",      currAttr->nonres.LastVCN);
             logger.DebugFmt("Attr RealSize: {}",     currAttr->nonres.RealSize);
             logger.DebugFmt("Attr StreamSize: {}",   currAttr->nonres.StreamSize);
             logger.DebugFmt("Attr AllocatedSize: {}",currAttr->nonres.AllocatedSize);
+
+            assert(currAttr->nonres.RealSize == currAttr->nonres.StreamSize);
+
+            if (currAttr->nonres.RealSize != currAttr->nonres.StreamSize)
+                logger.Info("currAttr.RealSize != currAttr.StreamSize");
 
             switch (currAttr->AttrType)
             {
@@ -465,7 +494,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
 
                 if (DataRunsDecode(currAttr, itemInfo.Node.DataRuns)) // decode data runs just for testing purposes
                 {
-                    logger.DebugFmt("NON-Resident ATTR_DATA data runs count. Stream Name: {}, Count: {}.", nameOfAttrA, itemInfo.Node.DataRuns.Count());
+                    logger.DebugFmt("NON-Resident ATTR_DATA data runs count: {}, Stream Name: {}.", itemInfo.Node.DataRuns.Count(), nameOfAttrA);
                 }
                 else
                 {
@@ -534,7 +563,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
 
                 THArray<uint32_t> visitedMFTRec;
                 uint32_t currRun = 0;
-                uint64_t processedAttrSize = 0;
+                //uint64_t processedAttrSize = 0;
 
                 while (currRun < dataRuns.Count())
                 {
@@ -552,13 +581,26 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
                         break;
                     }
 
+
+                    AttrListPred CallReadMftItemInfo = [&itemInfo, &visitedMFTRec, &volData](const MFT_REF& ref)
+                        {
+                            GET_LOGGER;
+                            // ref - is a MFT rec where attr value is located
+                            if (!ReadMftItemInfo(volData, ref, itemInfo))
+                            {
+                                logger.Error("ReadMftItemInfo() returned false!");
+                            }
+                        };
+
                     ATTR_LIST_ENTRY* attrEntry = (ATTR_LIST_ENTRY*)dataBuf;
 
                     //TODO probably we need to parse each cluster separately because end of last attrEntry in cluster#1 does not mean start of first attrEntry in cluster#2
                    
                     uint8_t* attrEntryEnd = dataBuf + dataBufSize;
 
-                    assert(attrEntry->AttrSize > 0);
+                    ParseAttrList(pmftrec->IndexMFTRec, attrEntry, attrEntryEnd, currAttr->nonres.RealSize, CallReadMftItemInfo);
+
+                    /*assert(attrEntry->AttrSize > 0);
                     assert(attrEntry->AttrType > 0);
                     assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
                     assert(attrEntry->AttrType != ATTR_ZERO);
@@ -592,11 +634,12 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
                             {
                                 if (visitedMFTRec.IndexOf(attrEntry->ref.sId.low) == -1) // whether we haven't parsed this MFT record yet
                                 {
+                                    CallReadMftItemInfo(attrEntry->ref);
                                     // attrEntry->ref is a MFT rec where attr value is located
-                                    if (!ReadMftItemInfo(volData, attrEntry->ref, itemInfo))
-                                    {
-                                        logger.Error("ReadMftItemInfo() returned false!");
-                                    }
+                                    //if (!ReadMftItemInfo(volData, attrEntry->ref, itemInfo))
+                                    //{
+                                    //    logger.Error("ReadMftItemInfo() returned false!");
+                                    //}
                                     visitedMFTRec.AddValue(attrEntry->ref.sId.low);
                                 }
                             }
@@ -630,7 +673,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
                         logger.InfoFmt("Loop is finished by this condition: 'attrEntry >= attrEntryEnd' (end of buffer with clusters). Last Attr: {}, currAttr->nonres.RealSize:", 
                                        AttrName(attrEntry->AttrType), currAttr->nonres.RealSize);
                         break;
-                    }
+                    }*/
 
                     currRun++;
                 }
@@ -766,11 +809,11 @@ void ReadItems(VOLUME_DATA& volData)
     auto maxFilenames = std::max_element(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.FileNames.Count() < b.FileNames.Count(); });
     auto maxDataStreams = std::max_element(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.DataStreamNames.Count() < b.DataStreamNames.Count(); });
 
-    uint32_t FileNamesTotalSymbols = std::accumulate(itemsList.begin(), itemsList.end(), 0ul, 
+    uint32_t FileNamesTotalSymbols = std::accumulate(itemsList.begin(), itemsList.end(), (uint32_t)0, 
         [](uint32_t acc, ITEM_INFO& x) 
         {
             // find average length of all filenames inside one MFT record
-            uint32_t symbols = std::accumulate(x.FileNames.begin(), x.FileNames.end(), 0ul, [](uint32_t accum, std::wstring& v) { return accum + v.size(); });
+            uint32_t symbols = std::accumulate(x.FileNames.begin(), x.FileNames.end(), (uint32_t)0, [](uint32_t accum, std::wstring& v) { return accum + (uint32_t)v.size(); });
             return acc + symbols/x.FileNames.Count();
         }
     );
