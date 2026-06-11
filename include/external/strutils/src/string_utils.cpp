@@ -2,6 +2,7 @@
 #include <Windows.h>
 #include <format>
 #include <stdexcept>
+#include <cassert>
 
 #include "../include/string_utils.h"
 
@@ -40,5 +41,31 @@ std::wstring stow(const std::string& str)
 
     wstr.resize(bufferSize - 1);
     return wstr;
+}
+
+static void Trim(std::string& str) //Note: str will be changed
+{
+    // remove any leading and traling spaces and tabs.
+    size_t strBegin = str.find_first_not_of(" \t");
+    if (strBegin == std::string::npos) return;
+
+    size_t strEnd = str.find_last_not_of(" \t");
+    assert(strEnd != std::string::npos);
+
+    str.erase(strEnd + 1 /*, str.size() - strEnd*/);
+    str.erase(0, strBegin);
+}
+
+static char mytoupper(int c) // to eliminate compile warning "warning C4244: '=': conversion from 'int' to 'char', possible loss of data"
+{
+    return (char)toupper(c);
+}
+
+void TrimAndUpper(std::string& str) //Note: str will be changed
+{
+    Trim(str);
+
+    // to uppercase
+    transform(str.begin(), str.end(), str.begin(), ::mytoupper);
 }
 
