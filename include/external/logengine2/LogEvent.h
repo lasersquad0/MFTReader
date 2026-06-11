@@ -20,7 +20,7 @@
 LOGENGINE_NS_BEGIN
 
 namespace Levels
-{
+{//TODO shall we replace by class enum??
 	enum LogLevel:int { llOff, llCritical, llError, llWarning, llInfo, llDebug, llTrace, n_LogLevels };
 }
 
