@@ -140,7 +140,7 @@ int _tmain(int argc, TCHAR* argv[])
 
             // we support both 10based mftRecID and hex format. 
             auto recIdStr = TrimSPCRLF(cmd.GetOptionValue(OPT_M, 0));
-            uint32_t mftRecID;
+            MFTRecIndex mftRecID;
             if (recIdStr.size() > 1 && recIdStr[0] == '0' && (recIdStr[1] == 'x' || recIdStr[1] == 'X'))
                 mftRecID = std::stoul(recIdStr, nullptr, 16); // exception will be thrown if option value cannot be converted into uint
             else
@@ -183,7 +183,7 @@ int _tmain(int argc, TCHAR* argv[])
         else if (cmd.HasOption(OPT_P))
         {
             cli_string path = cmd.GetOptionValue(OPT_P, 0);
-            uint32_t MFTRecID = GetMFTRecIdByPath(vol, path.c_str());
+            MFTRecIndex MFTRecID = GetMFTRecIdByPath(vol, path.c_str());
             if (MFTRecID > 0)
             {
                 logger.SetLogLevel(LogEngine::Levels::llDebug);
