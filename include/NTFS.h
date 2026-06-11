@@ -34,7 +34,7 @@ MFT records can contain EA and/or EA_INFO attributes (what is this for in window
 #define MFT_REF_MASK 0x0000FFFFFFFFFFFF
 
 // volume root MFT rec ID. This is ID of '.' (or c:\) directory
-#define MFT_ROOT_REC_ID 5
+constexpr auto MFT_ROOT_REC_ID = 5;
 
 // max file name length, this is because length is stored in uint8_t in FILE_ATTR
 #define MAX_FILE_NAME 255
@@ -43,6 +43,8 @@ MFT records can contain EA and/or EA_INFO attributes (what is this for in window
 // by default alignment is 16 bytes but here we need 1
 #pragma pack(push, 1)
 
+typedef uint32_t MFTRecIndex;
+
 /* MFT record number structure. */
 struct MFT_REF 
 {
@@ -50,7 +52,7 @@ struct MFT_REF
     {
         struct
         {
-            uint32_t low;	// The low part of the file number.
+            MFTRecIndex low;	// The low part of the file number.
             uint16_t high;	// The high part of the file number.
             uint16_t seq;	// The sequence number of MFT record.
         } sId;
@@ -68,7 +70,7 @@ struct MFT_REF
         return std::format("s:{:#x} h:{:#x} l:{:#x} ({})", sId.seq, sId.high, sId.low, sId.low);
     }
 
-    static std::string toHexString(uint32_t indexMFTRec)
+    static std::string toHexString(MFTRecIndex indexMFTRec)
     {
         return std::format("l:{0:#x} ({0})", indexMFTRec);
     }
@@ -185,7 +187,7 @@ struct MFT_FILE_RECORD
     MFT_REF  ParentFileRec;    // 0x20: Parent MFT record.
     uint16_t NextAttrID;       // 0x28: The ID that will be assigned to the next attribute added to this mft record. Incremented each time after it is used. Every time the mft record is reused this number is set to zero.
     uint16_t Align;            // 0x2A: High part of MFT record?
-    uint32_t IndexMFTRec;      // 0x2C: Current MFT record number. this is 32bit, yes...    
+    MFTRecIndex IndexMFTRec;      // 0x2C: Current MFT record number. this is 32bit, yes...    
     /*When (re)using the mft record, we place the update sequence array at this
         * offset, i.e.before we start with the attributes.This also makes sense,
         * otherwise we could run into problems with the update sequence array
