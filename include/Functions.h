@@ -131,6 +131,7 @@ struct ITEM_INFO
 typedef THArray<ITEM_INFO> TItemInfoList;
 
 typedef std::function<void(const ATTR_FILE_NAME*, const MFT_REF&)> FileListPred;
+typedef std::function<void(const MFT_REF&)> AttrListPred;
 
 typedef int32_t (__stdcall *ProgressCallbackPtr)(int32_t progress);
 
@@ -158,7 +159,7 @@ void ReadDirsV1(VOLUME_DATA& volData);
 void ReadItems(VOLUME_DATA& volData);
 bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInfo);
 
-uint32_t GetMFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path);
+MFTRecIndex GetMFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path);
 bool GetPathByMFTRecID(VOLUME_DATA& volData, MFT_REF mftRecID, THArray<std::wstring>& paths);
 
 //void GetPointersToFileNameAttrs(MFT_FILE_RECORD* mftRec, THArray<ATTR_FILE_NAME*>& attrFileNames);
