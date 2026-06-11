@@ -18,18 +18,26 @@ std::wstring stow(const std::string& str);
 //std::string MillisecToStr(long long ms);
 
 #if defined(UNICODE) || defined(_UNICODE)
+
 #define U(quote) L##quote  
 typedef wchar_t char_t;
 typedef std::wstring string_t;
 typedef std::wstringstream stringstream_t;
 #define to_string_t std::to_wstring
+
 #else
+
 #define U(quote) quote  
 typedef char char_t; 
 typedef std::string string_t;
 typedef std::stringstream stringstream_t;
 #define to_string_t std::to_string
+
 #endif
+
+
+//void Trim(std::string& str); //Note: str will be changed upon function return
+void TrimAndUpper(std::string& str); //Note: str will be changed upon function return
 
 
 template<class WSTRING>
@@ -118,6 +126,12 @@ STRING MillisecToStr(uint64_t ms)
 
     return result;
 }
+
+inline std::string MillisecToStr(uint64_t ms)
+{
+    return MillisecToStr<std::string>(ms);
+}
+
 
 /// converts any integer type into a string with group separator applied.
 /// group separator is defined by MyGroupSeparator class
