@@ -1416,7 +1416,7 @@ inline uint THArrayStringFix::AddChars(const void* pValue, const uint len)
 #ifdef WIN32 //__STDC_SECURE_LIB__ //_MSC_VER < 1400  // less than VS2005
 	strncpy_s(b, i, static_cast<const char*>(pValue), i);
 #else
-	strncpy(b, static_cast<const char*>(pValue), i);
+	 strncpy(b, static_cast<const char*>(pValue), i);
 #endif
 
 	i = data.Add(b);
