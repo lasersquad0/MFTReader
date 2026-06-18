@@ -88,10 +88,10 @@ void ReadVolumeData(const std::wstring& volume, VOLUME_DATA& volumeData)
         //throw std::runtime_error(errMsg); // "Error opening volume.");
     }
     
-    NTFS_VOLUME_DATA_BUFFER nvdb{0};
+    //NTFS_VOLUME_DATA_BUFFER nvdb{0};
     DWORD bytesReturned;
 
-    if (!DeviceIoControl(hVolume, FSCTL_GET_NTFS_VOLUME_DATA, 0, 0, &nvdb, sizeof(nvdb), &bytesReturned, nullptr))
+    if (!DeviceIoControl(hVolume, FSCTL_GET_NTFS_VOLUME_DATA, 0, 0, &volumeData /*&nvdb*/, sizeof(NTFS_VOLUME_DATA_BUFFER /*nvdb*/), &bytesReturned, nullptr))
     {
         DWORD err = GetLastError();
         
@@ -103,11 +103,13 @@ void ReadVolumeData(const std::wstring& volume, VOLUME_DATA& volumeData)
 
     volumeData.hVolume = hVolume;
     volumeData.Name = volume.substr(4); // remove \\.\ in \\.\C:
-    volumeData.BytesPerCluster = nvdb.BytesPerCluster;
+   /* volumeData.BytesPerCluster = nvdb.BytesPerCluster;
     volumeData.BytesPerMFTRec = nvdb.BytesPerFileRecordSegment;
     volumeData.TotalClusters = nvdb.TotalClusters;
     volumeData.BytesPerSector = nvdb.BytesPerSector;
     volumeData.MaxMFTIndex = (DWORD)(nvdb.MftValidDataLength.QuadPart / nvdb.BytesPerFileRecordSegment - 1);
+    volumeData.MFTZoneStart = nvdb.MftZoneStart;
+    volumeData.MFTZoneEnd = nvdb.MftZoneEnd; */
 }
 
 /// calls predicate pred for all files got from ihdr
@@ -166,7 +168,7 @@ void GetFileList(INDEX_HDR* ihdr, FileListPred pred)
     }
 }
 
-// reads list of files in SORTED order starting from Index Root (referred by ihdr)
+// reads list of files in SORTED order starting from Index Root referred by ihdr
 // goes to subnodes and uses pre-loaded list of LCNs containing ALLOC attribute values
 static void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnames)
 {
@@ -242,7 +244,7 @@ static void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnam
 }
 
 // returns pointer to the first met ATTR_FILENAME attribute in mftRec
-ATTR_FILE_NAME* GetFirstFileNameAttr(MFT_FILE_RECORD* mftRec)
+static ATTR_FILE_NAME* GetFirstFileNameAttr(MFT_FILE_RECORD* mftRec)
 {
     PMFT_ATTR_HEADER currAttr = (MFT_ATTR_HEADER*)Add2Ptr(mftRec, mftRec->FirstAttrOffset);
     assert(currAttr->res.DataSize + currAttr->res.DataOffset <= currAttr->AttrSize);
@@ -268,7 +270,7 @@ ATTR_FILE_NAME* GetFirstFileNameAttr(MFT_FILE_RECORD* mftRec)
 
 // fills array attrFileNames with pointers to all ATTR_FILENAME attributes which mftRec contains
 // attrFileNames is cleared each time before filling with new values
-void GetFileNameAttrPointers(MFT_FILE_RECORD* mftRec, THArray<ATTR_FILE_NAME*>& attrFileNames)
+static void GetFileNameAttrPointers(MFT_FILE_RECORD* mftRec, THArray<ATTR_FILE_NAME*>& attrFileNames)
 {
     attrFileNames.Clear();
 
@@ -301,7 +303,7 @@ void GetFileNameAttrPointers(MFT_FILE_RECORD* mftRec, THArray<ATTR_FILE_NAME*>& 
 }
 
  
-std::wstring GetPathByAttrFileName(VOLUME_DATA& volData, ATTR_FILE_NAME* attrFileName)
+static std::wstring GetPathByAttrFileName(VOLUME_DATA& volData, ATTR_FILE_NAME* attrFileName)
 {
     THArray<std::wstring> apath;
     ATTR_FILE_NAME* attrFName = attrFileName;
@@ -326,9 +328,7 @@ std::wstring GetPathByAttrFileName(VOLUME_DATA& volData, ATTR_FILE_NAME* attrFil
         str.assign(GetFName(attrFName), attrFName->FileNameLen);
         apath.AddValue(str);
         ssize += str.size();
-        
-       // mftRecID = attrFName->ParentDir;
-
+       
     } while (attrFName->ParentDir.sId.low != MFT_ROOT_REC_ID);
 
     std::wstring result;
@@ -381,7 +381,7 @@ static void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues
         if(currAttr->NonResidentFlag == 0)
             assert(currAttr->res.DataSize + currAttr->res.DataOffset <= currAttr->AttrSize);
 
-        // all atributes except ATTR_FILENAME and ATTR_LOGGED_UTILITY_STREAM should be in a single copy
+        // all atributes except ATTR_FILENAME and ATTR_LOGGED_UTILITY_STREAM should be in a single copy in one MFT rec
         if ((currAttr->AttrType != ATTR_FILENAME) && (currAttr->AttrType != ATTR_LOGGED_UTILITY_STREAM))
             assert(attrValues[MakeAttrTypeIndex(currAttr->AttrType)] == nullptr);
 
@@ -436,7 +436,7 @@ static bool ParseAttrList(const VOLUME_DATA& volData, ATTR_LIST_ENTRY* startList
             {
                 // error loading MFT record
                 // do not break loop and trying to load more records
-                logger.Error("[ParseAttrList] LoadMFTRecordCache returned null MFT record!");
+                logger.Error("[ParseAttrList] LoadMFTRecordCache returned NULL MFT record!");
                 //return;
             }
         }
@@ -460,19 +460,26 @@ static bool ParseAttrList(const VOLUME_DATA& volData, ATTR_LIST_ENTRY* startList
     return true;
 }
 
-// parses NON-RESIDENT ATTR_LIST_ATTR attribute
-// it looks for attrType attribute in ATTR_LIST atrribute
-// if several attrType attributes found all of them are returned in result array 
-bool ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrList, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result)
+/** 
+* @brief Parses NON-RESIDENT ATTR_LIST_ATTR attribute
+* @details Parses Non-Resident ATTR_LIST_ATTR attribute. Decodes data runs from the attribute and loads LCNs.
+* After that it looks for attrType attribute in ATTR_LIST_ENTRY entries
+* if several attrType attributes found all of them are returned in resulting array 'result'
+* @param volData Need for ReadClusters call and for BytesPerCluster value
+* @param attrListAttr Pointer to ATTR_LIST attribute to be parsed
+* @param attrType Attrbite type we are looking for
+* @param result Array where pointer to found attribute will be added. If several attributes of attrType are present, all of them will be added into result
+*/
+bool ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrListAttr, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result)
 {
     GET_LOGGER_FUNC;
 
     ZeroMemory(result, SAME_ATTR_CNT * sizeof(result[0]));
 
-    assert(attrAttrList->NonResidentFlag == 1);
+    assert(attrListAttr->NonResidentFlag == 1);
 
     TDataRuns dataRuns;
-    if (!DataRunsDecode(attrAttrList, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
+    if (!DataRunsDecode(attrListAttr, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
     {
         return false;
     }
@@ -498,7 +505,7 @@ bool ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrLi
 
     ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)dataBuf;
     uint8_t* dataBufEnd1 = dataBuf + dataBufSize;
-    uint8_t* dataBufEnd2 = dataBuf + attrAttrList->nonres.RealSize;
+    uint8_t* dataBufEnd2 = dataBuf + attrListAttr->nonres.RealSize;
 
     if(!ParseAttrList(volData, attrListItem, attrType, dataBufEnd1, dataBufEnd2, result))
         return false;
@@ -601,7 +608,6 @@ static void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_A
 
         assert(currAttr->NonResidentFlag == 0);
 
-        //TODO this code is very similar to code in ParseNonresAttrList. Think of extracting into separate method.
         ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(currAttr, currAttr->res.DataOffset);
         uint8_t* currAttrEnd = (uint8_t*)currAttr + currAttr->AttrSize;
 
@@ -688,7 +694,7 @@ bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitFi
     if (dataRuns.Count() > 1)
     {
         GET_LOGGER;
-        logger.WarnFmt("[ParseNonresBitmap] Bitmap occupies more than one data run. Bitmap Data Runs Count: {}", dataRuns.Count());
+        logger.InfoFmt("[ParseNonresBitmap] Bitmap occupies more than one data run. Bitmap Data Runs Count: {}", dataRuns.Count());
     }
 
     while (currRun < dataRuns.Count())
@@ -796,7 +802,7 @@ static void ParseIndexRoot(MFT_ATTR_HEADER* attr, TLCNRecs& lcns, TFileList& fil
 // and then loads files from then in SORTED order starting from IndexRoot
 // goes to subnodes when needed
 // mftRec record must be a directory type
-// node parameter is here only for returning back list of files in node.Filelist field.
+// 'node' parameter is for returning back list of files only (in node.Filelist field).
 // Returns -1 in case of error
 static int32_t GetFileListFromMFTRec(const VOLUME_DATA& volData, MFT_FILE_RECORD* mftRec, DIR_NODE& node)
 {
@@ -812,7 +818,7 @@ static int32_t GetFileListFromMFTRec(const VOLUME_DATA& volData, MFT_FILE_RECORD
     assert(node.Bitmap.Count() == 0);
 
     PMFT_ATTR_HEADER attrValues[ATTR_TYPE_CNT]; // list of pointers to attributes, each pointer refers to attr inside mftRec
-    FillAttrValues(mftRec, attrValues);
+    FillAttrValues(mftRec, attrValues); // does NOT go to inside ATTR_LIST or to other MFT/LCN records
 
     PMFT_ATTR_HEADER multValues[SAME_ATTR_CNT];
 
@@ -940,7 +946,7 @@ bool ReadDirectoryV2(VOLUME_DATA& volData, MFT_REF parentMftRecID, uint32_t dirL
 
     for (auto& item : node.FileList)
     {
-        if (!item.NtfsInternal()/*!item.IsMetaFile() && !item.IsDotDir()*/) // do not add hidden metafiles into file list
+        if (!item.NtfsInternal()) // do not add hidden metafiles into file list
         {
             if (dirLevel == 0) std::wcout << item.ciName.c_str() << std::endl;
             //if (dirLevel == 1) std::wcout << "      " << item.ciName.c_str() << std::endl;
@@ -973,7 +979,7 @@ void ReadDirsV2(VOLUME_DATA& volData)
     TFileList dirList;
     dirList.SetCapacity(1'000'000);
 
-    MFT_REF startId;
+    MFT_REF startId{0};
     startId.Id = MFT_ROOT_REC_ID;
     ReadDirectoryV2(volData, startId, 0, dirList);
 
