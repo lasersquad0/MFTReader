@@ -63,15 +63,15 @@ std::string FormatFileAttributes(uint32_t a)
 }
 
 // assume that vol has format C, C:, C:... we use two first symbols only
-std::wstring ParseVolume(const std::wstring& vol)
+string_t ParseVolume(const string_t& vol)
 {
     if (vol.size() == 0) return _T(""); // indicates error
-    if (vol.size() == 1) return std::wstring{ _T("\\\\.\\") } + vol[0] + _T(':'); // extract C
+    if (vol.size() == 1) return string_t{ _T("\\\\.\\") } + vol[0] + _T(':'); // extract C
     return std::wstring{ _T("\\\\.\\") } + vol[0] + vol[1]; // extract C: from vol
 }
 
 // volume should be in format \\.\c:
-void ReadVolumeData(const std::wstring& volume, VOLUME_DATA& volumeData)
+void ReadVolumeData(const string_t& volume, VOLUME_DATA& volumeData)
 {
     GET_LOGGER;
     logger.DebugFmt("Opening volume: {}", wtos(volume));
@@ -102,14 +102,7 @@ void ReadVolumeData(const std::wstring& volume, VOLUME_DATA& volumeData)
     }
 
     volumeData.hVolume = hVolume;
-    volumeData.Name = volume.substr(4); // remove \\.\ in \\.\C:
-   /* volumeData.BytesPerCluster = nvdb.BytesPerCluster;
-    volumeData.BytesPerMFTRec = nvdb.BytesPerFileRecordSegment;
-    volumeData.TotalClusters = nvdb.TotalClusters;
-    volumeData.BytesPerSector = nvdb.BytesPerSector;
-    volumeData.MaxMFTIndex = (DWORD)(nvdb.MftValidDataLength.QuadPart / nvdb.BytesPerFileRecordSegment - 1);
-    volumeData.MFTZoneStart = nvdb.MftZoneStart;
-    volumeData.MFTZoneEnd = nvdb.MftZoneEnd; */
+    volumeData.Name = volume.substr(4); // remove \\.\ from \\.\C:
 }
 
 /// calls predicate pred for all files got from ihdr
@@ -127,7 +120,7 @@ void GetFileList(INDEX_HDR* ihdr, FileListPred pred)
         NTFS_DE* de = (NTFS_DE*)Add2Ptr(ihdr, off); // NTFS_DE it is a "header" above File Name attribute, covers each file name attribute item
 
         logger.DebugFmt("DE Ref to MFT Rec: {}", de->ref.toHexString()); // reference to MFT Rec for this file name
-        logger.DebugFmt("DE Flags: {}", de->flags==NTFS_IE_HAS_SUBNODES? "HAS SUMNODES": de->flags==NTFS_IE_LAST? "LAST": de->flags==0? "OTHER": "UNKNOWN");
+        logger.DebugFmt("DE Flags: {} ({:#x})", de->flags==NTFS_IE_HAS_SUBNODES? "HAS SUBNODES": de->flags==NTFS_IE_LAST? "LAST": de->flags==0? "OTHER": "UNKNOWN", de->flags);
         logger.DebugFmt("DE Size: {}", de->size);
         logger.DebugFmt("DE Key_size: {} {}", de->key_size, de->key_size==0? "(last DE usually empty, does not contain any FILE_ATTR attribute)": "");
         
@@ -137,25 +130,25 @@ void GetFileList(INDEX_HDR* ihdr, FileListPred pred)
         {
             ATTR_FILE_NAME* fattr = (ATTR_FILE_NAME*)Add2Ptr(de, sizeof(NTFS_DE));
 
-            assert(de->key_size == sizeof(ATTR_FILE_NAME) + fattr->FileNameLen*sizeof(wchar_t));
-            assert(de->size >= sizeof(NTFS_DE) + sizeof(ATTR_FILE_NAME) + fattr->FileNameLen*sizeof(wchar_t));
-            //assert(de->ref.sId.low == fattr->ParentDir.sId.low);
-            assert((fattr->dup.FileAttrib & FILE_ATTRIBUTE_NORMAL/*0x00000080*/) == 0);// check that NORMAL bit is always zero
+            assert(de->key_size == sizeof(ATTR_FILE_NAME) + fattr->FileNameLen * sizeof(wchar_t));
+            assert(de->size >= sizeof(NTFS_DE) + sizeof(ATTR_FILE_NAME) + fattr->FileNameLen * sizeof(wchar_t));
+            assert((fattr->dup.FileAttrib & FILE_ATTRIBUTE_NORMAL) == 0);// check that NORMAL bit is always zero
 
             if (fattr->NameType != FILE_NAME_DOS) // bypass DOS filenames
             {
-                ci_string ciwnm(GetFName(fattr), fattr->FileNameLen);
-                if (logger.ShouldLog(LogEngine::Levels::llDebug))
-                {
-                    logger.DebugFmt("DE ATTR Parent Rec ID: {}", fattr->ParentDir.toHexString()); //TODO check that parent of each file refers to MFT Rec we are currently parsing
-                    logger.DebugFmt("DE ATTR Attrib: {:#x} {}", fattr->dup.FileAttrib, FormatFileAttributes(fattr->dup.FileAttrib));
-                    logger.DebugFmt("DE ATTR Name: '{}'", wtos(ciwnm));
-                    logger.DebugFmt("DE ATTR File Size: {}", fattr->dup.FileSize);
-                }
-
                 pred(fattr, de->ref);
-                // level.AddValue(parent, level.Level(), de->ref, fattr);
             }
+
+            ci_string ciwnm(GetFName(fattr), fattr->FileNameLen);
+            logger.DebugFmt("DE ATTR Parent Rec ID: {}", fattr->ParentDir.toHexString()); //TODO check that parent of each file refers to MFT Rec we are currently parsing
+            logger.DebugFmt("DE ATTR File Name Type: '{}' ({:#x})", FileNameTypes[fattr->NameType], fattr->NameType);
+            logger.DebugFmt("DE ATTR DOS Attrib: {:#x} {}", fattr->dup.FileAttrib, FormatFileAttributes(fattr->dup.FileAttrib));
+            logger.DebugFmt("DE ATTR Name: '{}'", wtos(ciwnm));
+            logger.DebugFmt("DE ATTR File Size: {}", fattr->dup.FileSize);
+            
+            logger.Debug(FileDateToString("DE ATTR Created: ",   fattr->dup.CreateTime));
+            logger.Debug(FileDateToString("DE ATTR Modified: ",  fattr->dup.ModifyTime));
+            logger.Debug(FileDateToString("DE ATTR LastAccess: ",fattr->dup.LastAccessTime));
         }
 
         off += de->size; // moving to the next DE
@@ -182,10 +175,10 @@ static void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnam
 
         NTFS_DE* de = (NTFS_DE*)Add2Ptr(ihdr, off); // NTFS_DE it is a "header" above File Name attribute, covers each file name attribute item
 
-        logger.DebugFmt("[GetFileListFromNode] Dir Entry File rec {0} ({0:#x})", de->ref.Id);
-        logger.DebugFmt("[GetFileListFromNode] Dir Entry flags: {}", de->flags);
-        logger.DebugFmt("[GetFileListFromNode] Dir Entry size: {}", de->size);
-        logger.DebugFmt("[GetFileListFromNode] Dir Entry key_size: {}", de->key_size);
+        logger.DebugFmt("Dir Entry Ref to MFT Rec: {0} ({0:#x})", de->ref.Id);
+        logger.DebugFmt("Dir Entry Flags: {} ({})", de->flags == NTFS_IE_HAS_SUBNODES ? "HAS SUBNODES" : de->flags == NTFS_IE_LAST ? "LAST" : de->flags == 0 ? "OTHER" : "UNKNOWN", de->flags);
+        logger.DebugFmt("Dir Entry Size: {}", de->size);
+        logger.DebugFmt("Dir Entry Key_size: {}", de->key_size);
 
         assert(de->size >= de->key_size + sizeof(NTFS_DE));
 
@@ -194,7 +187,7 @@ static void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnam
             CLST vcn = *(CLST*)Add2Ptr(ihdr, off + de->size - sizeof(uint64_t)); // last 8 bytes contain the VÑN of subnode. This field is present only if (flags & NTFS_IE_HAS_SUBNODES)
     
             auto rec = lcns.GetRecByVCN(vcn);
-            logger.DebugFmt("[GetFileListFromNode] Dir Entry has subnodes located in VCN={}, LCN={}", vcn, rec.first);
+            logger.DebugFmt("Dir Entry has subnodes located in VCN={}, LCN={}", vcn, rec.first);
 
             INDEX_BUFFER* allocIndex = (INDEX_BUFFER*)rec.second;
             
@@ -210,7 +203,7 @@ static void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnam
             else // INDX not found
             {
                 uint8_t* sign = allocIndex->RecHeader.Signature;
-                logger.WarnFmt("[GetFileListFromNode] Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", lcns.GetRecByVCN(vcn).first, sign[0], sign[1], sign[2], sign[3]);
+                logger.WarnFmt("Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", lcns.GetRecByVCN(vcn).first, sign[0], sign[1], sign[2], sign[3]);
             }
         }
 
@@ -219,16 +212,21 @@ static void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnam
             ATTR_FILE_NAME* fattr = (ATTR_FILE_NAME*)Add2Ptr(de, sizeof(NTFS_DE));
 
             assert(de->key_size = sizeof(ATTR_FILE_NAME) + fattr->FileNameLen);
-            assert((fattr->dup.FileAttrib & FILE_ATTRIBUTE_NORMAL/*0x00000080*/) == 0);// check that NORMAL bit is always zero
+            assert((fattr->dup.FileAttrib & FILE_ATTRIBUTE_NORMAL) == 0);// check that NORMAL bit is always zero
+
+            ci_string ciwnm(GetFName(fattr), fattr->FileNameLen);
+            logger.DebugFmt("Dir Entry Parent Rec ID: {}", fattr->ParentDir.toHexString());
+            logger.DebugFmt("Dir Entry File Name Type: '{}' ({:#x})", FileNameTypes[fattr->NameType], fattr->NameType);
+            logger.DebugFmt("Dir Entry File/Dir name: '{}'", wtos(ciwnm));
+            logger.DebugFmt("Dir Entry File DOS Attrib: {:#x} {}", fattr->dup.FileAttrib, FormatFileAttributes(fattr->dup.FileAttrib));
+            logger.DebugFmt("Dir Entry File Size: {}", fattr->dup.FileSize);
+
+            logger.Debug(FileDateToString("Dir Entry Created: ",   fattr->dup.CreateTime));
+            logger.Debug(FileDateToString("Dir Entry Modified: ",  fattr->dup.ModifyTime));
+            logger.Debug(FileDateToString("Dir Entry LastAccess: ",fattr->dup.LastAccessTime));
 
             if (fattr->NameType != FILE_NAME_DOS) // bypass DOS filenames
             {
-                ci_string ciwnm(GetFName(fattr), fattr->FileNameLen);
-                logger.DebugFmt("[GetFileListFromNode] Dir Entry Parent Rec ID: {}", fattr->ParentDir.toHexString());
-                logger.DebugFmt("[GetFileListFromNode] Dir Entry File/Dir name: '{}'", wtos(ciwnm));
-                logger.DebugFmt("[GetFileListFromNode] Dir Entry File Attrib: {:#x} {}", fattr->dup.FileAttrib, FormatFileAttributes(fattr->dup.FileAttrib));
-                logger.DebugFmt("[GetFileListFromNode] Dir Entry File Size: {}", fattr->dup.FileSize);
-
                 fnames.AddValue({ ciwnm, *fattr, de->ref });
             }
         }
@@ -790,8 +788,8 @@ static void ParseIndexRoot(MFT_ATTR_HEADER* attr, TLCNRecs& lcns, TFileList& fil
     assert(indexR->Rule == COLLATION_RULE::FILENAME);
 
     logger.DebugFmt("IndexRoot Indexed Attr Type: {} {:#x}", AttrName(indexR->AttrType), (uint32_t)indexR->AttrType);
-    logger.DebugFmt("IndexRoot Collation Rule: {} ({})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
-    logger.DebugFmt("IndexRoot Dir Type: {} ({:#x})", indexR->ihdr.Flags == 0 ? " SMALL DIR" : " BIG DIR", indexR->ihdr.Flags);
+    logger.DebugFmt("IndexRoot Collation Rule: {} ({:#x})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
+    logger.DebugFmt("IndexRoot Dir Type: {} ({:#x})", indexR->ihdr.Flags == 0 ? "SMALL DIR" : "BIG DIR", indexR->ihdr.Flags);
     logger.DebugFmt("IndexRoot IndexBlockSize: {}", indexR->IndexBlockSize);
     logger.DebugFmt("IHDR Used Bytes: {}", pihdr->Used);
 
@@ -877,8 +875,11 @@ static int32_t GetFileListFromMFTRec(const VOLUME_DATA& volData, MFT_FILE_RECORD
 // goes through path dirs in path, reads files in SORTED order, goes to subdirs and so on, until end of path
 // returns MFT Record ID (low part of it)
 // if path is incorrect function returns 0 (zero).
+// uses ci_string intentionally to proper compare folders with user's input 'path'
 MFTRecIndex GetMFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path) // ci_string is for case INsensitive search here
 {
+    //TODO what is path is relative (does not start from c:\)?
+
     if (path.size() == 0) return 0;
 
     GET_LOGGER;
@@ -887,11 +888,11 @@ MFTRecIndex GetMFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path) // ci
     StringToArray(path, arr, L'\\');
     if (arr.size() == 0) return 0;
     
-    //TODO make check that volData.hVolume and volume in path parameter are the same (both C: or both D:, etc)
-    assert(arr[0][0] == 'C' || arr[0][0] == 'c'); // we support only C: disks for now
+    // make sure that volData.hVolume and volume in path parameter are the same (both C: or both D:, etc)
+    assert(toupper(arr[0][0]) == toupper(volData.Name[0]));
 
     MFT_REF mftRecID{0};
-    mftRecID.Id = MFT_ROOT_REC_ID; // starting MFT record
+    mftRecID.sId.low = MFT_ROOT_REC_ID;
     uint8_t* mftRecBuf = (uint8_t*)alloca(volData.BytesPerMFTRec);
 
     DIR_NODE node;
