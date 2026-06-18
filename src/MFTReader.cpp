@@ -128,14 +128,14 @@ int _tmain(int argc, TCHAR* argv[])
                 (cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_M) && !cmd.HasOption(OPT_P)) ||
                 (cmd.HasOption(OPT_P) && !cmd.HasOption(OPT_M) && !cmd.HasOption(OPT_S)) );
 
-
-        cli_string volume = ParseVolume(cmd.GetOptionValue(OPT_V, 0, _T("C:")));
         VOLUME_DATA vol;
-        ReadVolumeData(volume, vol);
-
 
         if (cmd.HasOption(OPT_M)) // info about one MFT record requested
-        { 
+        {
+            string_t volume = ParseVolume(cmd.GetOptionValue(OPT_V, 0, _T("C:")));
+            
+            ReadVolumeData(volume, vol);
+
             logger.SetLogLevel(LogEngine::Levels::llDebug);
 
             // we support both 10based mftRecID and hex format. 
@@ -167,22 +167,27 @@ int _tmain(int argc, TCHAR* argv[])
         }
         else if (cmd.HasOption(OPT_S)) // volume statistics requested.
         {
+            string_t volume = ParseVolume(cmd.GetOptionValue(OPT_V, 0, _T("C:")));
+            
+            ReadVolumeData(volume, vol);
+
             auto start1 = std::chrono::high_resolution_clock::now();
             Ticks::Start(_T("FSReadingTime"));
             ResetCache();
 
             ReadDirsV1(vol);
             //ReadDirsV2(vol);
-            //ShowVolumeStat(vol);
+            ShowVolumeStat(vol);
 
-            //auto stop = std::chrono::high_resolution_clock::now();
-            logger.WarnFmt("File System reading time : {}", MillisecToStr<std::string>(Ticks::Finish(_T("FSReadingTime")))); //std::chrono::duration_cast<std::chrono::milliseconds>(stop - start1).count()));
+            logger.InfoFmt("File System reading time : {}", MillisecToStr<std::string>(Ticks::Finish(_T("FSReadingTime"))));
 
             ResetCache();
         }
         else if (cmd.HasOption(OPT_P))
-        {
-            cli_string path = cmd.GetOptionValue(OPT_P, 0);
+        {         
+            string_t path = cmd.GetOptionValue(OPT_P, 0);
+            ReadVolumeData(ParseVolume(path), vol);
+
             MFTRecIndex MFTRecID = GetMFTRecIdByPath(vol, path.c_str());
             if (MFTRecID > 0)
             {
