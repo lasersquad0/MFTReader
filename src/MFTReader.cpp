@@ -130,7 +130,7 @@ int _tmain(int argc, TCHAR* argv[])
 
 
         cli_string volume = ParseVolume(cmd.GetOptionValue(OPT_V, 0, _T("C:")));
-        VOLUME_DATA vol{0};
+        VOLUME_DATA vol;
         ReadVolumeData(volume, vol);
 
 
@@ -171,9 +171,9 @@ int _tmain(int argc, TCHAR* argv[])
             Ticks::Start(_T("FSReadingTime"));
             ResetCache();
 
-           // ReadDirsV1(vol);
+            ReadDirsV1(vol);
             //ReadDirsV2(vol);
-            ReadItems(vol);
+            //ShowVolumeStat(vol);
 
             //auto stop = std::chrono::high_resolution_clock::now();
             logger.WarnFmt("File System reading time : {}", MillisecToStr<std::string>(Ticks::Finish(_T("FSReadingTime")))); //std::chrono::duration_cast<std::chrono::milliseconds>(stop - start1).count()));
