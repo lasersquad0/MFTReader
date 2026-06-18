@@ -22,10 +22,14 @@ public:
 
     static int compare(const CH* s1, const CH* s2, size_t n)
     {
+        CH c1, c2;
         while (n-- != 0)
         {
-            if (mytoupper(*s1) < mytoupper(*s2)) return -1;
-            if (mytoupper(*s1) > mytoupper(*s2)) return 1;
+            c1 = mytoupper(*s1);
+            c2 = mytoupper(*s2);
+
+            if (c1 < c2) return -1;
+            if (c1 > c2) return 1;
             ++s1; ++s2;
         }
         return 0;
