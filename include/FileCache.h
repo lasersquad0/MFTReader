@@ -104,7 +104,7 @@ public:
 	{
 		TLevel* level = GetLevel(itemLevel);
 		assert(level->Level() == itemLevel);
-		return CacheItemRef{ itemLevel, level->AddValue(parent, /*itemLevel,*/ MFTRecID, fileData) };
+		return CacheItemRef{ itemLevel, level->AddValue(parent, MFTRecID, fileData) };
 	}
 
 	uint32_t TotalCount()
@@ -125,6 +125,74 @@ public:
 		for (auto lv : FCacheData) delete lv;
 		FCacheData.Clear(); 
 	}
+
+
+	// Saves all cache item names into text file fileName, one file per line
+	// If file exists it will be overwriten
+	void SaveTo(const std::string fileName)
+	{
+		LogEngine::TFileStream fout(fileName, LogEngine::TFileMode::fmWriteTrunc);
+
+		//TODO check why we use EndLine instead of std::endl
+		fout << "Total Items Count: " << toStringSepA(TotalCount()) << EndLine;
+
+		//for (uint32_t i = 0; i < FCacheData.Count(); ++i)
+		for (auto level : FCacheData)
+		{
+			//TLevel* level = FCacheData.GetValue(i);
+
+			CACHE_ITEM* sitem = level->First();
+			do
+			{
+				string_t fn(sitem->Name(), sitem->FileAttr.FileNameLen);
+				if (sitem->IsDir())
+					fout << wtos(fn) << '\\' << EndLine;
+				else
+					fout << wtos(fn) << EndLine;
+				sitem = level->Next(sitem);
+			} while (!level->IsEnd(sitem));
+		}
+	}
+
+	void ToArray(THArray<string_t>& array)
+	{
+		for (auto level : FCacheData)
+		{
+			CACHE_ITEM* sitem = level->First();
+
+			if (level->IsEnd(sitem)) continue; // case - when level is empty
+
+			do
+			{
+				string_t fn(sitem->Name(), sitem->FileAttr.FileNameLen);
+				if (sitem->IsDir())
+					array.AddValue(fn + L"\\");
+				else
+					array.AddValue(fn);
+
+				sitem = level->Next(sitem);
+
+			} while (!(level->IsEnd(sitem)));
+		}
+	}
+
+	void PrintLevelsStat()
+	{
+		std::cout << std::endl << "STATISTIC BY LEVELS" << std::endl;
+
+		std::cout << "Levels Count: " << FCacheData.Count() << std::endl << std::endl;
+
+		size_t i = 0, sum = 0;
+		for (auto level : FCacheData)
+		{
+			std::cout << "Level" << std::left << std::setw(3) << i << ":" << std::right << std::setw(9) << level->Count() << std::endl;
+			i++;
+			sum += level->Count();
+		}
+
+		std::cout << std::endl << "SUMM of Levels : " << sum << std::endl << std::endl;
+	}
+
 
 
 	/*
@@ -302,68 +370,6 @@ void FillFileData(const TCHAR* filePath, FILEDATA& fileData)
 		Deserialize(fin);
 	}
 	*/
-
-	// Saves all cache item names into text file one file per line
-	void SaveTo(const std::string fileName)
-	{
-		LogEngine::TFileStream fout(fileName, LogEngine::TFileMode::fmWriteTrunc);
-		
-		fout << toStringSepA(TotalCount()) << " - total items" << EndLine;
-
-		//for (uint32_t i = 0; i < FCacheData.Count(); ++i)
-		for (auto level : FCacheData)
-		{
-			//TLevel* level = FCacheData.GetValue(i);
-
-			CACHE_ITEM* sitem = level->First();
-			do
-			{
-				string_t fn(sitem->Name(), sitem->FileAttr.FileNameLen);
-				if (sitem->IsDir())
-					fout << wtos(fn) << '\\' << EndLine;
-				else
-					fout << wtos(fn) << EndLine;
-				sitem = level->Next(sitem);
-			} while (!level->IsEnd(sitem));
-		}
-	}
-
-	void ToArray(THArray<string_t>& array)
-	{
-		for (auto level: FCacheData)
-		{
-			CACHE_ITEM* sitem = level->First();
-			if (level->IsEnd(sitem)) continue; // case - when level is empty
-			do
-			{
-				string_t fn(sitem->Name(), sitem->FileAttr.FileNameLen);
-				if (sitem->IsDir())
-					array.AddValue(fn + L"\\");
-				else
-					array.AddValue(fn);
-
-				sitem = level->Next(sitem);
-
-			} while (!(level->IsEnd(sitem)));
-		}
-	}
-
-	void PrintLevelsStat()
-	{
-		std::cout << "----- STATISTIC BY LEVELS -----" << std::endl;
-
-		std::cout << "Levels Count: " << FCacheData.Count() << std::endl << std::endl;
-
-		size_t i = 0, sum = 0;
-		for (auto level : FCacheData)
-		{
-			std::cout << "Level" << i << std::setw(4) << ": " << level->Count() << std::endl;
-			i++;
-			sum += level->Count();
-		}
-
-		std::cout << std::endl << "SUMM of Levels : " << sum << std::endl;
-	}
 
 	/*
 	void ReadFileSystem(const ci_string& startDir)
