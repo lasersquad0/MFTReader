@@ -1,32 +1,33 @@
 // dllmain.cpp : Defines the entry point for the DLL application.
 #include "framework.h"
 
-HMODULE THIS_DLL_HANDLE = nullptr;
+//HMODULE THIS_DLL_HANDLE = nullptr;
 
 static void InitLogger()
 {
     try
     {
-        // if MFTReaderDLL.lfg exists load loggers from that file
-        /*if (std::filesystem::exists("MFTReaderDLL.lfg"))
-        {
-            LogEngine::InitFromFile("MFTReaderDLL.lfg");
-        }
-        else*/ // otherwise configure loggers in code 
-        {
-            // when run when windows starts current dir=Windows/System32 or similar.
-            // DLL cannot create log file in this directory, that is why we get DLL folder and create log file there
-            // it is assumed that DLL is located in a folder where it is possible to create log file
-            std::string dllpath;
-            dllpath.resize(MAX_PATH);
-            DWORD res = GetModuleFileNameA(THIS_DLL_HANDLE, dllpath.data(), (DWORD)dllpath.size());
-            assert(res > 0);
-            dllpath = ExtractFileDir(dllpath);
-            //OutputDebugStringA(dllpath.c_str());
+        // when run when windows starts current_dir=Windows/System32 or similar. 
+        // DLL cannot create log file in this directory, that is why we get DLL folder and create log file there
+        // it is assumed that DLL is located in a folder where it is possible to create log file
+        std::string exepath;
+        exepath.resize(MAX_PATH);
+        DWORD res = GetModuleFileNameA(nullptr /*THIS_DLL_HANDLE*/, exepath.data(), (DWORD)exepath.size()); // retrieve path to current .exe file
+        assert(res > 0);
 
+        exepath = ExtractFileDir(exepath);
+        //OutputDebugStringA(dllpath.c_str());
+        
+        // if MFTReaderDLL.lfg exists load loggers from that file
+        if (std::filesystem::exists(exepath + "MFTReaderDLL.lfg"))
+        {
+            LogEngine::InitFromFile(exepath + "MFTReaderDLL.lfg");
+        }
+        else // otherwise configure loggers in code 
+        {            
             using namespace LogEngine;
             auto& logger = GetLogger(MFT_LOGGER_NAME);
-            std::shared_ptr<FileLockSinkST> sink(new FileLockSinkST("filelocksink", dllpath + "LogMFTReaderDLL.log"));
+            std::shared_ptr<FileLockSinkST> sink(new FileLockSinkST("filelocksink", exepath + "LogMFTReaderDLL.log"));
             logger.AddSink(sink);
            // logger.SetAsyncMode(true);
             logger.SetLogLevel(LogEngine::Levels::llInfo);
@@ -68,7 +69,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         {
         case DLL_PROCESS_ATTACH:
         {
-            THIS_DLL_HANDLE = hModule;
+            //THIS_DLL_HANDLE = hModule;
 
             std::string s = "DLL_PROCESS_ATTACH. hModule: " + std::to_string((uint64_t)hModule);
             OutputDebugStringA(s.c_str());
@@ -95,7 +96,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             logger.InfoFmt("DLL_PROCESS_DETACH hModule: {}", (uint64_t)hModule);
             ShutDownLogger();
 
-            THIS_DLL_HANDLE = nullptr;
+            //THIS_DLL_HANDLE = nullptr;
             
             break;
         }
