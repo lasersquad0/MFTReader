@@ -31,7 +31,7 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint32_t* count, uint32_t** 
 
         std::wstring vol = ParseVolume(volume); // gets first two symbols of volume (e.g. C:) and adds prefix "\\.\" in front of it 
 
-        VOLUME_DATA volData{0};
+        VOLUME_DATA volData;
         ReadVolumeData(vol, volData); // throws exceptions in case of errors
 
         //auto start1 = std::chrono::high_resolution_clock::now();
