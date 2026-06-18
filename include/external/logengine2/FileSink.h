@@ -59,6 +59,7 @@ public:
 	void Flush() override {	FStream->Flush(); }
 };
 
+// locks entire log file before doing write 
 template<class Mutex>
 class FileLockSink : public FileSink<Mutex>
 {
