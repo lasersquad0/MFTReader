@@ -648,8 +648,8 @@ public:
 	// does nothing (and no exception generated ) if element with Key is not found in hash
 	void	Delete(const I& Key);
 
-	// If has contains Value with Key this value will be ovewritten by the new value
-	// If has does not contain Key -> Key-Value pair will be created in the hash
+	// If hash contains Value with Key this value will be ovewritten by the new Value
+	// If hash does not contain Key -> Key-Value pair will be created in the hash
 	void	SetValue(const I& Key, const V& Value);
 
 	// Returns reference to the Value in the hash.
