@@ -13,7 +13,7 @@
 // The difference from standard THash is that TMFTRecCache frees MFT records memory in its destructor.
 // MFT record is defined as uint8_t* type 
 // MFT Rec ID is uint32_t type
-class TMFTRecCache : public THash<uint64_t, uint8_t*>
+class TMFTRecCache : public THash<MFTRecIndex, uint8_t*>
 {
 public:
     ~TMFTRecCache() override
@@ -38,8 +38,8 @@ public:
     void SetCapacity(uint32_t capacity)  { FRecs.SetCapacity(capacity); FHash.SetCapacity(capacity); }
     void SetRecordSize(uint32_t recSize) { FRecs.SetItemSize(recSize); }
 
-    // adds LCN record to the hash
-    // returns pointer to the LCN record from FRecs storage, it differs from mftRecData pointer
+    // copies to the hash LCN record pointed by lcnRecData 
+    // returns pointer to the LCN record from FRecs storage, it differs from lcnRecData pointer
     uint8_t* AddRec(uint8_t* lcnRecData, CLST VCN, CLST LCN)
     {
         uint32_t index = FRecs.Add(lcnRecData);
@@ -66,7 +66,8 @@ public:
         return (*LCNHash.begin()).first;
     }*/
 
-    //loads LCN records into memory from data runs located in node parameter
+    // loads LCN records into memory from data runs located in node parameter
+    // node.Bitmap defines what LCNs need to be loaded and what are not
     bool LoadDataRuns(const VOLUME_DATA& volData, DIR_NODE& node)
     {
         assert(FRecs.GetItemSize() == volData.BytesPerCluster);
