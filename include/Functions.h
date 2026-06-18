@@ -2,6 +2,8 @@
 
 #include <functional>
 #include <optional>
+#include <windows.h>
+#include <winioctl.h>
 
 #include "strutils/include/ci_string.h"
 #include "logengine2/LogEngine.h"
@@ -98,15 +100,15 @@ struct DIR_NODE
 
 struct ITEM_INFO
 {
-    MFT_REF RecID;
-    uint16_t AttrCounters[ATTR_TYPE_CNT];
+    MFT_REF RecID{0};
+    uint16_t AttrCounters[ATTR_TYPE_CNT]{0};
     std::optional<bool> NonResidentAttrList = std::nullopt; // rare case. has an ATTR_LIST attribute that is non-resident
     std::optional<bool> NonResidentBitmap = std::nullopt;   // rare case. has an BITMAP attribute that is non-resident  
-    bool ResidentData;   // Has an DATA attribute that is resident. Not so rare case.
-    uint32_t FileAttrib;
+    bool ResidentData{false};   // Has an DATA attribute that is resident. Not so rare case.
+    uint32_t FileAttrib{0};
 
-    uint16_t HardLinksCount;
-    uint16_t AttrsCount;
+    uint16_t HardLinksCount{0};
+    uint16_t AttrsCount{0};
     ci_string MainName; // here is ci_string for quicker sorting array of ITEM_INFO
     THArray<std::wstring> FileNames; // contains filenames of all types - DOS, WIN and POSIX
     THash<std::wstring, uint16_t> DataStreamNames; // data stream name counts groupped by stream name
@@ -128,7 +130,15 @@ struct ITEM_INFO
 //    bool IsDotDir() const { return (ciName.size() == 1) && (ciName[0] == L'.'); }
 //    bool NtfsInternal() const { return IsMetaFile() || IsDotDir(); }
 
+    //ITEM_INFO() {};
+    //ITEM_INFO(const ITEM_INFO&) = delete;
+    //ITEM_INFO& operator=(const ITEM_INFO&) = delete;
+
 };
+
+// assert below fails and this is the reason why sorting of array of ITEM_INFO takes too much time
+// sort function swaps items and for such big structure as ITEM_INFO this is costly operation
+//static_assert(std::is_nothrow_move_constructible_v<ITEM_INFO>);
 
 typedef THArray<ITEM_INFO> TItemInfoList;
 
@@ -147,7 +157,7 @@ struct VOLUME_DATA : public NTFS_VOLUME_DATA_BUFFER
     VOLUME_DATA(const VOLUME_DATA&) = delete;
     VOLUME_DATA& operator=(const VOLUME_DATA&) = delete;
 
-    VOLUME_DATA() : BytesPerMFTRec(this->BytesPerFileRecordSegment), hVolume(0)
+    VOLUME_DATA() : NTFS_VOLUME_DATA_BUFFER{0}, BytesPerMFTRec(this->BytesPerFileRecordSegment), hVolume(0)
     {
     }
 
@@ -156,8 +166,8 @@ struct VOLUME_DATA : public NTFS_VOLUME_DATA_BUFFER
 LogEngine::Logger& GetLoggerFunc();
 std::string FormatFileAttributes(uint32_t a);
 
-std::wstring ParseVolume(const std::wstring& vol);
-void ReadVolumeData(const std::wstring& volume, VOLUME_DATA& volumeData);
+string_t ParseVolume(const string_t& vol);
+void ReadVolumeData(const string_t& volume, VOLUME_DATA& volumeData);
 bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitField& bitmap);
 bool ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrList, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result);
 bool ReadDirectoryV1(VOLUME_DATA& volData, uint32_t parentIdx, CACHE_ITEM* parentItem , uint64_t& dirSize, TFileCache& gFileList, ProgressCallbackPtr callback);
