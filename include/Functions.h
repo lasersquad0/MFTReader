@@ -20,15 +20,15 @@
 #define GET_LOGGER_FUNC auto& logger = GetLoggerFunc()
 
 #define Diff2Ptr(ptr1, ptr2) ((ULONG)((uint8_t*)(ptr2) - (uint8_t*)(ptr1)))
-#define Add2Ptr(P, I)		((uint8_t*)(P) + (I))
+#define Add2Ptr(P, I)		 ((uint8_t*)(P) + (I))
 
-#define GetAttrName(pRec, field)  ( (wchar_t*)((uint8_t*)(pRec) + (pRec->field)) )
-#define GetFName(pRec) ( (wchar_t*)((uint8_t*)(pRec) + sizeof(ATTR_FILE_NAME)) )
-#define AttrMetaFile(_) ( ((_)->ParentDir.sId.low == MFT_ROOT_REC_ID) && (GetFName(_)[0] == L'$') )
-#define AttrDotDir(_) ( ((_)->FileNameLen == 1) && (GetFName(_)[0] == L'.')  )
-#define AttrNTfsInternal(_) (AttrMetaFile(_) || AttrDotDir(_))
+#define GetAttrName(pRec, field) ( (wchar_t*)((uint8_t*)(pRec) + (pRec->field)) )
+#define GetFName(pRec)  ( (wchar_t*)((uint8_t*)(pRec) + sizeof(ATTR_FILE_NAME)) )
+#define AttrIsMetaFile(_) ( ((_)->ParentDir.sId.low == MFT_ROOT_REC_ID) && (GetFName(_)[0] == L'$') )
+#define AttrIsDotDir(_)   ( ((_)->FileNameLen == 1) && (GetFName(_)[0] == L'.')  )
+#define AttrIsNtfsInt(_) (AttrIsMetaFile(_) || AttrIsDotDir(_))
 
-// ANSI chaset for logging purposes only
+// ANSI charset, for logging purposes only
 #define ATTR_TYPE_NAMES { "ZERO", "STANDARD INFO", "ATTR LIST", "FILENAME", "OBJECT ID", "secure_info", "LABEL", \
                           "VOLUME INFO", "DATA", "INDEX ROOT", "ALLOCATION", "BITMAP", "REPARSE", "EA INFORMATION", \
                           "EA", "PROPERTYSHEET", "LOGGED UTILITY STREAM", "USER ATTRIBUTE" }
@@ -46,6 +46,7 @@ static const char* CollationRuleNames[]{ "BINARY",  "FILENAME", "UINT", "SID",  
 #define MakeCollationRuleIndex(_) ((_)==0?0:(_)==1?1:(_)==0x10?2:(_)==0x11?3:(_)==0x12?4:(_)==0x13?5:6) 
 #define CollRuleName(_) (CollationRuleNames[MakeCollationRuleIndex(_)])
 
+/*
 struct VOLUME_DATA
 {
     HANDLE hVolume;
@@ -54,8 +55,10 @@ struct VOLUME_DATA
     DWORD BytesPerMFTRec;
     DWORD BytesPerSector;
     DWORD MaxMFTIndex;
+    LARGE_INTEGER MFTZoneStart; 
+    LARGE_INTEGER MFTZoneEnd;
     std::wstring Name;
-};
+};*/
 
 struct FILE_NAME
 {
@@ -68,8 +71,8 @@ struct FILE_NAME
     bool operator==(const FILE_NAME& other) const { return ciName == other.ciName; }
 
     bool IsDir() const { return (Attr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::DIRECTORY) > 0; }
-    bool IsMetaFile() const { return (Attr.ParentDir.sId.low == MFT_ROOT_REC_ID) && (ciName[0] == L'$'); }
-    bool IsDotDir() const { return (ciName.size() == 1) && (ciName[0] == L'.'); }
+    bool IsMetaFile() const { return (Attr.ParentDir.sId.low == MFT_ROOT_REC_ID) && (ciName[0] == L'$'); } // assumes ciName is not empty
+    bool IsDotDir() const { return (ciName.size() == 1) && (ciName[0] == L'.'); } 
     bool IsReparse() const { return (Attr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::REPARSE_POINT) > 0; };
     bool NtfsInternal() const { return IsMetaFile() || IsDotDir(); }
 };
@@ -98,8 +101,7 @@ struct ITEM_INFO
     MFT_REF RecID;
     uint16_t AttrCounters[ATTR_TYPE_CNT];
     std::optional<bool> NonResidentAttrList = std::nullopt; // rare case. has an ATTR_LIST attribute that is non-resident
-    std::optional<bool> NonResidentBitmap = std::nullopt;   // rare case. has an BITMAP attribute that is non-resident
-    //bool NonResidentAlloc;    
+    std::optional<bool> NonResidentBitmap = std::nullopt;   // rare case. has an BITMAP attribute that is non-resident  
     bool ResidentData;   // Has an DATA attribute that is resident. Not so rare case.
     uint32_t FileAttrib;
 
@@ -135,6 +137,22 @@ typedef std::function<void(const MFT_REF&)> AttrListPred;
 
 typedef int32_t (__stdcall *ProgressCallbackPtr)(int32_t progress);
 
+struct VOLUME_DATA : public NTFS_VOLUME_DATA_BUFFER
+{
+    DWORD& BytesPerMFTRec;// = NTFS_VOLUME_DATA_BUFFER::BytesPerFileRecordSegment; // alias to field
+    HANDLE hVolume;
+    std::wstring Name;
+
+
+    VOLUME_DATA(const VOLUME_DATA&) = delete;
+    VOLUME_DATA& operator=(const VOLUME_DATA&) = delete;
+
+    VOLUME_DATA() : BytesPerMFTRec(this->BytesPerFileRecordSegment), hVolume(0)
+    {
+    }
+
+};
+
 LogEngine::Logger& GetLoggerFunc();
 std::string FormatFileAttributes(uint32_t a);
 
@@ -156,7 +174,7 @@ void GetFileList(INDEX_HDR* ihdr, FileListPred pred);
 bool ProcessAllocDataRuns(VOLUME_DATA& volData, DIR_NODE& node, FileListPred pred);
 void ReadDirsV2(VOLUME_DATA& volData);
 void ReadDirsV1(VOLUME_DATA& volData);
-void ReadItems(VOLUME_DATA& volData);
+void ShowVolumeStat(VOLUME_DATA& volData);
 bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInfo);
 
 MFTRecIndex GetMFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path);
