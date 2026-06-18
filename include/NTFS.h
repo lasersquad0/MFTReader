@@ -22,6 +22,8 @@ BITMAP sometimes contains zero bits inside a sequence of 1 bits (why? - some LCN
 
 MFT records can contain EA and/or EA_INFO attributes (what is this for in windows?)
 
+Some attrs may not present in MFT Rec. e.g. BITMAP is not created for empty directories while INDEX_ROOT exists
+
 */
 
 #pragma once
@@ -52,9 +54,10 @@ struct MFT_REF
     {
         struct
         {
-            MFTRecIndex low;	// The low part of the file number.
-            uint16_t high;	// The high part of the file number.
-            uint16_t seq;	// The sequence number of MFT record.
+            MFTRecIndex low; // The low part of the file number.
+            uint16_t high;	 // The high part of the file number.
+            uint16_t seq;	 /* The sequence number of MFT record.If the filesystem is consistent, this number must match
+                                the sequence number of the FILE record referenced by the FILE record number.*/
         } sId;
 
         uint64_t Id;
@@ -118,15 +121,15 @@ static_assert(sizeof(MFT_RECORD_FLAGS) == 2);
 enum class NTFS_SIGNATURE: uint32_t 
 {
     /* Found in $MFT/$DATA. */
-    magic_FILE = 0x454c4946, // Mft entry. 'FILE' 
-    magic_INDX = 0x58444e49, // Index buffer. 'INDX'
+    magic_FILE = 0x454c4946, // MFT entry 'FILE' 
+    magic_INDX = 0x58444e49, // Index buffer 'INDX'
     magic_HOLE = 0x454c4f48, // ? (NTFS 3.0+?) 'HOLE'
 
     /* Found in $LogFile/$DATA. */
     magic_RSTR = 0x52545352, // Restart page. 
     magic_RCRD = 0x44524352, // Log record page. 
     
-    // Found in $LogFile/$DATA.  (May be found in $MFT/$DATA, also?) 
+    // Found in $LogFile/$DATA. (May be found in $MFT/$DATA, also?) 
     magic_CHKD = 0x444b4843, // Modified by chkdsk. 
 
     /* Found in all ntfs record containing records. */
@@ -154,8 +157,8 @@ static_assert(sizeof(NTFS_SIGNATURE) == 4);
 // Used in both MFT_FILE_RECORD and in INDEX_BUFFER ($INDEX_ALLOCATION) attribute
 struct NTFS_RECORD_HEADER 
 {
-    /* Record magic number, equals 'FILE'/'INDX'/'RSTR'/'RCRD'. */
-    uint8_t Signature[4];    // enum NTFS_SIGNATURE sign; // 0x00:
+    // Record magic number, equals 'FILE'/'INDX'/'RSTR'/'RCRD'.
+    uint8_t  Signature[4];   // 0x00: enum NTFS_SIGNATURE signature;
     uint16_t FixupOffset;	 // 0x04: Offset to the Update Sequence Array (usa) from the start of the ntfs record.
     uint16_t FixupCnt;	     // 0x06: Number of 2bytes sized entries in the usa including the Update Sequence Number(usn), 
                              // thus the number of fixups is the usa_count minus 1.
@@ -180,14 +183,13 @@ struct MFT_FILE_RECORD
                                         and if it is 1 we delete the file. Otherwise we delete the FILE_NAME_ATTR being referenced by the
                                         directory entry from the mft record and decrement the link_count. */
     uint16_t FirstAttrOffset;  // 0x14: Offset to the first attribute.
-    uint16_t Flags;            // 0x16: See MFT_RECORD_FLAGS. 
-    //MFT_RECORD_FLAGS Flags;  
+    uint16_t Flags;            // 0x16: See MFT_RECORD_FLAGS enum.
     uint32_t FileRecSize;      // 0x18: The size of used part.
     uint32_t AllocFileRecSize; // 0x1C: Total record size.
     MFT_REF  ParentFileRec;    // 0x20: Parent MFT record.
     uint16_t NextAttrID;       // 0x28: The ID that will be assigned to the next attribute added to this mft record. Incremented each time after it is used. Every time the mft record is reused this number is set to zero.
     uint16_t Align;            // 0x2A: High part of MFT record?
-    MFTRecIndex IndexMFTRec;      // 0x2C: Current MFT record number. this is 32bit, yes...    
+    MFTRecIndex IndexMFTRec;   // 0x2C: Current MFT record number. this is 32bit, yes...    
     /*When (re)using the mft record, we place the update sequence array at this
         * offset, i.e.before we start with the attributes.This also makes sense,
         * otherwise we could run into problems with the update sequence array
@@ -242,20 +244,17 @@ static_assert(sizeof(MFT_ATTR_RESIDENT) == 0x08);
 
 struct MFT_ATTR_NONRESIDENT
 {
-    uint64_t StartVCN;        // 0x10 Starting VCN of this segment.
-    uint64_t LastVCN;         // 0x18 End VCN of this segment.
-    uint16_t DataRunsOffset;  // 0x20 Offset to packed runs.
-    //  Unit of Compression size for this stream, expressed
-//  as a log of the cluster size.
+    uint64_t StartVCN;          // 0x10 Starting VCN of this segment.
+    uint64_t LastVCN;           // 0x18 End VCN of this segment.
+    uint16_t DataRunsOffset;    // 0x20 Offset to packed runs.
+
+//  Unit of Compression size for this stream, expressed as a log of the cluster size.
 //	0 means file is not compressed
-//	1, 2, 3, and 4 are potentially legal values if the
-//	    stream is compressed, however the implementation
-//	    may only choose to use 4, or possibly 3.  Note
-//	    that 4 means cluster size time 16.	If convenient
-//	    the implementation may wish to accept a
-//	    reasonable range of legal values here (1-5?),
-//	    even if the implementation only generates
-//	    a smaller set of values itself.
+//	1, 2, 3, and 4 are potentially legal values if the stream is compressed, 
+//  however the implementation may only choose to use 4, or possibly 3.  
+//  Note that 4 means cluster size time 16.	
+//  If convenient the implementation may wish to accept a reasonable range of legal 
+//  values here (1-5?), even if the implementation only generates a smaller set of values itself.
     uint8_t CompressionUnitSize; // 0x22: The compression unit for the attribute expressed as the logarithm to the base two of the number 
                                  // of clusters in a compression unit. If CompressionUnitSize is zero, the attribute is not compressed.
     uint8_t res1[5];		     // 0x23:
@@ -263,7 +262,7 @@ struct MFT_ATTR_NONRESIDENT
                                  // When a file is compressed, this field is a multiple of the compression block size (2 ^ compression_unit) and it represents 
                                  // the logically allocated space rather than the actual on disk usage. For this use the CompressedSize below.
     uint64_t RealSize;           // 0x30 Byte size of the attribute value. Can be larger than AllocatedSize if attribute value is compressed or sparse.
-    uint64_t StreamSize;         // 0x38 Byte size of initialized portion of the attribute value. Usually equals RealSize.
+    uint64_t StreamSize;         // 0x38 Byte size of initialized portion of the attribute value. Usually equals RealSize.see SetEndOfFile WINAPI function.
     uint64_t CompressedSize;     // 0x40 Byte size of the attribute value after compression. Only present when compressed. 
                                  // Always is a multiple of the cluster size. Represents the actual amount of disk space being used on the disk.
     // (present only for the first segment (0 == vcn)
@@ -273,7 +272,7 @@ struct MFT_ATTR_NONRESIDENT
 
 static_assert(sizeof(MFT_ATTR_NONRESIDENT) == 0x38);
 
-// Possible values of MFT_ATTR_HEADER.flags:
+// Possible values of MFT_ATTR_HEADER.Flags:
 #define ATTR_FLAG_COMPRESSED	  0x0001
 #define ATTR_FLAG_COMPRESSED_MASK 0x00FF
 #define ATTR_FLAG_ENCRYPTED	      0x4000
@@ -435,25 +434,10 @@ static_assert(sizeof(ATTR_REPARSE_POINT) == 0x08);
 
 struct fsntfs_mount_point_reparse_data
 {
-    /* The substitute name offset
-     * Consists of 2 bytes
-     */
-    uint8_t substitute_name_offset[2];
-
-    /* The substitute name size
-     * Consists of 2 bytes
-     */
-    uint8_t substitute_name_size[2];
-
-    /* The print name offset
-     * Consists of 2 bytes
-     */
-    uint8_t print_name_offset[2];
-
-    /* The print name size
-     * Consists of 2 bytes
-     */
-    uint8_t print_name_size[2];
+    uint8_t substitute_name_offset[2]; // The substitute name offset. Consists of 2 bytes
+    uint8_t substitute_name_size[2];   // The substitute name size. Consists of 2 bytes
+    uint8_t print_name_offset[2];      // The print name offset. Consists of 2 bytes
+    uint8_t print_name_size[2];        // The print name size. Consists of 2 bytes
 };
 
 // resident only????
