@@ -26,12 +26,13 @@ struct CACHE_ITEM
 	//uint32_t FileAttrSize() const { return sizeof(ATTR_FILE_NAME) + FileAttr.FileNameLen * sizeof(wchar_t); } // size in bytes of current item instance 
 	uint32_t Size() const {	return sizeof(CACHE_ITEM) + FileAttr.FileNameLen * sizeof(wchar_t); } // size in bytes of current item instance 
 	
-	wchar_t* Name() const { return (wchar_t*)((uint8_t*)this + sizeof(CACHE_ITEM)); }
+	//NOTE! Name() does not guarantee that string will be null terminated 
+	wchar_t* Name()   const { return (wchar_t*)((uint8_t*)this + sizeof(CACHE_ITEM)); }
 	bool IsMetaFile() const { return (FileAttr.ParentDir.sId.low == MFT_ROOT_REC_ID) && (Name()[0] == L'$'); }
-	bool IsDotDir() const { return (FileAttr.FileNameLen == 1) && (Name()[0] == L'.'); }
-	bool IsDir() const { return (FileAttr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::DIRECTORY) > 0;	}
-	bool IsReparse() const { return (FileAttr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::REPARSE_POINT) > 0; };
-	bool NtfsInternal() const { return IsMetaFile() || IsDotDir(); }
+	bool IsDotDir()   const { return (FileAttr.FileNameLen == 1) && (Name()[0] == L'.'); }
+	bool IsDir()      const { return (FileAttr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::DIRECTORY) > 0;	}
+	bool IsReparse()  const { return (FileAttr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::REPARSE_POINT) > 0; };
+	bool NtfsInternal()const{ return IsMetaFile() || IsDotDir(); }
 };
 
 class TFileLevelList
@@ -111,19 +112,17 @@ public:
 
 	
 	// each structure has different size because of file name string
-	uint32_t AddValue(const uint32_t parent, /*const uint32_t itemLevel,*/ const MFT_REF MFTRecID, const ATTR_FILE_NAME* data)
+	uint32_t AddValue(const uint32_t parent, const MFT_REF MFTRecID, const ATTR_FILE_NAME* data)
 	{
-		//assert(itemLevel == FLevel); //TODO remove itemLevel from parameters since it is not needed
-
 		uint32_t itemSize = CalcItemSize(data); // this is total item size: sizeof(CACHE_ITEM) + filename size
 		assert(itemSize < MAX_FILE_NAME * sizeof(wchar_t) + sizeof(CACHE_ITEM) + 1); // 260 max file name length. 1 extra byte just in case
 
 		EnsureCapacity(itemSize);
 
 		((CACHE_ITEM*)FHead)->FParent = parent;
-		((CACHE_ITEM*)FHead)->FLevel = FLevel; // itemLevel;
+		((CACHE_ITEM*)FHead)->FLevel = FLevel;
 		((CACHE_ITEM*)FHead)->FFilesCount = -1;  // -1 is to differ from empty folders where FFilesCount=0
-		((CACHE_ITEM*)FHead)->FMFTRecID = MFTRecID;//TODO may be we could store MFTRectID as uint32_t (4 bytes) here instead of 8 bytes structure
+		((CACHE_ITEM*)FHead)->FMFTRecID = MFTRecID; //TODO may be we could store MFTRectID as uint32_t (4 bytes) here instead of 8 bytes structure
 
 		uint32_t dataSize = CalcFileAttrSize(data); // this is size of ATTR_FILE_NAME + filename size, needed only for memcpy
 		memcpy_s(FHead + offsetof(CACHE_ITEM, FileAttr), dataSize, data, dataSize);// TODO add error check?
