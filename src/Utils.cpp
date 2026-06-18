@@ -11,6 +11,9 @@
 
 std::string FileDateToString(const std::string& str, uint64_t dateTime)
 {
+    if (dateTime == 0) 
+        return std::format("{}---", str);
+
     const uint BUF_SZ = 100;
     wchar_t buf[BUF_SZ];
     DWORD dateTimeFlags = FDTF_DEFAULT | FDTF_NOAUTOREADINGORDER;
