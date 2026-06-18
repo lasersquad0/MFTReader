@@ -10,6 +10,7 @@
 
 #include "strutils/include/string_utils.h"
 #include "strutils/include/ci_string.h"
+#include "strutils/include/Ticks.h"
 #include "Functions.h"
 #include "NTFS.h"
 
@@ -145,7 +146,8 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
     // itemInfo will be "empty" in that case (no atributes) - so we can easily detect such items in the list.
     if (nfrib.FileReferenceNumber.QuadPart != pnfrob->FileReferenceNumber.QuadPart)
     {
-        logger.WarnFmt("Requested MFT rec ID differs from returned. Looks like requested MFT record is deleted. Requested: {:#x}, returned: {:#x}", nfrib.FileReferenceNumber.QuadPart, pnfrob->FileReferenceNumber.QuadPart);
+        logger.WarnFmt("Requested MFT rec ID differs from returned. Looks like requested MFT record is deleted. Requested: {:#x}, returned: {:#x}", 
+                    nfrib.FileReferenceNumber.QuadPart, pnfrob->FileReferenceNumber.QuadPart);
         return false;
     }
 
@@ -334,8 +336,8 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
                 assert(indexR->Rule == COLLATION_RULE::FILENAME);
 
                 logger.DebugFmt("IndexRoot Indexed Attr Type: {} {:#x}", AttrName(indexR->AttrType), (uint32_t)indexR->AttrType);
-                logger.DebugFmt("IndexRoot Collation Rule: {} ({})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
-                logger.DebugFmt("IndexRoot Dir Type: {} ({:#x})", indexR->ihdr.Flags == 0 ? " SMALL DIR" : " BIG DIR", indexR->ihdr.Flags);
+                logger.DebugFmt("IndexRoot Collation Rule: {} ({:#x})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
+                logger.DebugFmt("IndexRoot Dir Type: {} ({:#x})", indexR->ihdr.Flags == 0 ? "SMALL DIR" : "BIG DIR", indexR->ihdr.Flags);
 
                 auto pihdr = &(indexR->ihdr);
 
@@ -758,7 +760,7 @@ static bool ReadMftItems(VOLUME_DATA& volData, MFT_REF startMmftRec, uint32_t di
 {
     GET_LOGGER;
 
-    ITEM_INFO itemInfo{ 0 };
+    ITEM_INFO itemInfo;
 
     if (!ReadMftItemInfo(volData, startMmftRec, itemInfo))
     {
@@ -802,12 +804,14 @@ void ShowVolumeStat(VOLUME_DATA& volData)
     MFT_REF startId{0};
     startId.Id = MFT_ROOT_REC_ID;
     
+    Ticks::Start(_T("Loading time"));
     if (!ReadMftItems(volData, startId, 0, itemsList))
     {
         logger.Error("ReadMftItems() returned false!");
     }
+    Ticks::Finish(_T("Loading time"));
 
-
+    Ticks::Start(_T("Calc and Print stat time"));
     auto AttrCountGreater9 = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.AttrsCount > 9; });
     auto HardLinksGreater9 = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.HardLinksCount > 9; });
     auto DirHardLinksEQ1 = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.HardLinksCount == 1; });
@@ -891,29 +895,66 @@ void ShowVolumeStat(VOLUME_DATA& volData)
         std::wcout << AttrTypeNames[i] << " = " <<(*maxAttrs).AttrCounters[i] << std::endl;
     }
 
+    Ticks::Finish(_T("Calc and Print stat time"));
+
+    std::cout << "Sorting... " << std::endl;
+
+    Ticks::Start(_T("Sorting time"));
+    THArray<uint> index;
+    index.AddFillValues(itemsList.Count());
+    std::iota(index.begin(), index.end(), 0); // fill index with increasing values from 0 to itemList.Count()
+
+    std::sort(index.begin(), index.end(), [&](uint a, uint b)
+        {
+            return itemsList[a].MainName < itemsList[b].MainName;
+        });
+
+    Ticks::Finish(_T("Sorting time"));
     
-    /*std::cout << "Sorting... " << std::endl;
-    std::sort(itemsList.begin(), itemsList.end());
+    /*std::cout << "Converting... " << std::endl;
+    Ticks::Start(_T("Converting time"));
+    THArray<string_t> arr;
+    arr.SetCapacity(itemsList.Count() + 1); // 1 is just in case
+    for (auto& item : itemsList)
+    {
+        arr.AddValue(item.MainName.c_str());
+    }
+    Ticks::Finish(_T("Converting time"));
+
+    std::cout << "Sorting... " << std::endl;
+
+    Ticks::Start(_T("Sorting time"));
+    std::sort(arr.begin(), arr.end());
+    Ticks::Finish(_T("Sorting time"));
+    */
 
     std::string filename = "ListMFTFile_sorted.log";
     LogEngine::TFileStream ff(filename);
 
-    ff << toStringSepW(itemsList.Count()) + L" - total";
-    ff << toStringSepW(itemsList.Count() - dirCount) + L" - files"; // only files
-    ff << toStringSepW(dirCount) + L" - dirs"; // only dirs
+    string_t fendl;
+    BUILD_ENDL(fendl);
 
-    std::cout << "Saving list of files to " << filename << std::endl;
+    ff << L"Total Items Count: " << toStringSepW(index.Count()) << fendl;
+    //ff << toStringSepW(itemsList.Count() - dirCount) + L" - files"; // only files
+    //ff << toStringSepW(dirCount) + L" - dirs"; // only dirs
 
-    for (auto& item : itemsList)
+    std::cout << "Saving list of files to '" << filename << "'..." << std::endl;
+
+    Ticks::Start(_T("Saving time"));
+    for (auto& ind : index)
     {
-        if (IsItemDir(item))
-            item.MainName += L'\\';
+        /*if (item.IsDir())
+            ff << item.MainName  << L'\\' << fendl;
+        else*/
+            ff << itemsList[ind].MainName << fendl;
+    }
+    Ticks::Finish(_T("Saving time"));
 
-        ff << item.MainName;
-    }*/
 
     std::cout << "Freeing memory..." << std::endl;
     itemsList.ClearMem();
     std::cout << "Freed" << std::endl;
+
+    Ticks::PrintCon(1);
 }
 
