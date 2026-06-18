@@ -133,9 +133,11 @@ inline std::string MillisecToStr(uint64_t ms)
 }
 
 
-/// converts any integer type into a string with group separator applied.
-/// group separator is defined by MyGroupSeparator class
-/// string_t can be either std::string or std::wstring
+/** 
+* @brief Converts any integer like type into a std::string with group separator applied.
+* @details Group separator is defined by MyGroupSeparator class
+* @param IntType Any integral type (int, long, int64_t, bool, char, wchar_t, short, etc)
+*/
 template<typename IntType>
 std::string toStringSepA(IntType v)
 {
@@ -154,9 +156,11 @@ std::string toStringSepA(IntType v)
     return ss.str();
 }
 
-/// converts any integer type into a string with group separator applied.
-/// group separator is defined by MyGroupSeparator class
-/// string_t can be either std::string or std::wstring
+/**
+* @brief Converts any integer like type into a std::wstring with group separator applied.
+* @details Group separator is defined by MyGroupSeparator class
+* @param IntType Any integral type (int, long, int64_t, bool, char, wchar_t, short, etc)
+*/
 template<typename IntType>
 std::wstring toStringSepW(IntType v)
 {
