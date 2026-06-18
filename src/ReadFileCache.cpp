@@ -13,14 +13,21 @@
 #include "strutils/include/string_utils.h"
 #include "LogEngine2/DynamicArrays.h"
 #include "LogEngine2/LogEngine.h"
-//#include "logengine2/FileStream.h"
 #include "Caches.h"
 #include "FileLevel.h"
 #include "FileCache.h"
 #include "NTFS.h"
 
 
-
+/**
+* @brief Extracts list of files from node.DataRuns
+* @details Extracts list of files from parameter node.DataRuns. Goes through all LCNs in Data Runs and extracts list of files
+* Files are extracted in random order (in order of LCNs in Data Runs). Does not go to sub-nodes
+* node.Bitmap is used to select which LCNs in Data Runs are valid (need to be processed)
+* @param volData General info about NTFS volume. volData.BytesPerCluster used by the function
+* @param node Contains Data Runs to be processed, and Bitmap that tells us what LCNs are valid.
+* @param pred Predicate used for adding extracted files into external list. Called for each extracted file.
+*/
 bool ProcessAllocDataRuns(VOLUME_DATA& volData, DIR_NODE& node, FileListPred pred)
 {
     GET_LOGGER;
@@ -39,7 +46,7 @@ bool ProcessAllocDataRuns(VOLUME_DATA& volData, DIR_NODE& node, FileListPred pre
 
     int64_t bitsCounter = 0;
     uint8_t* dataBuf = nullptr;
-    uint64_t dataBufLen = 0; // memory of how many clusters is allocated in dataBuf
+    uint64_t dataBufLen = 0; // dataBuf size in clusters
     uint32_t currRun = 0;
     while (currRun < node.DataRuns.Count())
     {
@@ -47,8 +54,16 @@ bool ProcessAllocDataRuns(VOLUME_DATA& volData, DIR_NODE& node, FileListPred pre
             break;
 
         DATA_RUN_ITEM& rli = node.DataRuns[currRun];
-        logger.DebugFmt("Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
+        logger.DebugFmt("[ProcessAllocDataRuns] Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
+        
+        // check correctness of decoded LCNs
+        assert(rli.len < (uint64_t)volData.TotalClusters.QuadPart);
+        assert(rli.lcn < (uint64_t)volData.TotalClusters.QuadPart);
+        assert((rli.lcn < (uint64_t)volData.MftZoneStart.QuadPart) || (rli.lcn > (uint64_t)volData.MftZoneEnd.QuadPart));
 
+        //TODO MFT may be fragmented, it might be good idea to read list of MFT fragments in advance and check that rli.lcn does not inside any MFT fragment
+        //assert((rli.lcn < (uint64_t)volData.MftStartLcn.QuadPart) || (rli.lcn > (uint64_t)(volData.MftStartLcn.QuadPart + volData.MftValidDataLength.QuadPart / volData.BytesPerCluster)));
+        
         CLST rlilen = valuemin((CLST)(lastBit + 1 - bitsCounter), rli.len);
 
         if (rlilen > dataBufLen)
@@ -120,11 +135,22 @@ bool ProcessAllocDataRuns(VOLUME_DATA& volData, DIR_NODE& node, FileListPred pre
     return true;
 }
 
-// mftRec should be a buffer of volData.BytesPerMFTRec size
-// Parses the following 4 attributes ONLY: ATTR_ROOT, ATTR_ALLOC, ATTR_BITMAP, ATTR_LIST_ATTR
-// ATTR_ROOT - gets list of files (usually this list is empty when appropriate ATTR_ALLOC exists)
-// ATTR_LIST_ATTR - goes to child records and parses 4 listed above attributes from there
-// ATTR_ALLOC - only does data runs decoding, does not go to LCNs. 
+/**
+* @brief Fills level with files/dirs read from MFT record
+* @details Fills one TLevel level with files/dirs read from MFT record refered by mftRecData
+* mftRecData must refer to directory MFT record for base records 
+* Parses the following FOUR attributes ONLY: ATTR_ROOT, ATTR_ALLOC, ATTR_BITMAP, ATTR_LIST_ATTR
+*   ATTR_ROOT - gets list of files (usually this list is empty when appropriate ATTR_ALLOC exists)
+*   ATTR_LIST_ATTR - goes to child records and parses 4 listed above attributes from there
+*   ATTR_ALLOC - only does data runs decoding, does not go to LCNs.
+* mftRec buffer should be volData.BytesPerMFTRec size
+* @param volData Contains general information about volume, need for LoadMFTRecord function and for others
+* @param mftRecData Pointer to MFT_FILE_RECORD structure in memory
+* @param node Will be filled with BITMAP and Data Runs data
+* @param parentIdx Index of parent item in upper level. Need for connection read items to parent item.
+* @param level Pointer to level where new items will be added (current level)
+* @return true if success, false in case of error
+*/ 
 static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& node, uint32_t parentIdx, TFileCache::TLevel* level)
 {
     GET_LOGGER;
@@ -132,7 +158,7 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
     FileListPred pred = [parentIdx, &level](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
         {
             // do not add NTFS internal files that are in root dir and start from $
-            if (!AttrNTfsInternal(attr))
+            if (!AttrIsNtfsInt(attr))
                 level->AddValue(parentIdx, /*level->Level(),*/ ref, attr);
         };
 
@@ -143,11 +169,13 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
 
     logger.Debug("---------- PARSING MFT RECORD ---------");
 
+    bool IsBASERec = mftRec->ParentFileRec.Id == 0;
+
     logger.DebugFmt("Signature: {}", std::string((char*)mftRec->RecHeader.Signature, 4));
-    logger.DebugFmt("MFT Rec ID: {:#x}", mftRec->IndexMFTRec);
+    logger.DebugFmt("MFT Rec ID: {}", MFT_REF::toHexString(mftRec->IndexMFTRec));
     logger.DebugFmt("MFT Rec Num re-used: {}", mftRec->SeqNum);
-    logger.DebugFmt("MFT Parent Rec ID: {} {}", mftRec->ParentFileRec.toHexString(), mftRec->ParentFileRec.Id > 0 ? " CHILD" : "BASE");
-    logger.DebugFmt("MFT Hard links Count: {}", mftRec->HardLinksCnt, mftRec->ParentFileRec.Id > 0 ? " (may be inaccurate for child records)" : "");
+    logger.DebugFmt("MFT Parent Rec ID: {} {}", mftRec->ParentFileRec.toHexString(), IsBASERec ? " BASE" : "CHILD");
+    logger.DebugFmt("MFT Hard links Count: {}", mftRec->HardLinksCnt, !IsBASERec ? " (may be inaccurate for child records)" : "");
     logger.DebugFmt("MFT Rec Size: {}", mftRec->FileRecSize);
     logger.DebugFmt("MFT Alloc Rec Size: {}", mftRec->AllocFileRecSize);
 
@@ -165,7 +193,7 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
     // somethimes ParseMFTRecord can be called for special kinds of records e.g. when attributes do not fit into base record and moved into a another "child" record.
     // such special MFT records may be either IN_USE or IN_USE|IS_DIRECTORY type
     // therefore I added if before assert
-    if(mftRec->ParentFileRec.Id == 0) // base record
+    if(IsBASERec) // base record
         assert(mftRec->Flags == (MFT_FLAG_IN_USE | MFT_FLAG_IS_DIRECTORY)); // only "directory" record should go here for base records
 
     MFT_ATTR_HEADER* currAttr = (MFT_ATTR_HEADER*)Add2Ptr(mftRec, mftRec->FirstAttrOffset);
@@ -173,9 +201,10 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
     int attroOrderNum = 1;
     do  // reading all attributes in a loop
     {
-        logger.DebugFmt("********** #{} Attribute ({} {:#x})", attroOrderNum++, AttrName(currAttr->AttrType), (uint32_t)currAttr->AttrType);
-        logger.Debug(currAttr->NonResidentFlag ? "Attr Type - NON-RESIDENT" : "Attr Type - RESIDENT");
+        logger.DebugFmt("********** #{} Attribute ({} {:#x}) **********", attroOrderNum++, AttrName(currAttr->AttrType), (uint32_t)currAttr->AttrType);
+        logger.Debug(currAttr->NonResidentFlag ? "Attr Type: NON-RESIDENT" : "Attr Type: RESIDENT");
         logger.DebugFmt("Attr ID: {}", currAttr->AttrID);
+        logger.DebugFmt("Attr Size: {}", currAttr->AttrSize);
         logger.DebugFmt("Attr Flags: {}", currAttr->Flags);
     
         std::wstring nameOfAttrW;
@@ -192,7 +221,6 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
             logger.DebugFmt("Attr Indexed: {}", currAttr->res.IndexedFlag);
 
             assert(currAttr->res.DataSize + currAttr->res.DataOffset <= currAttr->AttrSize);
-
             uint8_t* attrValue = Add2Ptr(currAttr, currAttr->res.DataOffset); 
 
             switch (currAttr->AttrType)
@@ -214,7 +242,7 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
                 auto pihdr = &(indexR->ihdr);
 
                 // does not go to subnodes
-                GetFileList(pihdr, pred); 
+                GetFileList(pihdr, pred);
 
                 break;
             }
@@ -255,7 +283,7 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
                     if ((uint8_t*)attrEntry >= currAttrEnd) break;
                     assert(attrEntry->AttrType > 0);
                     assert(attrEntry->AttrSize > 0);
-                    assert(attrEntry->StartVCN == 0);
+                    //assert(attrEntry->StartVCN == 0);
                     assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
                 }
 
@@ -278,7 +306,7 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
             }
             case ATTR_DATA: // Resident. ATTR_DATA can be resident or non-resident
             {
-                logger.InfoFmt("Resident Data Attr. Size: {}", currAttr->res.DataSize);
+                logger.InfoFmt("Resident ATTR_DATA. Size: {}", currAttr->res.DataSize);
                 logger.DebugFmt("We do not process this resident attribute. Attr: '{}', AttrName: '{}'.", AttrName(currAttr->AttrType), nameOfAttrA);
                 break;
             }
@@ -308,11 +336,22 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
             logger.DebugFmt("Attr StreamSize: {}", currAttr->nonres.StreamSize);
             logger.DebugFmt("Attr AllocatedSize: {}", currAttr->nonres.AllocatedSize);
 
+            // this is rare case when file contains non-initialised portion of data
+            // in this case RealSize contains total file size while StreamSize contains size of initialised data (StreamSize<RealSize) 
+            if (currAttr->nonres.RealSize != currAttr->nonres.StreamSize)
+                logger.DebugFmt("'currAttr.RealSize != currAttr.StreamSize'. ReadlSize: {}, StreamSize: {}, MFT Rec ID: {}",
+                    currAttr->nonres.RealSize, currAttr->nonres.StreamSize, MFT_REF::toHexString(mftRec->IndexMFTRec));
+
+            if (currAttr->nonres.RealSize < currAttr->nonres.StreamSize)
+                logger.WarnFmt("'currAttr.RealSize < currAttr.StreamSize'. ReadlSize: {}, StreamSize: {}, MFT Rec ID: {}",
+                    currAttr->nonres.RealSize, currAttr->nonres.StreamSize, MFT_REF::toHexString(mftRec->IndexMFTRec));
+
             switch (currAttr->AttrType)
             {
             case ATTR_BITMAP: // NON-resident. ATTR_BITMAP can be either resident and non-resident
             {
-                logger.Info("BITMAP NON-Resident has been met!");
+                logger.InfoFmt("Non-Resident ATTR_BITMAP ('{}') has been met. MFT Rec ID {}", nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
+            
                 if (!ParseNonresBitmap(volData, currAttr, node.Bitmap))
                 {
                     logger.Error("ParseNonresBitmap finished with error.");
@@ -322,10 +361,14 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
             }
             case ATTR_ALLOC: // NON-resident. ATTR_ALLOC is always non-resident.
             {
-                // sometimes one ATTR_LIST_ATTR list may contain two ATTR_ALLOC attributes for some reason
+                // sometimes one ATTR_LIST_ATTR list may contain two ATTR_ALLOC attributes
                 // it means we come here two times during parsing one MFT record with such ATTR_LIST_ATTR 
                 if (node.DataRuns.Count() > 0)
-                    logger.WarnFmt("Multiple ATTR_ALLOC attributes (node.DataRuns.Count() == {}).", node.DataRuns.Count());
+                {
+                    assert(!IsBASERec); // base record cannot contain two ATTR_ALLOC attributes, while child records referred by ATTR_LIST can
+                    logger.InfoFmt("Multiple ATTR_ALLOC attributes have met. node.DataRuns.Count(): {}, Child MFT Rec ID: {}, Base MFT Rec ID: {}",  
+                            node.DataRuns.Count(), MFT_REF::toHexString(mftRec->IndexMFTRec), mftRec->ParentFileRec.toHexString());
+                }
 
                 if (!DataRunsDecode(currAttr, node.DataRuns))
                 {
@@ -445,9 +488,19 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
     return true;
 }
 
-// parentIdx - index of parent item in previous/parent level in gFileList
-// parentItem - item (directory) whose files will be read. NULL for root item.
-// dirSize passed by ref because we return dir size to upper directory 
+/**
+ * @brief Loads files/dirs into gFileList recursively
+ * @details Loads files/dirs refered by parentItem, then goes into subdirs and loads files/dirs from there
+ * Adds loaded info gFileList level by level. gFileList can then be used for quick searching for files in volume.
+ * Reads only INDEX_ROOT, ALLOC, BiTMAP attributes. Also parses ATTR_LIST attribute too when met.
+ * File information is got from aINDEX_ROOT and ALLOC attributes only.
+ * Calculates and stores size of each directory met.
+ * ReadDirectoryV1 may call itself reccurcively when needed to read CHILD MFT records.
+ * @param parentIdx Index of parent item in previous/parent level of gFileList
+ * @param parentItem Item (directory) whose files will be read. NULL for root item.
+ * @param dirSize Passed by ref because we return dir size to upper directory 
+ * @param callback Since reading may take a time function tells its progress to caller via callback of ProgressCallbackPtr type.
+*/
 bool ReadDirectoryV1(VOLUME_DATA& volData, uint32_t parentIdx, CACHE_ITEM* parentItem, uint64_t& dirSize, TFileCache& gFileList, ProgressCallbackPtr callback)
 {
     static int32_t ProgressCounter = 0;
@@ -490,16 +543,16 @@ bool ReadDirectoryV1(VOLUME_DATA& volData, uint32_t parentIdx, CACHE_ITEM* paren
         ZeroMemory(fattr, fattrSize);
 
         fattr->FileNameLen = (uint8_t)volData.Name.size(); //name of disk C: or D:
-        fattr->NameType = FILE_NAME_UNICODE_AND_DOS;
-        fattr->ParentDir = MFTRec;
-        fattr->dup.CreateTime = stdinfo->CreateTime;
-        fattr->dup.ModifyTime = stdinfo->ModifyTime;
+        fattr->NameType    = FILE_NAME_UNICODE_AND_DOS;
+        fattr->ParentDir   = MFTRec;
+        fattr->dup.CreateTime     = stdinfo->CreateTime;
+        fattr->dup.ModifyTime     = stdinfo->ModifyTime;
         fattr->dup.ModifyAttrTime = stdinfo->ModifyAttrTime;
         fattr->dup.LastAccessTime = stdinfo->LastAccessTime;
-        
         // this is HACK because STD attr does not contain dir flag for '.' directory for some reason. while FILENAME attr for '.' does contain dir flag.
         // many articles about NTFS tell us that STD attr does not contain DIR flag while FILENAME does 
         fattr->dup.FileAttrib = stdinfo->FileAttrib | (uint32_t)FILE_ATTR_FLAGS::DIRECTORY; 
+
         wmemcpy_s((wchar_t*)Add2Ptr(fattr, sizeof(ATTR_FILE_NAME)), fattr->FileNameLen, volData.Name.c_str(), fattr->FileNameLen);
 
         level0->AddValue(0, MFTRec, fattr);
@@ -507,6 +560,8 @@ bool ReadDirectoryV1(VOLUME_DATA& volData, uint32_t parentIdx, CACHE_ITEM* paren
         //IMPORTANT: change parentItem to new parent to proper read files from root dir into level 1 (level 0 is a root dir like C: or D:) 
         parentItem = level0->GetValue(0);
     }
+
+    assert(parentItem->IsDir()); // only directory can be as parentItem
 
     auto level = gFileList.GetLevel(parentItem->FLevel + 1);
     assert(level->Level() == parentItem->FLevel + 1);
@@ -526,7 +581,7 @@ bool ReadDirectoryV1(VOLUME_DATA& volData, uint32_t parentIdx, CACHE_ITEM* paren
                  [parentIdx, &level](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
                  {
                      // do not add NTFS internal files that are in root dir and start from $
-                     if (!AttrNTfsInternal(attr))
+                     if (!AttrIsNtfsInt(attr))
                          level->AddValue(parentIdx, /*level->Level(),*/ ref, attr);
                  })
            )
@@ -566,7 +621,7 @@ bool ReadDirectoryV1(VOLUME_DATA& volData, uint32_t parentIdx, CACHE_ITEM* paren
             {
                 uint64_t childDirSize{ 0 };
                 if (!ReadDirectoryV1(volData, i, item, childDirSize, gFileList, callback))
-                    logger.ErrorFmt("ReadDirectoryV1 finished with error for MFT Rec ID: {:#x}", item->FMFTRecID.sId.low);
+                    logger.ErrorFmt("ReadDirectoryV1 finished with error for MFT Rec ID: {}", item->FMFTRecID.toHexString());
                 dirSize += childDirSize;
             }
         }
@@ -606,12 +661,12 @@ void ReadDirsV1(VOLUME_DATA& volData)
     }
 
     std::cout << std::endl << "Volume root dir size: " << toStringSepA(rootDirSize) << std::endl;
+    std::cout << "Total Items Count: " << fileCache.TotalCount() << std::endl;
 
     //fileCache.SaveTo("MFTReader_items.txt");
 
     fileCache.PrintLevelsStat();
-    std::cout << "Files Total Count: " << fileCache.TotalCount() << std::endl;
-
+    
     /*
     std::cout << "Exporting... " << std::endl;
     THArray<string_t> arr;

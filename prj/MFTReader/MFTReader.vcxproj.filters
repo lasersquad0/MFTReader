@@ -21,9 +21,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\src\FileStat.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\src\Functions.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -54,7 +51,10 @@
     <ClCompile Include="..\..\include\external\cli\OptionsList.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\common\src\string_utils.cpp">
+    <ClCompile Include="..\..\include\external\strutils\src\string_utils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\FileStat.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -98,10 +98,10 @@
     <ClInclude Include="..\..\include\external\cli\OptionsList.h">
       <Filter>Header Files\CLI</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\common\include\string_utils.h">
+    <ClInclude Include="..\..\include\external\strutils\include\string_utils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\common\include\Ticks.h">
+    <ClInclude Include="..\..\include\external\strutils\include\Ticks.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

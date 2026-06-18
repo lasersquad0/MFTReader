@@ -7,9 +7,10 @@
 #include "Functions.h"
 #include "Caches.h"
 
+
 // reads series of sequential volume clusters starting from #lcnStart
 // dataBuf should be large enough to fit lcnCnt clusters of data
-bool ReadClusters(const VOLUME_DATA& volData, CLST lcnStart, CLST lcnCnt, PBYTE dataBuf)
+bool ReadClusters(const VOLUME_DATA& volData, CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf)
 {
     LARGE_INTEGER offset{0};
     DWORD bytesRead;
@@ -40,7 +41,7 @@ bool ReadClusters(const VOLUME_DATA& volData, CLST lcnStart, CLST lcnCnt, PBYTE 
 }
 
 // dataBuf contains data for rlilen clusters
-bool FixupUSA(const VOLUME_DATA& volData, PBYTE dataBuf, DATA_RUN_ITEM& rli, uint64_t rlilen)
+bool FixupUSA(const VOLUME_DATA& volData, uint8_t* dataBuf, DATA_RUN_ITEM& rli, uint64_t rlilen)
 {
     NTFS_RECORD_HEADER* indexRec = (NTFS_RECORD_HEADER*)dataBuf;
     uint32_t wordsPerSector = volData.BytesPerSector >> 1;
@@ -92,9 +93,7 @@ bool FixupUSA(const VOLUME_DATA& volData, PBYTE dataBuf, DATA_RUN_ITEM& rli, uin
 // mftRec should be a buffer with volData.BytesPerMFTRec size
 bool LoadMFTRecord(const VOLUME_DATA& volData, MFT_REF recID, uint8_t* mftRec)
 {
-    GET_LOGGER;
-
-    NTFS_FILE_RECORD_INPUT_BUFFER nfrib;
+    NTFS_FILE_RECORD_INPUT_BUFFER nfrib{0};
     nfrib.FileReferenceNumber.QuadPart = recID.Id;
     //nfrib.FileReferenceNumber.QuadPart = nvdb.MftValidDataLength.QuadPart / nvdb.BytesPerFileRecordSegment - 1;
 
@@ -106,6 +105,7 @@ bool LoadMFTRecord(const VOLUME_DATA& volData, MFT_REF recID, uint8_t* mftRec)
 
     if (!DeviceIoControl(volData.hVolume, FSCTL_GET_NTFS_FILE_RECORD, &nfrib, sizeof(nfrib), pnfrob, cb, &bytesReturned, nullptr))
     {
+        GET_LOGGER;
         logger.ErrorFmt("DeviceIoControl failed with error. Error code: {}", GetLastError());
         return false;
     }
@@ -149,7 +149,7 @@ bool DataRunsDecode(MFT_ATTR_HEADER* attr, TDataRuns& runs)
     if (!attr || !attr->NonResidentFlag)
     {
         // looks like incorrect data in MFT
-        logger.Error("[DataRunsDecode] Attr parameter is NULL or is resident!!!");
+        logger.Error("[DataRunsDecode] Attr parameter is NULL or is resident (must be non-resident)!!!");
         return false;
     }
 
@@ -163,7 +163,7 @@ bool DataRunsDecode(MFT_ATTR_HEADER* attr, TDataRuns& runs)
     // read all data runs 
     while ((datarun < attrEnd) && *datarun) // stop if we reached zero in both half bytes
     {
-        DATA_RUN_ITEM ri;
+        DATA_RUN_ITEM ri{0};
         int64_t deltaxcn; // can be negative, it's ok
 
         ri.vcn = currVCN;
@@ -206,8 +206,6 @@ bool DataRunsDecode(MFT_ATTR_HEADER* attr, TDataRuns& runs)
         datarun += b3 + 1; // move to the next data run
 
         logger.DebugFmt("[DataRunsDecode] Data Run. VCN: {}, LCN: {}, Len: {}", ri.vcn, ri.lcn, ri.len);
-       // logger.DebugFmt("[DataRunsDecode] LCN: {}", ri.lcn);
-       // logger.DebugFmt("[DataRunsDecode] Length: {}", ri.len);
     }
 
     logger.DebugFmt("[DataRunsDecode] Data Runs Count: {}, Last VCN: {}", runs.Count(), currVCN);

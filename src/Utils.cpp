@@ -4,10 +4,23 @@
 
 #include <string>
 #include <windows.h>
+#include <shlwapi.h>
 #include <strsafe.h>
 
 #include "Utils.h"
 
+std::string FileDateToString(const std::string& str, uint64_t dateTime)
+{
+    const uint BUF_SZ = 100;
+    wchar_t buf[BUF_SZ];
+    DWORD dateTimeFlags = FDTF_DEFAULT | FDTF_NOAUTOREADINGORDER;
+    FILETIME ft{ 0 };
+
+    ft.dwLowDateTime = LODWORD(dateTime);
+    ft.dwHighDateTime = HIDWORD(dateTime);
+    SHFormatDateTime(&ft, &dateTimeFlags, buf, BUF_SZ);
+    return std::format("{}{}", str, wtos(&buf[0]));
+}
 
 // removes all leading and trailing \n \r and space symbols from string
 std::wstring TrimSPCRLF(std::wstring str) // str passed by value here intentionally
