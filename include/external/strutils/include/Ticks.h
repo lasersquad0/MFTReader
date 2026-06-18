@@ -1,6 +1,6 @@
 #pragma once
 
-#include <map>
+#include <unordered_map>
 #include <string>
 #include <chrono>
 #include <iostream>
@@ -14,8 +14,8 @@ public:
 	typedef std::chrono::steady_clock::time_point timepoint;
 
 private:
-	static inline std::map<string_t, timepoint> s;
-	static inline std::map<string_t, timepoint> f;
+	static inline std::unordered_map<string_t, timepoint> s;
+	static inline std::unordered_map<string_t, timepoint> f;
 
 public:
 
@@ -37,14 +37,14 @@ public:
 	{
 		for (auto& item : f)
 		{
-			std::wcout << item.first << U("=") << std::chrono::duration_cast<std::chrono::milliseconds>(item.second - s.at(item.first)).count() / factor << std::endl;
+			std::wcout << item.first << U(" = ") << std::chrono::duration_cast<std::chrono::milliseconds>(item.second - s.at(item.first)).count() / factor << std::endl;
 		}
 	}
 	static void Print(std::basic_iostream<char_t>& stream, long factor)
 	{
 		for (auto& item : f)
 		{
-			stream << item.first << U("=") << std::chrono::duration_cast<std::chrono::milliseconds>(item.second - s.at(item.first)).count() / factor << std::endl;
+			stream << item.first << U(" = ") << std::chrono::duration_cast<std::chrono::milliseconds>(item.second - s.at(item.first)).count() / factor << std::endl;
 		}
 	}
 	

@@ -36,7 +36,7 @@ Some attrs may not present in MFT Rec. e.g. BITMAP is not created for empty dire
 #define MFT_REF_MASK 0x0000FFFFFFFFFFFF
 
 // volume root MFT rec ID. This is ID of '.' (or c:\) directory
-constexpr auto MFT_ROOT_REC_ID = 5;
+constexpr uint32_t MFT_ROOT_REC_ID = 5;
 
 // max file name length, this is because length is stored in uint8_t in FILE_ATTR
 #define MAX_FILE_NAME 255
