@@ -94,7 +94,7 @@ bool FixupUSA(const VOLUME_DATA& volData, uint8_t* dataBuf, DATA_RUN_ITEM& rli, 
 bool LoadMFTRecord(const VOLUME_DATA& volData, MFT_REF recID, uint8_t* mftRec)
 {
     NTFS_FILE_RECORD_INPUT_BUFFER nfrib{0};
-    nfrib.FileReferenceNumber.QuadPart = recID.Id;
+    nfrib.FileReferenceNumber.QuadPart = recID.sId.low;
     //nfrib.FileReferenceNumber.QuadPart = nvdb.MftValidDataLength.QuadPart / nvdb.BytesPerFileRecordSegment - 1;
 
     //ULONG cb = __builtin_offsetof(NTFS_FILE_RECORD_OUTPUT_BUFFER, FileRecordBuffer[volData.BytesPerMFTRec]);
@@ -111,6 +111,18 @@ bool LoadMFTRecord(const VOLUME_DATA& volData, MFT_REF recID, uint8_t* mftRec)
     }
 
     MFT_FILE_RECORD* mftRecord = (MFT_FILE_RECORD*)(pnfrob->FileRecordBuffer);
+    
+    // DeviceIoControl may return other MFT record than we requested.
+    // This may happen when requested MFT record has been deleted while we were parsing MFT structures, that happens not so rarely
+    // log this event and exit from LoadMFTRecord function
+    if (mftRecord->IndexMFTRec != recID.sId.low)
+    {
+        GET_LOGGER;
+        logger.WarnFmt("Requested MFT Rec ID differs from returned. Looks like requested MFT record is deleted. Requested: {}, returned: {}", 
+            recID.toHexString(), MFT_REF::toHexString(mftRecord->IndexMFTRec));
+        return false;
+    }
+    assert(nfrib.FileReferenceNumber.LowPart == pnfrob->FileReferenceNumber.LowPart);
     assert(mftRecord->IndexMFTRec == recID.sId.low); // make sure we've got the same record as requested.
 
     //TODO think how to avoid this memcpy_s
