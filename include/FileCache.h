@@ -14,7 +14,7 @@
 #include <string>
 
 #include "strutils/include/string_utils.h"
-//#include "logengine2/DynamicArrays.h"
+#include "strutils/include/ci_string.h"
 #include "logengine2/FileStream.h"
 #include "NTFS.h"
 #include "FileLevel.h"
@@ -136,11 +136,8 @@ public:
 		//TODO check why we use EndLine instead of std::endl
 		fout << "Total Items Count: " << toStringSepA(TotalCount()) << EndLine;
 
-		//for (uint32_t i = 0; i < FCacheData.Count(); ++i)
 		for (auto level : FCacheData)
 		{
-			//TLevel* level = FCacheData.GetValue(i);
-
 			CACHE_ITEM* sitem = level->First();
 			do
 			{
@@ -165,10 +162,32 @@ public:
 			do
 			{
 				string_t fn(sitem->Name(), sitem->FileAttr.FileNameLen);
-				if (sitem->IsDir())
+				
+				array.AddValue(fn);
+				/*if (sitem->IsDir())
 					array.AddValue(fn + L"\\");
 				else
-					array.AddValue(fn);
+					array.AddValue(fn);*/
+
+				sitem = level->Next(sitem);
+
+			} while (!(level->IsEnd(sitem)));
+		}
+	}
+
+	void ToArray(THArray<ci_string>& array)
+	{
+		for (auto level : FCacheData)
+		{
+			CACHE_ITEM* sitem = level->First();
+
+			if (level->IsEnd(sitem)) continue; // case - when level is empty
+
+			do
+			{
+				ci_string fn(sitem->Name(), sitem->FileAttr.FileNameLen);
+
+				array.AddValue(fn);
 
 				sitem = level->Next(sitem);
 
@@ -180,7 +199,7 @@ public:
 	{
 		std::cout << std::endl << "STATISTIC BY LEVELS" << std::endl;
 
-		std::cout << "Levels Count: " << FCacheData.Count() << std::endl << std::endl;
+		std::cout << "Levels Count: " << FCacheData.Count() << std::endl;
 
 		size_t i = 0, sum = 0;
 		for (auto level : FCacheData)
