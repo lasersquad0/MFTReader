@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "strutils/include/string_utils.h"
+#include "strutils/include/Ticks.h"
 #include "LogEngine2/DynamicArrays.h"
 #include "LogEngine2/LogEngine.h"
 #include "Caches.h"
@@ -236,8 +237,8 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
                 assert(indexR->Rule == COLLATION_RULE::FILENAME);
 
                 logger.DebugFmt("IndexRoot Indexed Attr Type: {} {:#x}", AttrName(indexR->AttrType), (uint32_t)indexR->AttrType);
-                logger.DebugFmt("IndexRoot Collation Rule: {} ({})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
-                logger.DebugFmt("IndexRoot Dir Type: {} ({:#x})", indexR->ihdr.Flags == 0 ? " SMALL DIR" : " BIG DIR", indexR->ihdr.Flags);
+                logger.DebugFmt("IndexRoot Collation Rule: {} ({:#x})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
+                logger.DebugFmt("IndexRoot Dir Type: {} ({:#x})", indexR->ihdr.Flags == 0 ? "SMALL DIR" : "BIG DIR", indexR->ihdr.Flags);
 
                 auto pihdr = &(indexR->ihdr);
 
@@ -317,7 +318,6 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
             case ATTR_REPARSE: // can be resident or non-resident
             case ATTR_EA:      // can be resident or non-resident  
             case ATTR_EA_INFO: // can be resident or non-resident
-            //case ATTR_PROPERTYSET:
             case ATTR_LOGGED_UTILITY_STREAM: // can be resident or non-resident
             {
                 logger.DebugFmt("We do not process this resident attribute. Attr: '{}', AttrName: '{}'.", AttrName(currAttr->AttrType), nameOfAttrA);
@@ -330,11 +330,11 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
         }
         else // Attribute is NON-resident
         {
-            logger.DebugFmt("Attr StartVCN: {}", currAttr->nonres.StartVCN);
-            logger.DebugFmt("Attr LastVCN: {}", currAttr->nonres.LastVCN);
-            logger.DebugFmt("Attr RealSize: {}", currAttr->nonres.RealSize);
-            logger.DebugFmt("Attr StreamSize: {}", currAttr->nonres.StreamSize);
-            logger.DebugFmt("Attr AllocatedSize: {}", currAttr->nonres.AllocatedSize);
+            logger.DebugFmt("Attr StartVCN: {}",     currAttr->nonres.StartVCN);
+            logger.DebugFmt("Attr LastVCN: {}",      currAttr->nonres.LastVCN);
+            logger.DebugFmt("Attr RealSize: {}",     currAttr->nonres.RealSize);
+            logger.DebugFmt("Attr StreamSize: {}",   currAttr->nonres.StreamSize);
+            logger.DebugFmt("Attr AllocatedSize: {}",currAttr->nonres.AllocatedSize);
 
             // this is rare case when file contains non-initialised portion of data
             // in this case RealSize contains total file size while StreamSize contains size of initialised data (StreamSize<RealSize) 
@@ -582,7 +582,7 @@ bool ReadDirectoryV1(VOLUME_DATA& volData, uint32_t parentIdx, CACHE_ITEM* paren
                  {
                      // do not add NTFS internal files that are in root dir and start from $
                      if (!AttrIsNtfsInt(attr))
-                         level->AddValue(parentIdx, /*level->Level(),*/ ref, attr);
+                         level->AddValue(parentIdx, ref, attr);
                  })
            )
         {
@@ -655,47 +655,53 @@ void ReadDirsV1(VOLUME_DATA& volData)
 
     std::wcout << _T("Reading volume: ") << volData.Name << std::endl;
 
+    Ticks::Start(_T("Loading time"));
     if (!ReadDirectoryV1(volData, 0, nullptr, rootDirSize, fileCache, nullptr))
     {
         throw std::runtime_error("ReadDirectoryV1 finished with error.");
     }
+    Ticks::Finish(_T("Loading time"));
 
-    std::cout << std::endl << "Volume root dir size: " << toStringSepA(rootDirSize) << std::endl;
+
+    std::cout << std::endl << "Volume root dir size: " << toStringSepA(rootDirSize) << " bytes" << std::endl;
     std::cout << "Total Items Count: " << fileCache.TotalCount() << std::endl;
 
     //fileCache.SaveTo("MFTReader_items.txt");
 
     fileCache.PrintLevelsStat();
     
-    /*
-    std::cout << "Exporting... " << std::endl;
-    THArray<string_t> arr;
+    std::cout << "Converting to plain array... " << std::endl;
+  
+    Ticks::Start(_T("Converting time"));
+    THArray<ci_string> arr;
+    arr.SetCapacity(fileCache.TotalCount() + 1); // 1 is just in case
     fileCache.ToArray(arr);
-
-    //auto dirCount = std::count_if(dirList.begin(), dirList.end(), [](FILE_NAME& a) { return IsDir(a.Attr); });
-    //std::cout << toStringSepA(dirList.Count()) + " - total" << std::endl;
-    //std::cout << toStringSepA(dirList.Count() - dirCount) + " - files" << std::endl; // only files 
-    //std::cout << toStringSepA(fileCache.Count()) + " - total" << std::endl; // only dirs 
+    Ticks::Finish(_T("Converting time"));
 
     std::cout << "Sorting... " << std::endl;
+    
+    Ticks::Start(_T("Sorting time"));
     std::sort(arr.begin(), arr.end());
+    Ticks::Finish(_T("Sorting time"));
 
     std::string filename = "ListMFTFile_sortedV1.log";
     LogEngine::TFileStream ff(filename);
 
-    ff << toStringSepW(arr.Count()) + L" - total";
-    //ff << toStringSepW(arr.Count() - dirCount) + L" - files"; // only files
-    //ff << toStringSepW(dirCount) + L" - dirs"; // only dirs
+    string_t fendl;
+    BUILD_ENDL(fendl);
+    ff << _T("Total Items Count: ") << toStringSepW(arr.Count()) << fendl;
 
-    std::cout << "Saving list of files to " << filename << std::endl;
+    std::cout << "Saving list of files to '" << filename << "'..." << std::endl;
     
-    string_t endl;
-    BUILD_ENDL(endl);
+    Ticks::Start(_T("Saving time"));
     for (auto& item : arr)
      {
-         ff << item << endl;
+         ff << item << fendl;
      }
-     */
+    Ticks::Finish(_T("Saving time"));
+
+    Ticks::PrintCon(1);
+     
 }
 
 
