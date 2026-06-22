@@ -23,7 +23,7 @@
 LogEngine::Logger& GetLoggerFunc()
 {
     LogEngine::Logger& logger = LogEngine::GetFileLogger(MFT_LOGGER_NAME_FUNC, "LogMFTReaderFUNC.log");
-    logger.SetAsyncMode(true);
+    //logger.SetAsyncMode(true);
     logger.SetLogLevel(LogEngine::Levels::llDebug);
     return logger;
 }
@@ -609,7 +609,7 @@ static void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_A
         ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(currAttr, currAttr->res.DataOffset);
         uint8_t* currAttrEnd = (uint8_t*)currAttr + currAttr->AttrSize;
 
-        ParseAttrList(volData, attrListItem, attrType, currAttrEnd, currAttrEnd, result);
+        ParseAttrList(volData, attrListItem, attrType, currAttrEnd, currAttrEnd, result);//TODO add error check
         
         if (result[0] == nullptr)
             logger.Debug("[GetAttr] ATTR_LIST_ATTR resident FINISHED NULL");
@@ -677,6 +677,7 @@ static void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_A
 bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitField& bitmap)
 {
     assert(attr->NonResidentFlag == 1);
+    assert(bitmap.Count() == 0);
 
     TDataRuns dataRuns;
     if (!DataRunsDecode(attr, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
@@ -685,9 +686,10 @@ bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitFi
     assert(dataRuns.Count() > 0);
 
     uint8_t* dataBuf = nullptr;
-    uint64_t dataBufLen = 0; // memory size in clusters, how many clusters is allocated in dataBuf
+    uint64_t dataBufLen = 0;  // dataBuf buffer size in clusters, how many clusters is allocated in dataBuf
+    uint64_t dataBufSize = 0; // dataBuf buffer size in bytes
     uint32_t currRun = 0;
-    THArrayRaw bmpRecs(volData.BytesPerCluster);
+    //THArrayRaw bmpRecs(volData.BytesPerCluster);
 
     if (dataRuns.Count() > 1)
     {
@@ -702,7 +704,8 @@ bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitFi
         if (rli.len > dataBufLen)
         {
             delete[] dataBuf;
-            dataBuf = DBG_NEW uint8_t[rli.len * volData.BytesPerCluster];
+            dataBufSize = rli.len * volData.BytesPerCluster;
+            dataBuf = DBG_NEW uint8_t[dataBufSize];
             dataBufLen = rli.len;
         }
 
@@ -716,12 +719,15 @@ bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitFi
 
         // in most cases non-resident Bitmap will occupy one data run
         // therefore we have special handling of this case
-        if (dataRuns.Count() > 1)
-            bmpRecs.AddMany(dataBuf, (uint32_t)rli.len); //TODO think to avoid several copying dataBuf. first into bmpRecs, then into bitmap
+        //if (dataRuns.Count() > 1)
+        //    bmpRecs.AddMany(dataBuf, (uint32_t)rli.len); 
 
+        assert((dataBufSize & 0x07) == 0); // bitmap data size always multiple of 8
+        bitmap.AddData((uint64_t*)dataBuf, (uint32_t)dataBufSize >> 3);
+    
         currRun++;
     }
-
+    /*
     if (dataRuns.Count() > 1)
     {
         uint32_t bmpLenBytes = bmpRecs.Count() * bmpRecs.GetItemSize();
@@ -731,10 +737,11 @@ bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitFi
     else
     {
         uint32_t bmpLenBytes = (uint32_t)(dataBufLen * volData.BytesPerCluster); //TODO shall we use nonres.RealSize here?
+        assert(dataBufSize == bmpLenBytes);
         assert((bmpLenBytes & 0x07) == 0); // bitmap data size always multiple of 8
         bitmap.SetData((uint64_t*)dataBuf, bmpLenBytes >> 3);
-    }
-
+    }*/
+    
     delete[] dataBuf;
     return true;
 }
@@ -852,7 +859,7 @@ static int32_t GetFileListFromMFTRec(const VOLUME_DATA& volData, MFT_FILE_RECORD
     for (auto& run : node.DataRuns) lcnTotalCount += run.len;
 
     TLCNRecs lcns(volData.BytesPerCluster, (uint32_t)lcnTotalCount);
-    if (!lcns.LoadDataRuns(volData, node))
+    if (lcns.LoadDataRuns(volData, node) == -1)
     {
         logger.Error("[GetFileListFromMFTRec] TLCNRecs.LoadDataRuns finished with error.");
         return -1; // fail to load data runs this is critical error, return immediately with error
