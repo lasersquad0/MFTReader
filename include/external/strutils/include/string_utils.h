@@ -132,6 +132,32 @@ inline std::string MillisecToStr(uint64_t ms)
     return MillisecToStr<std::string>(ms);
 }
 
+/**
+* @brief Converts any integer like type into a std::string with group separator applied.
+* @details Group separator is defined by MyGroupSeparator class
+* @param IntType Any integral type (int, long, int64_t, bool, char, wchar_t, short, etc)
+*/
+template<typename IntType, typename STRING>
+STRING toStringSep(IntType v)
+{
+    static_assert(std::is_integral<IntType>::value);
+
+    // make sure that STRING is one of instantiations of std::string
+    static_assert(std::is_base_of<std::basic_string<typename STRING::value_type, typename STRING::traits_type>, STRING>::value);
+
+    // helper class for integer formatting functions
+    struct MyGroupSeparator : std::numpunct<typename STRING::value_type>
+    {
+        typename STRING::value_type do_thousands_sep() const override { return ' '; } // thousands separator
+        std::string do_grouping() const override { return "\3"; } // group by 3
+    };
+
+    using stream_type = std::basic_stringstream<typename STRING::value_type, typename STRING::traits_type/*, std::allocator<typename STRING::value_type>*/>;
+    stream_type ss;
+    ss.imbue(std::locale(ss.getloc(), new MyGroupSeparator()));
+    ss << v;  // printing to string stream with formating
+    return ss.str();
+}
 
 /** 
 * @brief Converts any integer like type into a std::string with group separator applied.
