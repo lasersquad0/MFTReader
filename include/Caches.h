@@ -66,9 +66,14 @@ public:
         return (*LCNHash.begin()).first;
     }*/
 
-    // loads LCN records into memory from data runs located in node parameter
-    // node.Bitmap defines what LCNs need to be loaded and what are not
-    bool LoadDataRuns(const VOLUME_DATA& volData, DIR_NODE& node)
+    /** 
+    * @brief Loads LCN records into memory from Data Runs located in 'node' parameter
+    * @details Node.Bitmap defines what LCNs need to be loaded and what are not
+    * @param node Contains both Data Runs to be loaded into memory and Bitmap bitfield that defines 
+    * which VCNs from Data Runs contains valid info and need to be loaded
+    * @return Number of VCN's actually loaded into memory (may be zero if Bitmap contains only zeroes) or -1  in case of error.
+    */
+    int64_t LoadDataRuns(const VOLUME_DATA& volData, DIR_NODE& node)
     {
         assert(FRecs.GetItemSize() == volData.BytesPerCluster);
 
@@ -76,11 +81,15 @@ public:
 
         int64_t lastBit = node.Bitmap.LastBit();
 
-        if (lastBit == -1) return true; // here bitmap tells us that no LCNs need to be loaded
+        if (lastBit == -1)
+        {
+            logger.InfoFmt("[TMFTRecCache.LoadDataRuns] Bitmap contains all zeroes, so no LCNs loaded. Data Runs Count: {}", node.DataRuns.Count());
+            return 0; // here bitmap tells us that no LCNs need to be loaded
+        }
 
         int64_t LCNCounter = 0;
         uint8_t* dataBuf = nullptr;
-        uint64_t dataBufLen = 0; // memory size in clusters, how many clusters is allocated in dataBuf
+        uint64_t dataBufLen = 0; // dataBuf buffer size in clusters, how many clusters is allocated in dataBuf
         uint32_t currRun = 0;
         while (currRun < node.DataRuns.Count())
         {
@@ -102,14 +111,14 @@ public:
             if (!ReadClusters(volData, rli.lcn, rlilen, dataBuf)) // ReadClusters writes error meesage to log file in case of an error
             {
                 delete[] dataBuf;
-                return false;
+                return -1;
             }
 
             if (!FixupUSA(volData, dataBuf, rli, rlilen))
             {
                 logger.Error("FixupUSA returned error.");
                 delete[] dataBuf;
-                return false;
+                return -1;
             }
 
             for (size_t i = 0; i < rlilen; i++)
@@ -117,7 +126,11 @@ public:
                 if (node.Bitmap.Test(LCNCounter++)) // add only LCNs which are marked in bitmap bitfield
                 {
                     //TODO shall we bypass LCN records which DO NOT have 'INDX' signature ( if (ntfs_is_indx_recp(allocIndex->RecHeader.Signature)) .....)
-                    AddRec(dataBuf + i * volData.BytesPerCluster, rli.vcn + i, rli.lcn + i); //TODO oprtimization - avoid of multiply operator in first parameter of AddRec
+                    AddRec(dataBuf + i * volData.BytesPerCluster, rli.vcn + i, rli.lcn + i);
+                }
+                else
+                {
+                    logger.InfoFmt("[TMFTRecCache.LoadDataRuns] Bypassing this LCN because of Bitmap: VCN: {}, LCN : {}", rli.vcn + i, rli.lcn + i);
                 }
             }
 
@@ -126,7 +139,7 @@ public:
 
         delete[] dataBuf;
 
-        return true;
+        return LCNCounter;
     }
 };
 
