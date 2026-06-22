@@ -2,7 +2,7 @@
 
 #include "Debug.h"
 #include <cassert>
-#include <cstdint>
+#include <cstdlib>
 #include <stdexcept>
 
 class TBitField
@@ -29,17 +29,28 @@ public:
         SetData(a.FBits, a.FCount);
     }
 
-    ~TBitField() { delete[] FBits; FBits = nullptr; }
+    ~TBitField() { free(FBits); FBits = nullptr; }
 
     void SetData(const uint64_t* bits, const uint32_t wordsCount) // count is in uint64_t words here
     {
-        delete[] FBits; // free previously allocated memory if any
-        FBits = DBG_NEW uint64_t[wordsCount];
+        free(FBits); // free previously allocated memory if any
+        FBits = (uint64_t*)malloc(wordsCount*sizeof(uint64_t));
         FCount = wordsCount;
-        FBitsCount = wordsCount * 64;
+        FBitsCount = wordsCount * 64ull;
         auto res = memcpy_s(FBits, wordsCount * sizeof(uint64_t), bits, wordsCount * sizeof(uint64_t));
         UNREFERENCED_PARAMETER(res);
         assert(!res);
+    }
+
+    void AddData(const uint64_t* bits, const uint32_t addWordsCount) // count is in uint64_t words here
+    {
+        //delete[] FBits; // free previously allocated memory if any
+        FBits = (uint64_t*)realloc(FBits, (FCount + addWordsCount)*sizeof(uint64_t) );
+        auto res = memcpy_s(FBits + FCount, addWordsCount * sizeof(uint64_t), bits, addWordsCount * sizeof(uint64_t));
+        UNREFERENCED_PARAMETER(res);
+        assert(!res);
+        FCount += addWordsCount;
+        FBitsCount += addWordsCount * 64ull;
     }
 
     TBitField& operator=(const TBitField& a)
