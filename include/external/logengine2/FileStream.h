@@ -70,6 +70,7 @@ public:
 	virtual size_t Write(const void* Buffer, const size_t Size) = 0;
 	virtual size_t Length() const = 0;
 	virtual off_t Seek(const off_t Offset, const TSeekMode sMode) = 0;
+	virtual void Flush() const = 0;
 	//virtual int ReadChar();
 	//virtual int ReadWChar();
 	virtual std::string ReadPString();
@@ -120,6 +121,18 @@ public:
 			//Write(endL.data(), endL.size() * sizeof(W::value_type));
 		}
 
+		return *this;
+	}
+
+	template<typename CharT, typename Traits>
+	TStream& operator<<(std::basic_ostream<typename CharT, typename Traits>& (*manip)(std::basic_ostream<typename CharT, typename Traits>&)) 
+	{
+		if (manip == std::endl<CharT, Traits>) {
+			// Your custom logic for endl goes here
+			*this << '\n';
+			this->Flush();
+		}
+		
 		return *this;
 	}
 
@@ -199,7 +212,7 @@ public:
 	size_t Length() const override { return FSize; }
 	pos_type SeekR(const off_t Offset, const TSeekMode sMode);
 	pos_type SeekW(const off_t Offset, const TSeekMode sMode);
-
+	void Flush() const override {}; // do nothing for memory stream
 	void SetBuffer(uint8_t* Buffer, size_t Size);
 	void UnsetBuffer();
 };
@@ -224,7 +237,7 @@ public:
 	size_t Length() const override;
 	void Lock();
 	void Unlock();
-	void Flush() const;
+	void Flush() const override;
 
 	/* Moves the current position in the file.
 	 * When sMode=smFromEnd the current position moves _back_ (to the beginning).
