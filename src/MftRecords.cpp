@@ -125,8 +125,24 @@ bool LoadMFTRecord(const VOLUME_DATA& volData, MFT_REF recID, uint8_t* mftRec)
     assert(nfrib.FileReferenceNumber.LowPart == pnfrob->FileReferenceNumber.LowPart);
     assert(mftRecord->IndexMFTRec == recID.sId.low); // make sure we've got the same record as requested.
 
+    // checking that sequence numbers are the same in recID read from parent directory and MFT record read directly by number
+    // if seq number differ it means that MFT record has updated and recID contains old (and may be incorrect) info 
+    if (recID.sId.low != MFT_ROOT_REC_ID)
+    {
+        if (mftRecord->SeqNum != recID.sId.seq)
+        {
+            GET_LOGGER;
+            logger.WarnFmt("MFT record SEQ numbers differs from each other. Looks like MFT record is deleted or overwritten. From Dir: {}, From MFT Rec ID Seq: {:#x}",
+                recID.toHexString(), mftRecord->SeqNum);
+        }
+        assert(mftRecord->SeqNum == recID.sId.seq);
+    }
+
+
     //TODO think how to avoid this memcpy_s
-    memcpy_s(mftRec, volData.BytesPerMFTRec, mftRecord, volData.BytesPerMFTRec);
+    auto res = memcpy_s(mftRec, volData.BytesPerMFTRec, mftRecord, volData.BytesPerMFTRec);
+    UNREFERENCED_PARAMETER(res);
+    assert(!res);
 
     return true;
 }
