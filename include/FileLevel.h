@@ -61,9 +61,9 @@ public:
 			uint32_t newSize = (uint32_t)((FEnd - FStart) + (FEnd - FStart) / 4); // increase by 25%
 			uint32_t headRel = (uint32_t)(FHead - FStart);
 			FStart = (uint8_t*)realloc(FStart, newSize);
+			assert(FStart);
 			FEnd = FStart + newSize;
 			FHead = FStart + headRel;
-			assert(FStart);
 		}
 	}
 
@@ -71,6 +71,7 @@ public:
 	TFileLevelList(uint32_t level, uint32_t initialCapacity) // initialCapacity is in bytes
 	{
 		FStart = (uint8_t*)malloc(initialCapacity);
+		assert(FStart);
 		FHead = FStart;
 		FEnd = FStart + initialCapacity;
 		FCount = 0;
@@ -83,6 +84,7 @@ public:
 	~TFileLevelList()
 	{
 		free(FStart);
+		FStart = nullptr;
 	}
 
 	CACHE_ITEM* GetValue(const uint32_t Index) const
@@ -125,8 +127,10 @@ public:
 		((CACHE_ITEM*)FHead)->FMFTRecID = MFTRecID; //TODO may be we could store MFTRectID as uint32_t (4 bytes) here instead of 8 bytes structure
 
 		uint32_t dataSize = CalcFileAttrSize(data); // this is size of ATTR_FILE_NAME + filename size, needed only for memcpy
-		memcpy_s(FHead + offsetof(CACHE_ITEM, FileAttr), dataSize, data, dataSize);// TODO add error check?
-		
+		auto res = memcpy_s(FHead + offsetof(CACHE_ITEM, FileAttr), dataSize, data, dataSize);
+		UNREFERENCED_PARAMETER(res);
+		assert(!res);
+
 		FHead += itemSize; // move head to total ITEM + filename size bytes.
 		FCount++;
 
