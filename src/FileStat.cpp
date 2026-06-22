@@ -7,6 +7,7 @@
 #include <shlwapi.h>
 #include <cassert>
 #include <numeric>
+#include <execution>
 
 #include "strutils/include/string_utils.h"
 #include "strutils/include/ci_string.h"
@@ -26,6 +27,7 @@ static void ParseAttrList(MFTRecIndex indexMFTRec, ATTR_LIST_ENTRY* startListIte
 
     assert(attrEntry->AttrSize > 0);
     assert(attrEntry->AttrType > 0);
+    assert(attrEntry->StartVCN == 0);
     assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
     assert(attrEntry->AttrType != ATTR_ZERO);
     assert(attrEntry->AttrType != ATTR_END);
@@ -325,7 +327,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
                 logger.DebugFmt("We do not process this attribute. Attr: '{}', AttrName: '{}'.", AttrName(currAttr->AttrType), nameOfAttrA);
                 break;
             }
-            case ATTR_ROOT: // resident. ATTR_ROOT is resident only.
+            case ATTR_ROOT: // Resident. ATTR_ROOT is resident only.
             {
                 // $SDH attribute name is related to storing and searching security descriptors (usually in MFT=0x09).
 
@@ -345,9 +347,9 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
 
                 break;
             }
-            case ATTR_LIST_ATTR: // resident. ATTR_LIST_ATTR can be either resident or non-resident
+            case ATTR_LIST_ATTR: // Resident. ATTR_LIST_ATTR can be either resident or non-resident
             {
-                assert(pmftrec->ParentFileRec.Id == 0); // only base records can have ATTR_LIST_ATTR attribute
+                assert(isBASERec); // only base records can have ATTR_LIST_ATTR attribute
 
                 if (itemInfo.NonResidentAttrList.has_value()) 
                     logger.WarnFmt("Incorrect case has been met: Looks like two or more ATTR_LIST_ATTR ('{}') attributes present in a one MFT record: {}.", nameOfAttrA, MFT_REF::toHexString(pmftrec->IndexMFTRec));
@@ -538,7 +540,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
                     logger.Error("ParseNonresBitmap finished with error.");
                     break;
                 }
-                //TODO do we need Bitmap value returned from ParseNonresBitmap?
+                
                 break;
             }
             case ATTR_ALLOC: // NON-resident. Only.
@@ -564,7 +566,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
             }
             case ATTR_LIST_ATTR: // NON-resident. ATTR_LIST_ATTR can be either resident and non-resident
             {
-                assert(pmftrec->ParentFileRec.Id == 0); // only base records can have ATTR_LIST_ATTR attribute
+                assert(isBASERec); // only base records can have ATTR_LIST_ATTR attribute
 
                 if (itemInfo.NonResidentAttrList.has_value())
                     logger.WarnFmt("Incorrect case has been met: Looks like two or more ATTR_LIST_ATTR ('{}') attributes have met in a one MFT record: {}.", nameOfAttrA, MFT_REF::toHexString(pmftrec->IndexMFTRec));
@@ -847,7 +849,7 @@ void ShowVolumeStat(VOLUME_DATA& volData)
     std::cout << std::endl;
     auto dirCount = std::count_if(itemsList.begin(), itemsList.end(), [](ITEM_INFO& a) { return a.IsDir(); });
 
-    std::cout << "Total Items Count: " << toStringSepA(itemsList.Count()) << std::endl;
+    std::cout << "Total Items Count: " << toStringSep<uint,std::string>(itemsList.Count()) << std::endl;
     std::cout << "Total Dirs Count: " << toStringSepA(dirCount) << std::endl;
     std::cout << "Total Files Count: " << toStringSepA(itemsList.Count() - dirCount) << std::endl << std::endl; // only files 
 
@@ -904,7 +906,7 @@ void ShowVolumeStat(VOLUME_DATA& volData)
     index.AddFillValues(itemsList.Count());
     std::iota(index.begin(), index.end(), 0); // fill index with increasing values from 0 to itemList.Count()
 
-    std::sort(index.begin(), index.end(), [&](uint a, uint b)
+    std::sort(std::execution::par, index.begin(), index.end(), [&](uint a, uint b)
         {
             return itemsList[a].MainName < itemsList[b].MainName;
         });
@@ -933,8 +935,8 @@ void ShowVolumeStat(VOLUME_DATA& volData)
 
     string_t fendl;
     BUILD_ENDL(fendl);
-
-    ff << L"Total Items Count: " << toStringSepW(index.Count()) << fendl;
+    
+    ff << L"Total Items Count: " << toStringSep<uint,std::wstring>(index.Count()) << fendl;
     //ff << toStringSepW(itemsList.Count() - dirCount) + L" - files"; // only files
     //ff << toStringSepW(dirCount) + L" - dirs"; // only dirs
 
