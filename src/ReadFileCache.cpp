@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <execution>
 
 #include "strutils/include/string_utils.h"
 #include "strutils/include/Ticks.h"
@@ -251,41 +252,70 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
             {
                 logger.Debug("resident ATTR_LIST_ATTR START");
 
+                assert(IsBASERec); // ATTR_LIST cannot be located in child record
                 assert(node.FileList.Count() == 0);
 
                 THArray<uint32_t> visitedMFTRec;
+                visitedMFTRec.AddValue(mftRec->IndexMFTRec);
 
-                ATTR_LIST_ENTRY* attrEntry = (ATTR_LIST_ENTRY*)attrValue;
+                ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)attrValue;
                 uint8_t* currAttrEnd = Add2Ptr(currAttr, currAttr->AttrSize);
-                assert(attrEntry->AttrType > 0);
-                assert(attrEntry->AttrSize > 0);
-                assert(attrEntry->StartVCN == 0);
-                assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
+                assert(attrListItem->AttrType > 0);
+                assert(attrListItem->AttrSize > 0);
+                assert(attrListItem->StartVCN == 0);
+                assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
 
-                // at least one attribute is located in another MFT record, so we will need this malloc at least once
+                // at least one attribute is located in another MFT record, so we will need this alloc at least once
                 uint8_t* mftRecBuf = (uint8_t*)alloca(volData.BytesPerMFTRec);
 
                 while (true)
                 {
-                    if (attrEntry->ref.sId.low != mftRec->IndexMFTRec)
+                    // attributes in attr list located in a separate cluster may refer back to the base record
+                    // because some attributes reside in base mft record and the others in "child" mft record(s)
+                    // the attr list attribute itself is located in cluster that is not mft record, it does not contain signature or Fixups values, etc.
+                    
+                    //if (attrEntry->ref.sId.low != mftRec->IndexMFTRec)
+                    //{
+
+                    if ((attrListItem->AttrType == ATTR_ALLOC) || (attrListItem->AttrType == ATTR_ROOT) || (attrListItem->AttrType == ATTR_BITMAP))
                     {
-                        if (visitedMFTRec.IndexOf(attrEntry->ref.sId.low) == -1) // make sure we parse each record only once
+                        // StartVCN might be >0 when one attribute does not fit into one MFT record.
+                        // This attribute may have very long Data Run list or anything else
+                        // In this case ATTR_LIST contains several ATTR_LIST_ENTRY entries for this big attribute.
+                        // First entry has StartVCN=0, others - preventry.StartVCN+num_of_vcns_in_preventry_dataruns, etc.
+                        // all these entries build up a continious list of VCNs 
+                        if (attrListItem->AttrType != ATTR_ALLOC) // StartVCN should be 0 for all attrs except ATTR_DATA and ATTR_ALLOC
                         {
-                            if (LoadMFTRecord(volData, attrEntry->ref, mftRecBuf)) //TODO shall we call LoadRecordCache here?
+                            assert(attrListItem->StartVCN == 0);
+                            if (attrListItem->StartVCN != 0)
+                                logger.WarnFmt("Looks like we have met incorrect case. StartVCN({}) <> 0 for {} attribute. MFT Rec ID: {}.",
+                                    attrListItem->StartVCN, AttrName(attrListItem->AttrType), MFT_REF::toHexString(mftRec->IndexMFTRec));
+                        }
+
+                        if (visitedMFTRec.IndexOf(attrListItem->ref.sId.low) == -1) // make sure we parse each record only once
+                        {
+                            if (LoadMFTRecord(volData, attrListItem->ref, mftRecBuf))
                             {
                                 if (ParseMFTRecord(volData, mftRecBuf, node, parentIdx, level)) //TODO shall we break in case of an error in LoadMFTRecord or ParseMFTRecord 
-                                    visitedMFTRec.AddValue(attrEntry->ref.sId.low);
+                                    visitedMFTRec.AddValue(attrListItem->ref.sId.low);
+                                else
+                                    logger.Error("ParseMFTRecord finished with error.");
+                            }
+                            else
+                            {
+                                logger.Error("LoadMFTRecord finished with error.");
                             }
                         }
                     }
+                    //}
 
-                    attrEntry = (ATTR_LIST_ENTRY*)Add2Ptr(attrEntry, attrEntry->AttrSize);
-                    //if (attrEntry->AttrType == ATTR_ZERO) break;
-                    if ((uint8_t*)attrEntry >= currAttrEnd) break;
-                    assert(attrEntry->AttrType > 0);
-                    assert(attrEntry->AttrSize > 0);
-                    //assert(attrEntry->StartVCN == 0);
-                    assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
+                    attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
+                    //if (attrListItem->AttrType == ATTR_ZERO) break;
+                    if ((uint8_t*)attrListItem >= currAttrEnd) break;
+                    assert(attrListItem->AttrType > 0);
+                    assert(attrListItem->AttrSize > 0);
+                    //assert(attrListItem->StartVCN == 0);
+                    assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
                 }
 
                 logger.Debug("resident ATTR_LIST_ATTR FINISHED");
@@ -382,9 +412,9 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
             case ATTR_LIST_ATTR: // NON-resident. ATTR_LIST_ATTR can be either resident and non-resident
             {
                 logger.Info("NON-Resident ATTR_LIST has been met");
-
                 logger.Debug("NON-Resident ATTR_LIST_ATTR START");
 
+                assert(IsBASERec); // ATTR_LIST cannot be located in child record
                 assert(node.FileList.Count() == 0);
 
                 TDataRuns dataRuns;
@@ -415,19 +445,35 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
                 
                 assert(attrListItem->AttrType > 0);
                 assert(attrListItem->AttrSize > 0);
+                assert(attrListItem->StartVCN == 0);
                 assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
 
                 THArray<uint32_t> visitedMFTRec;
+                visitedMFTRec.AddValue(mftRec->IndexMFTRec);
 
                 while (true) // loop by LCNs in one data run
                 {
                     // attributes in attr list located in a separate cluster may refer back to the base record
                     // because some attributes reside in base mft record and the others in "child" mft record(s)
                     // the attr list attribute itself is located in cluster that is not mft record, it does not contain signature or Fixups values, etc.
-                    if (attrListItem->ref.sId.low != mftRec->IndexMFTRec)
-                    {
+                    //if (attrListItem->ref.sId.low != mftRec->IndexMFTRec)
+                    //{
+
                         if ((attrListItem->AttrType == ATTR_ALLOC) || (attrListItem->AttrType == ATTR_ROOT) || (attrListItem->AttrType == ATTR_BITMAP))
                         {
+                            // StartVCN might be >0 when one attribute does not fit into one MFT record.
+                            // This attribute may have very long Data Run list or anything else
+                            // In this case ATTR_LIST contains several ATTR_LIST_ENTRY entries for this big attribute.
+                            // First entry has StartVCN=0, others - preventry.StartVCN+num_of_vcns_in_preventry_dataruns, etc.
+                            // all these entries build up a continious list of VCNs 
+                            if (attrListItem->AttrType != ATTR_ALLOC) // StartVCN should be 0 for all attrs except ATTR_DATA and ATTR_ALLOC
+                            {
+                                assert(attrListItem->StartVCN == 0);
+                                if (attrListItem->StartVCN != 0)
+                                    logger.WarnFmt("Looks like we have met incorrect case. StartVCN({}) <> 0 for {} attribute. MFT Rec ID: {}.",
+                                        attrListItem->StartVCN, AttrName(attrListItem->AttrType), MFT_REF::toHexString(mftRec->IndexMFTRec));
+                            }
+
                             if (visitedMFTRec.IndexOf(attrListItem->ref.sId.low) == -1) // make sure we parse each record only once
                             {
                                 uint8_t* mftRecBuf = LoadMFTRecordCache(volData, attrListItem->ref);
@@ -446,7 +492,7 @@ static bool ParseMFTRecord(VOLUME_DATA& volData, uint8_t* mftRecData, DIR_NODE& 
 
                                 visitedMFTRec.AddValue(attrListItem->ref.sId.low);
                             }
-                        }
+                      //  }
                     }
 
                     attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
@@ -553,7 +599,9 @@ bool ReadDirectoryV1(VOLUME_DATA& volData, uint32_t parentIdx, CACHE_ITEM* paren
         // many articles about NTFS tell us that STD attr does not contain DIR flag while FILENAME does 
         fattr->dup.FileAttrib = stdinfo->FileAttrib | (uint32_t)FILE_ATTR_FLAGS::DIRECTORY; 
 
-        wmemcpy_s((wchar_t*)Add2Ptr(fattr, sizeof(ATTR_FILE_NAME)), fattr->FileNameLen, volData.Name.c_str(), fattr->FileNameLen);
+        auto res = wmemcpy_s((wchar_t*)Add2Ptr(fattr, sizeof(ATTR_FILE_NAME)), fattr->FileNameLen, volData.Name.c_str(), fattr->FileNameLen);
+        UNREFERENCED_PARAMETER(res);
+        assert(!res);
 
         level0->AddValue(0, MFTRec, fattr);
 
@@ -603,8 +651,11 @@ bool ReadDirectoryV1(VOLUME_DATA& volData, uint32_t parentIdx, CACHE_ITEM* paren
         if(startPos < cnt) item = level->GetValue(startPos);
     
     // item may be NULL here for empty directories when startPos=cnt=0
-    if (item != nullptr) 
-        assert((item->FLevel == parentItem->FLevel + 1) && item->FParent == parentIdx);
+    if (item != nullptr)
+    {
+        assert(item->FLevel == parentItem->FLevel + 1);
+        assert(item->FParent == parentIdx);
+    }
     
     assert(parentItem->IsDir());
 
@@ -681,7 +732,7 @@ void ReadDirsV1(VOLUME_DATA& volData)
     std::cout << "Sorting... " << std::endl;
     
     Ticks::Start(_T("Sorting time"));
-    std::sort(arr.begin(), arr.end());
+    std::sort(std::execution::par, arr.begin(), arr.end());
     Ticks::Finish(_T("Sorting time"));
 
     std::string filename = "ListMFTFile_sortedV1.log";
@@ -689,15 +740,15 @@ void ReadDirsV1(VOLUME_DATA& volData)
 
     string_t fendl;
     BUILD_ENDL(fendl);
-    ff << _T("Total Items Count: ") << toStringSepW(arr.Count()) << fendl;
+    ff << _T("Total Items Count: ") << toStringSep<uint,string_t>(arr.Count()) << fendl;
 
     std::cout << "Saving list of files to '" << filename << "'..." << std::endl;
     
     Ticks::Start(_T("Saving time"));
     for (auto& item : arr)
-     {
-         ff << item << fendl;
-     }
+    {
+        ff << item << fendl;
+    }
     Ticks::Finish(_T("Saving time"));
 
     Ticks::PrintCon(1);
