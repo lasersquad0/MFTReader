@@ -47,7 +47,7 @@ public:
 
 	~TFileCache()
 	{
-		FCacheData.Clear(); // free memory for all levels and cache items
+		Clear(); // free memory for all levels and cache items
 	}
 
 	TLevel** GetFirstLevelPointer()
@@ -127,14 +127,15 @@ public:
 	}
 
 
-	// Saves all cache item names into text file fileName, one file per line
+	// Saves all cache item names into text file fileName, one item per line
+	// Item names are converted from std::wstring into std::string before saved into the file
 	// If file exists it will be overwriten
 	void SaveTo(const std::string fileName)
 	{
 		LogEngine::TFileStream fout(fileName, LogEngine::TFileMode::fmWriteTrunc);
 
-		//TODO check why we use EndLine instead of std::endl
-		fout << "Total Items Count: " << toStringSepA(TotalCount()) << EndLine;
+		using ManipType = std::ostream& (*)(std::ostream&);
+		fout << "Total Items Count: " << toStringSep<uint32_t,std::string>(TotalCount()) << static_cast<ManipType>(std::endl); //EndLine;
 
 		for (auto level : FCacheData)
 		{
@@ -143,9 +144,9 @@ public:
 			{
 				string_t fn(sitem->Name(), sitem->FileAttr.FileNameLen);
 				if (sitem->IsDir())
-					fout << wtos(fn) << '\\' << EndLine;
+					fout << wtos(fn) << '\\' << static_cast<ManipType>(std::endl);//EndLine;
 				else
-					fout << wtos(fn) << EndLine;
+					fout << wtos(fn) << static_cast<ManipType>(std::endl); //EndLine;
 				sitem = level->Next(sitem);
 			} while (!level->IsEnd(sitem));
 		}
