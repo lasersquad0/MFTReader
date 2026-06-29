@@ -142,7 +142,7 @@ public:
 			CACHE_ITEM* sitem = level->First();
 			do
 			{
-				string_t fn(sitem->Name(), sitem->FileAttr.FileNameLen);
+				std::wstring fn(sitem->Name(), sitem->FileAttr.FileNameLen);
 				if (sitem->IsDir())
 					fout << wtos(fn) << '\\' << static_cast<ManipType>(std::endl);//EndLine;
 				else
@@ -162,9 +162,9 @@ public:
 
 			do
 			{
-				string_t fn(sitem->Name(), sitem->FileAttr.FileNameLen);
+				std::wstring fn(sitem->Name(), sitem->FileAttr.FileNameLen);
 				
-				array.AddValue(fn);
+				array.AddValue(wtos(fn));
 				/*if (sitem->IsDir())
 					array.AddValue(fn + L"\\");
 				else
@@ -186,9 +186,9 @@ public:
 
 			do
 			{
-				ci_string fn(sitem->Name(), sitem->FileAttr.FileNameLen);
+				std::wstring fn(sitem->Name(), sitem->FileAttr.FileNameLen);
 
-				array.AddValue(fn);
+				array.AddValue(wtos(fn).c_str());
 
 				sitem = level->Next(sitem);
 

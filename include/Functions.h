@@ -149,7 +149,7 @@ typedef int32_t (__stdcall *ProgressCallbackPtr)(int32_t progress);
 
 struct VOLUME_DATA : public NTFS_VOLUME_DATA_BUFFER
 {
-    DWORD& BytesPerMFTRec;// = NTFS_VOLUME_DATA_BUFFER::BytesPerFileRecordSegment; // alias to field
+    DWORD& BytesPerMFTRec;  // alias to field = NTFS_VOLUME_DATA_BUFFER::BytesPerFileRecordSegment
     HANDLE hVolume;
     std::wstring Name;
 
@@ -186,6 +186,7 @@ void ReadDirsV2(VOLUME_DATA& volData);
 void ReadDirsV1(VOLUME_DATA& volData);
 void ShowVolumeStat(VOLUME_DATA& volData);
 bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInfo);
+bool ReadMftItems(VOLUME_DATA& volData, MFT_REF startMmftRec, uint32_t dirLevel, TItemInfoList& list);
 
 MFTRecIndex GetMFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path);
 bool GetPathByMFTRecID(VOLUME_DATA& volData, MFT_REF mftRecID, THArray<std::wstring>& paths);
