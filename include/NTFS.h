@@ -107,7 +107,7 @@ enum MFT_RECORD_FLAGS : uint16_t
     MFT_FLAG_IS_DIRECTORY = 0x0002,  //MY: for directories flag value is set to 0x03 (IN_USE | IS_DIRECTORY)
     MFT_FLAG_IS_4 = 0x0004,          // it is called RECORD_FLAG_SYSTEM in another source
     MFT_FLAG_IS_VIEW_INDEX = 0x0008, // it is called RECORD_FLAG_UNKNOWN in another source
-    MFT_FLAG_SPACE_FILLER = 0xFFFF,  //TODO Just to make flags 16-bit. Do we really need it since we have uint16_t in enum definition?
+    MFT_FLAG_SPACE_FILLER = 0xFFFF,  //Just to make flags 16-bit. Do we really need it since we have uint16_t in enum definition?
 };
 
 static_assert(sizeof(MFT_RECORD_FLAGS) == 2);
