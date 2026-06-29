@@ -120,8 +120,9 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
 
     FileListPred addToFileListPred = [&itemInfo](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
         {
-            ci_string ciwnm(GetFName(attr), attr->FileNameLen);
-            itemInfo.Node.FileList.AddValue({ ciwnm, *attr, ref });
+            std::wstring ciwnm(GetFName(attr), attr->FileNameLen);
+            
+            itemInfo.Node.FileList.AddValue({ wtos(ciwnm).c_str(), *attr, ref});
         };
 
     NTFS_FILE_RECORD_INPUT_BUFFER nfrib{0};
@@ -155,8 +156,22 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
 
     // Make sure DeviceIoControl returned exactly the MFT record number we requested.
     // DeviceIoControl may return closest existing MFT record when record with requested ID is "free".
-    assert(pnfrob->FileReferenceNumber.QuadPart == pmftrec->IndexMFTRec);
-    assert(mftRecRef.sId.low == pmftrec->IndexMFTRec);
+    assert(pnfrob->FileReferenceNumber.LowPart == pmftrec->IndexMFTRec);
+    assert(mftRecRef.sId.low == pmftrec->IndexMFTRec); // make sure we've got the same record as requested.
+    assert(nfrib.FileReferenceNumber.LowPart == pnfrob->FileReferenceNumber.LowPart);
+
+    // checking that sequence numbers are the same in recID read from parent directory and MFT record read directly by number
+    // if seq number differ it means that MFT record has updated and recID contains old (and may be incorrect) info 
+    if (mftRecRef.sId.low != MFT_ROOT_REC_ID)
+    {
+        if ((mftRecRef.sId.seq > 0) && (pmftrec->SeqNum != mftRecRef.sId.seq))
+        {
+            logger.WarnFmt("MFT record SEQ numbers differs from each other. Looks like MFT record is deleted or overwritten. From Dir: {}, From MFT Rec ID Seq: {:#x}",
+                mftRecRef.toHexString(), pmftrec->SeqNum);
+        }
+        //diff in Seq is not major problem, allow to continue app work
+        //assert((mftRecRef.sId.seq == 0) || (pmftrec->SeqNum == mftRecRef.sId.seq));
+    }
 
     assert(pmftrec->FileRecSize > pmftrec->FirstAttrOffset);
     assert(ntfs_is_file_recp(pmftrec->RecHeader.Signature));
@@ -224,11 +239,12 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
             (itemInfo.AttrCounters[MakeAttrTypeIndex(currAttr->AttrType)] > 0))
             logger.WarnFmt("Looks like two and more {} ({}) attributes have found in MFT Rec: {}", AttrName(currAttr->AttrType), nameOfAttrA, MFT_REF::toHexString(pmftrec->IndexMFTRec));
 
-        itemInfo.AttrCounters[MakeAttrTypeIndex(currAttr->AttrType)]++;
-        itemInfo.AttrsCount++;
-
+        
         if (currAttr->NonResidentFlag == 0) // attribute is RESident
         {
+            itemInfo.AttrCounters[MakeAttrTypeIndex(currAttr->AttrType)]++;
+            itemInfo.AttrsCount++;
+
             logger.DebugFmt("Attr Indexed: {}", currAttr->res.IndexedFlag);
 
             assert(currAttr->res.DataSize + currAttr->res.DataOffset <= currAttr->AttrSize);
@@ -236,40 +252,18 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
 
             switch (currAttr->AttrType)
             {
-            case ATTR_STD_INFO: // resident. Only.
+            case ATTR_STD_INFO: // Resident. Only.
             {
                 ATTR_STD_INFO5* stdinfo = (ATTR_STD_INFO5*)attrValue;
 
-                assert((stdinfo->FileAttrib & FILE_ATTRIBUTE_NORMAL/*0x00000080*/) == 0);// check that NORMAL bit is always zero
+                assert((stdinfo->FileAttrib & FILE_ATTRIBUTE_NORMAL) == 0);// check that NORMAL bit is always zero
 
                 //if (logger.ShouldLog(LogEngine::Levels::llDebug))
                 //{
 
-                    logger.Debug(FileDateToString("Created: ", stdinfo->CreateTime));
+                    /*logger.Debug(FileDateToString("Created: ", stdinfo->CreateTime));
                     logger.Debug(FileDateToString("Modified: ", stdinfo->ModifyTime));
                     logger.Debug(FileDateToString("LastAccess: ", stdinfo->LastAccessTime));
-
-                    /*const uint BUF_SZ = 100;
-                    wchar_t buf[BUF_SZ];
-                    DWORD dateTimeFlags = FDTF_DEFAULT | FDTF_NOAUTOREADINGORDER;
-                    FILETIME ft{0};
-
-                    ft.dwLowDateTime = LODWORD(stdinfo->CreateTime);
-                    ft.dwHighDateTime = HIDWORD(stdinfo->CreateTime);
-                    SHFormatDateTime(&ft, &dateTimeFlags, buf, BUF_SZ);
-                    std::string str = wtos(&buf[0]);
-                    logger.DebugFmt("Created: {}", wtos(&(buf[0])));
-                    
-
-                    ft.dwLowDateTime = LODWORD(stdinfo->ModifyTime);
-                    ft.dwHighDateTime = HIDWORD(stdinfo->ModifyTime);
-                    SHFormatDateTime(&ft, &dateTimeFlags, buf, BUF_SZ);
-                    logger.DebugFmt("Modified: {}", wtos(&buf[0]));
-
-                    ft.dwLowDateTime = LODWORD(stdinfo->LastAccessTime);
-                    ft.dwHighDateTime = HIDWORD(stdinfo->LastAccessTime);
-                    SHFormatDateTime(&ft, &dateTimeFlags, buf, BUF_SZ);
-                    logger.DebugFmt("Last Access: {}", wtos(&buf[0]));
                     */
                // }
 
@@ -285,7 +279,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
 
                 break;
             }
-            case ATTR_FILENAME: // resident. Only.
+            case ATTR_FILENAME: // Resident. Only.
             {
                 ATTR_FILE_NAME* fname = (ATTR_FILE_NAME*)attrValue;
                 std::wstring name(GetFName(fname), fname->FileNameLen);
@@ -305,15 +299,15 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
                 logger.DebugFmt("File Name: '{}'", wtos(name));
                 logger.DebugFmt("File Size: {}", fname->dup.FileSize);
 
-                logger.Debug(FileDateToString("Created: ", fname->dup.CreateTime));
+                /*logger.Debug(FileDateToString("Created: ", fname->dup.CreateTime));
                 logger.Debug(FileDateToString("Modified: ", fname->dup.ModifyTime));
                 logger.Debug(FileDateToString("LastAccess: ", fname->dup.LastAccessTime));
-
+                */
                 //assert(fname->dup.FileSize == 0);
 
                 break;
             }
-            case ATTR_ID: // resident. 
+            case ATTR_ID: // Resident. 
             {
                 /*
                 OBJECT_ID* objID = (OBJECT_ID*)attrValue;
@@ -424,7 +418,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
 
                 break;
             }
-            case ATTR_BITMAP: // resident. ATTR_BITMAP can be either resident and non-resident
+            case ATTR_BITMAP: // Resident. ATTR_BITMAP can be either resident and non-resident
             {
                 if (itemInfo.NonResidentBitmap) logger.Warn("Incorrect case has been met: itemInfo.NonResidentBitmap = true in resident context ");
                 itemInfo.NonResidentBitmap = false;
@@ -480,6 +474,13 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
         }
         else // Attribute is NON-Resident
         {
+            // do NOT count one attribute divided into several MFT records because of its size 
+            if (currAttr->nonres.StartVCN == 0)
+            {
+                itemInfo.AttrCounters[MakeAttrTypeIndex(currAttr->AttrType)]++;
+                itemInfo.AttrsCount++;
+            }
+
             logger.DebugFmt("Attr StartVCN: {}",     currAttr->nonres.StartVCN);
             logger.DebugFmt("Attr LastVCN: {}",      currAttr->nonres.LastVCN);
             logger.DebugFmt("Attr RealSize: {}",     currAttr->nonres.RealSize);
@@ -758,7 +759,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
 // reads all MFT items recursivelly starting from startMftRec.
 // if startMftRec is FILE then only info about this file will be read and added to the parameter 'list' (TItemInfoList)
 // if startMftRec is DIRECTORY the function will navigate all child items and child items of child items, read all info and add all those items into param 'list'
-static bool ReadMftItems(VOLUME_DATA& volData, MFT_REF startMmftRec, uint32_t dirLevel, TItemInfoList& list)
+bool ReadMftItems(VOLUME_DATA& volData, MFT_REF startMmftRec, uint32_t dirLevel, TItemInfoList& list)
 {
     GET_LOGGER;
 
@@ -891,7 +892,7 @@ void ShowVolumeStat(VOLUME_DATA& volData)
         std::wcout << fn << std::endl;
     }*/
 
-    std::wcout << "Attribute counts for " << (*maxAttrs).MainName.c_str() << ":" << std::endl;
+    std::wcout << std::endl << "Attribute counts for " << (*maxAttrs).MainName.c_str() << ":" << std::endl;
     for (int i = 1; i < ATTR_TYPE_CNT; i++) // bypass ATTR_ZERO
     {
         std::wcout << AttrTypeNames[i] << " = " <<(*maxAttrs).AttrCounters[i] << std::endl;
@@ -899,7 +900,7 @@ void ShowVolumeStat(VOLUME_DATA& volData)
 
     Ticks::Finish(_T("Calc and Print stat time"));
 
-    std::cout << "Sorting... " << std::endl;
+    /*std::cout << "Sorting... " << std::endl;
 
     Ticks::Start(_T("Sorting time"));
     THArray<uint> index;
@@ -912,7 +913,7 @@ void ShowVolumeStat(VOLUME_DATA& volData)
         });
 
     Ticks::Finish(_T("Sorting time"));
-    
+    */
     /*std::cout << "Converting... " << std::endl;
     Ticks::Start(_T("Converting time"));
     THArray<string_t> arr;
@@ -929,7 +930,7 @@ void ShowVolumeStat(VOLUME_DATA& volData)
     std::sort(arr.begin(), arr.end());
     Ticks::Finish(_T("Sorting time"));
     */
-
+    /*
     std::string filename = "ListMFTFile_sorted.log";
     LogEngine::TFileStream ff(filename);
 
@@ -945,13 +946,13 @@ void ShowVolumeStat(VOLUME_DATA& volData)
     Ticks::Start(_T("Saving time"));
     for (auto& ind : index)
     {
-        /*if (item.IsDir())
-            ff << item.MainName  << L'\\' << fendl;
-        else*/
+        //if (item.IsDir())
+        //    ff << item.MainName  << L'\\' << fendl;
+        //else
             ff << itemsList[ind].MainName << fendl;
     }
     Ticks::Finish(_T("Saving time"));
-
+    */
 
     std::cout << "Freeing memory..." << std::endl;
     itemsList.ClearMem();
