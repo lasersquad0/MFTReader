@@ -36,6 +36,12 @@
     <ClCompile Include="..\..\src\Utils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\include\external\strutils\src\string_utils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\FileStat.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\include\external\cli\CommandLine.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>
@@ -51,10 +57,7 @@
     <ClCompile Include="..\..\include\external\cli\OptionsList.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\include\external\strutils\src\string_utils.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\src\FileStat.cpp">
+    <ClCompile Include="TMFTReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -102,6 +105,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\external\strutils\include\Ticks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TMFTReader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
