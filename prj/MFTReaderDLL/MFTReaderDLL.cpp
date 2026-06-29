@@ -19,7 +19,7 @@ TFileCache gFileCache;
 
 // volume parameter can be any of these: C, C:, c:\, c:\folder
 // only first two symbols from volume will be used as volume name. if volume contains single symbol ("C") one symbol will be used.
-MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint32_t* count, uint32_t** data, ProgressCallbackPtr callback)
+MFTREADERDLL_API TError ReadVolume(wchar_t* volume, wchar_t* exclFolders, uint32_t* count, uint32_t** data, ProgressCallbackPtr callback)
 {
     GET_LOGGER;
 
@@ -33,6 +33,16 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint32_t* count, uint32_t** 
 
         VOLUME_DATA volData;
         ReadVolumeData(vol, volData); // throws exceptions in case of errors
+
+        THArray<MFTRecIndex> exclIDs;
+        wchar_t* currFolder = exclFolders;
+        while (true)
+        {
+            if (*currFolder == '\0') break;
+            MFTRecIndex mftId = GetMFTRecIdByPath(volData, currFolder);
+            if(mftId != 0) exclIDs.AddValue(mftId); //0 means "path not found", ignore it
+            currFolder += wcslen(currFolder) + 1;
+        }
 
         //auto start1 = std::chrono::high_resolution_clock::now();
         Ticks::Start(_T("ReadVolumeTime"));
@@ -50,7 +60,7 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint32_t* count, uint32_t** 
         *data = (uint32_t*)pcache;
         *count = gFileCache.LevelsCount();
 
-        logger.InfoFmt("data: {:#X}", (uint64_t)(*data));
+        logger.DebugFmt("data: {:#X}", (uint64_t)(*data));
 
         /*for (uint32_t i = 0; i < gFileCache.LevelsCount(); i++)
         {
@@ -63,40 +73,13 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint32_t* count, uint32_t** 
 
         //fileCache.SaveTo("MFTReader_items.txt");
 
-        /*
-        logger.Info("Processing...");
-        THArray<std::wstring> arr;
-        fileCache.ToArray(arr);
-
-        //auto dirCount = std::count_if(dirList.begin(), dirList.end(), [](FILE_NAME& a) { return IsDir(a.Attr); });
-
-        logger.Info("Sorting...");
-        std::sort(arr.begin(), arr.end());
-
-        std::string filename = "ListMFTFile_sortedV1.log";
-        LogEngine::TFileStream ff(filename);
-
-        ff << toStringSepW(arr.Count()) + L" - total";
-        //ff << toStringSepW(arr.Count() - dirCount) + L" - files"; // only files
-        //ff << toStringSepW(dirCount) + L" - dirs"; // only dirs
-
-        logger.InfoFmt("Saving list of files to {}", filename);
-
-        std::wstring endl;
-        BUILD_ENDL(endl);
-        for (auto& item : arr)
-        {
-            ff << item << endl;
-        }
-        */
-
         CloseHandle(volData.hVolume);
         //Singleton<TMFTRecCache>::Release();
+
         auto stop = std::chrono::high_resolution_clock::now();
         Ticks::Finish(_T("ReadVolumeTime"));
 
         logger.InfoFmt("Volume reading time : {}", MillisecToStr<std::string>(Ticks::GetTick(_T("ReadVolumeTime")))); //std::chrono::duration_cast<std::chrono::milliseconds>(stop - start1).count()));
-
     }
 
     catch (std::system_error& ex) 
@@ -118,7 +101,7 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, uint32_t* count, uint32_t** 
     catch (std::exception& ex)
     {
         logger.ErrorFmt("MFTReaderDLL std::exception. {}", ex.what());
-        TError err{.ErrCode=1, .Important=1}; // all errors from DLL are important
+        TError err{.ErrCode = 1, .Important = 1}; // all errors from DLL are important
         wcscpy_s(err.ErrText, sizeof(err.ErrText) / sizeof(err.ErrText[0]), stow(ex.what()).c_str());
         return err;
     }
