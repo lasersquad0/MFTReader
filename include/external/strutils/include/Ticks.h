@@ -37,7 +37,7 @@ public:
 	{
 		for (auto& item : f)
 		{
-			std::wcout << item.first << U(" = ") << std::chrono::duration_cast<std::chrono::milliseconds>(item.second - s.at(item.first)).count() / factor << std::endl;
+			cout_t << item.first << U(" = ") << std::chrono::duration_cast<std::chrono::milliseconds>(item.second - s.at(item.first)).count() / factor << std::endl;
 		}
 	}
 	static void Print(std::basic_iostream<char_t>& stream, long factor)
