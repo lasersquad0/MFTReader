@@ -44,7 +44,7 @@
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v145</PlatformToolset>
-    <CharacterSet>Unicode</CharacterSet>
+    <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -135,6 +135,7 @@
       <StructMemberAlignment>Default</StructMemberAlignment>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <ExceptionHandling>Async</ExceptionHandling>
+      <SmallerTypeCheck>false</SmallerTypeCheck>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -181,6 +182,7 @@
     <ClCompile Include="..\..\src\MftRecords.cpp" />
     <ClCompile Include="..\..\src\ReadFileCache.cpp" />
     <ClCompile Include="..\..\src\Utils.cpp" />
+    <ClCompile Include="TMFTReader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\BitField.h" />
@@ -198,6 +200,7 @@
     <ClInclude Include="..\..\include\Functions.h" />
     <ClInclude Include="..\..\include\NTFS.h" />
     <ClInclude Include="..\..\include\Utils.h" />
+    <ClInclude Include="TMFTReader.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
