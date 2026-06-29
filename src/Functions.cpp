@@ -62,12 +62,12 @@ std::string FormatFileAttributes(uint32_t a)
     return s;
 }
 
-// assume that vol has format C, C:, C:... we use two first symbols only
+// make volume look like \\.\\C: 
 string_t ParseVolume(const string_t& vol)
 {
     if (vol.size() == 0) return _T(""); // indicates error
-    if (vol.size() == 1) return string_t{ _T("\\\\.\\") } + vol[0] + _T(':'); // extract C
-    return std::wstring{ _T("\\\\.\\") } + vol[0] + vol[1]; // extract C: from vol
+    if (vol.size() == 1) return string_t{ _T("\\\\.\\") } + vol[0] + _T(':'); // extract C, append ':'
+    return std::wstring{ _T("\\\\.\\") } + vol[0] + vol[1]; // extract 'C:' from vol
 }
 
 // volume should be in format \\.\c:
@@ -146,9 +146,10 @@ void GetFileList(INDEX_HDR* ihdr, FileListPred pred)
             logger.DebugFmt("DE ATTR Name: '{}'", wtos(ciwnm));
             logger.DebugFmt("DE ATTR File Size: {}", fattr->dup.FileSize);
             
-            logger.Debug(FileDateToString("DE ATTR Created: ",   fattr->dup.CreateTime));
+            /*logger.Debug(FileDateToString("DE ATTR Created: ", fattr->dup.CreateTime));
             logger.Debug(FileDateToString("DE ATTR Modified: ",  fattr->dup.ModifyTime));
             logger.Debug(FileDateToString("DE ATTR LastAccess: ",fattr->dup.LastAccessTime));
+            */
         }
 
         off += de->size; // moving to the next DE
@@ -221,10 +222,10 @@ static void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnam
             logger.DebugFmt("Dir Entry File DOS Attrib: {:#x} {}", fattr->dup.FileAttrib, FormatFileAttributes(fattr->dup.FileAttrib));
             logger.DebugFmt("Dir Entry File Size: {}", fattr->dup.FileSize);
 
-            logger.Debug(FileDateToString("Dir Entry Created: ",   fattr->dup.CreateTime));
+            /*logger.Debug(FileDateToString("Dir Entry Created: ", fattr->dup.CreateTime));
             logger.Debug(FileDateToString("Dir Entry Modified: ",  fattr->dup.ModifyTime));
             logger.Debug(FileDateToString("Dir Entry LastAccess: ",fattr->dup.LastAccessTime));
-
+            */
             if (fattr->NameType != FILE_NAME_DOS) // bypass DOS filenames
             {
                 fnames.AddValue({ ciwnm, *fattr, de->ref });
@@ -879,10 +880,14 @@ static int32_t GetFileListFromMFTRec(const VOLUME_DATA& volData, MFT_FILE_RECORD
     return node.FileList.Count();
 }
 
-// goes through path dirs in path, reads files in SORTED order, goes to subdirs and so on, until end of path
-// returns MFT Record ID (low part of it)
-// if path is incorrect function returns 0 (zero).
-// uses ci_string intentionally to proper compare folders with user's input 'path'
+/** 
+* @brief Returns MFT Record ID (low part of it) for specified path string
+* @details Goes through path sub-dirs in path, reads files in SORTED order, goes to subdirs and so on, until end of path reached.
+* Returns MFT Record ID (low part of it). If path is incorrect function returns 0 (zero).
+* Uses ci_string intentionally to proper case insensitive folders compare.
+* @param VolData Volume data. Needed for reading file system.
+* @param path Fully qualified path to file or folder that starts from disk name. 
+*/
 MFTRecIndex GetMFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path) // ci_string is for case INsensitive search here
 {
     //TODO what is path is relative (does not start from c:\)?
