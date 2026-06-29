@@ -13,6 +13,7 @@ static void InitLogger()
         std::string exepath;
         exepath.resize(MAX_PATH);
         DWORD res = GetModuleFileNameA(nullptr /*THIS_DLL_HANDLE*/, exepath.data(), (DWORD)exepath.size()); // retrieve path to current .exe file
+        UNREFERENCED_PARAMETER(res);
         assert(res > 0);
 
         exepath = ExtractFileDir(exepath);
