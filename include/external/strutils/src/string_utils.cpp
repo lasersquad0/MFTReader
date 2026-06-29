@@ -1,5 +1,5 @@
 
-#include <Windows.h>
+#include <windows.h>
 #include <format>
 #include <stdexcept>
 #include <cassert>

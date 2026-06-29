@@ -86,6 +86,7 @@ public:
 	}
 };
 
+
 static Properties properties;
 //static Destructor destructor; // variable destructor must be located BELOW variable loggers because loggers should exist when destructor is being destroyed.
 
@@ -136,6 +137,7 @@ LOGENGINE_INLINE Logger& GetLogger(const std::string& loggerName)
 {
 	return Registry::Instance().RegisterLogger(loggerName);
 }
+
 
 // returns reference to the file logger with name specified in loggerName parameter
 // if logger with specified name does not exist new logger is created and one FileSink is added to thie logger
