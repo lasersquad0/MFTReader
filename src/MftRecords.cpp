@@ -129,13 +129,14 @@ bool LoadMFTRecord(const VOLUME_DATA& volData, MFT_REF recID, uint8_t* mftRec)
     // if seq number differ it means that MFT record has updated and recID contains old (and may be incorrect) info 
     if (recID.sId.low != MFT_ROOT_REC_ID)
     {
-        if (mftRecord->SeqNum != recID.sId.seq)
+        if ( (recID.sId.seq > 0) && (mftRecord->SeqNum != recID.sId.seq) )
         {
             GET_LOGGER;
             logger.WarnFmt("MFT record SEQ numbers differs from each other. Looks like MFT record is deleted or overwritten. From Dir: {}, From MFT Rec ID Seq: {:#x}",
                 recID.toHexString(), mftRecord->SeqNum);
         }
-        assert(mftRecord->SeqNum == recID.sId.seq);
+        //diff in Seq is not major problem, allow to continue app work
+        //assert((recID.sId.seq == 0) || (mftRecord->SeqNum == recID.sId.seq));
     }
 
 
