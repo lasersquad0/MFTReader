@@ -77,7 +77,6 @@ static void InitLogger()
         LogEngine::Logger& logger = LogEngine::GetMultiLogger(MFT_LOGGER_NAME, {fileSink, consoleSink});
         //logger.SetAsyncMode(true);//TODO uncomment to increase performance, also change sinks from ST to MT
         logger.SetLogLevel(llevel, false); // do not overwrite sink's log levels.
-
     }
 }
 
@@ -90,6 +89,7 @@ int _tmain(int argc, TCHAR* argv[])
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
     _CrtMemState s1, s2, s3;
     _CrtMemCheckpoint(&s1); // Take a snapshot at the start of main()
+
 
     //allows russian text printed in console
     std::locale::global(std::locale("ru_RU.UTF-8"));
@@ -120,14 +120,15 @@ int _tmain(int argc, TCHAR* argv[])
         PrintUsage(options);
         return 1;
     }
+    
 
     try 
     {
         //TODO re-do this error handling to proper way
-        assert( (cmd.HasOption(OPT_M) && !cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_P)) ||
+        assert((cmd.HasOption(OPT_M) && !cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_P)) ||
                 (cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_M) && !cmd.HasOption(OPT_P)) ||
                 (cmd.HasOption(OPT_P) && !cmd.HasOption(OPT_M) && !cmd.HasOption(OPT_S)) );
-
+                
         VOLUME_DATA vol;
 
         if (cmd.HasOption(OPT_M)) // info about one MFT record requested
@@ -175,7 +176,7 @@ int _tmain(int argc, TCHAR* argv[])
             Ticks::Start(_T("FSReadingTime"));
             ResetCache();
 
-            ReadDirsV1(vol);
+            //ReadDirsV1(vol);
             //ReadDirsV2(vol);
             ShowVolumeStat(vol);
 
@@ -262,7 +263,6 @@ int _tmain(int argc, TCHAR* argv[])
     {
         logger.Error("MFTReader error: UNKNOWN.");
     }
-
 }
 
 
