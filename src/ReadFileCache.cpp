@@ -588,7 +588,7 @@ bool ReadDirectoryV1(VOLUME_DATA& volData, uint32_t parentIdx, CACHE_ITEM* paren
         ATTR_FILE_NAME* fattr = (ATTR_FILE_NAME*)alloca(fattrSize);
         ZeroMemory(fattr, fattrSize);
 
-        fattr->FileNameLen = (uint8_t)volData.Name.size(); //name of disk C: or D:
+        fattr->FileNameLen = (uint8_t)volData.Name.size(); //name of disk (C:, D:, etc)
         fattr->NameType    = FILE_NAME_UNICODE_AND_DOS;
         fattr->ParentDir   = MFTRec;
         fattr->dup.CreateTime     = stdinfo->CreateTime;
@@ -721,7 +721,7 @@ void ReadDirsV1(VOLUME_DATA& volData)
 
     fileCache.PrintLevelsStat();
     
-    std::cout << "Converting to plain array... " << std::endl;
+   /* std::cout << "Converting to plain array... " << std::endl;
   
     Ticks::Start(_T("Converting time"));
     THArray<ci_string> arr;
@@ -750,8 +750,9 @@ void ReadDirsV1(VOLUME_DATA& volData)
         ff << item << fendl;
     }
     Ticks::Finish(_T("Saving time"));
-
+    */
     Ticks::PrintCon(1);
+    
      
 }
 
