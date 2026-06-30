@@ -180,9 +180,9 @@
     <ClCompile Include="..\..\src\Functions.cpp" />
     <ClCompile Include="..\..\src\MFTReader.cpp" />
     <ClCompile Include="..\..\src\MftRecords.cpp" />
+    <ClCompile Include="..\..\src\Readers.cpp" />
     <ClCompile Include="..\..\src\ReadFileCache.cpp" />
     <ClCompile Include="..\..\src\Utils.cpp" />
-    <ClCompile Include="TMFTReader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\BitField.h" />
@@ -199,8 +199,8 @@
     <ClInclude Include="..\..\include\FileLevel.h" />
     <ClInclude Include="..\..\include\Functions.h" />
     <ClInclude Include="..\..\include\NTFS.h" />
+    <ClInclude Include="..\..\include\Readers.h" />
     <ClInclude Include="..\..\include\Utils.h" />
-    <ClInclude Include="TMFTReader.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
