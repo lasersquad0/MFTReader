@@ -10,30 +10,31 @@
 
 #include "Utils.h"
 
-std::string FileDateToString(const std::string& str, uint64_t dateTime)
+string_t FileDateToString(const string_t& str, uint64_t dateTime)
 {
     if (dateTime == 0) 
-        return std::format("{}---", str);
+        return std::format(_T("{}---"), str);
 
     const uint BUF_SZ = 100;
-    wchar_t buf[BUF_SZ];
+    string_t::value_type buf[BUF_SZ];
     DWORD dateTimeFlags = FDTF_DEFAULT | FDTF_NOAUTOREADINGORDER;
     FILETIME ft{ 0 };
 
     ft.dwLowDateTime = LODWORD(dateTime);
     ft.dwHighDateTime = HIDWORD(dateTime);
     SHFormatDateTime(&ft, &dateTimeFlags, buf, BUF_SZ);
-    return std::format("{}{}", str, wtos(&buf[0]));
+    return std::format(_T("{}{}"), str, convert_string<string_t::value_type>(buf));
 }
 
-// removes all leading and trailing \n \r and space symbols from string
+// removes all leading and trailing \n\t\r and space symbols from string
+// works with std::wstring ONLY because std::string version already present inLogEngine
 std::wstring TrimSPCRLF(std::wstring str) // str passed by value here intentionally
 {
     // remove any leading and traling spaces, tabs and \n, \r.
-    size_t strBegin = str.find_first_not_of(_T(" \t\r\n"));
-    if (strBegin == std::string::npos) return _T("");
+    size_t strBegin = str.find_first_not_of(L" \t\r\n");
+    if (strBegin == std::string::npos) return L"";
 
-    size_t strEnd = str.find_last_not_of(_T(" \t\r\n"));
+    size_t strEnd = str.find_last_not_of(L" \t\r\n");
     assert(strEnd != std::string::npos);
 
     str.erase(strEnd + 1 /*, S.size() - strEnd*/); // erase till end of string
