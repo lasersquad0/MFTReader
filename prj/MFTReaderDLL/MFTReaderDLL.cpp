@@ -29,7 +29,7 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, wchar_t* exclFolders, uint32
         
         logger.InfoFmt("Reading volume data for: {}", wtos(volume));
 
-        std::wstring vol = ParseVolume(volume); // gets first two symbols of volume (e.g. C:) and adds prefix "\\.\" in front of it 
+        string_t vol = ParseVolume(convert_string<string_t::value_type>(volume)); // gets first two symbols of volume (e.g. C:) and adds prefix "\\.\" in front of it 
 
         VOLUME_DATA volData;
         ReadVolumeData(vol, volData); // throws exceptions in case of errors
@@ -39,7 +39,7 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, wchar_t* exclFolders, uint32
         while (true)
         {
             if (*currFolder == '\0') break;
-            MFTRecIndex mftId = GetMFTRecIdByPath(volData, currFolder);
+            MFTRecIndex mftId = GetMFTRecIdByPath(volData, convert_string<ci_string::value_type>(currFolder).c_str());
             if(mftId != 0) exclIDs.AddValue(mftId); //0 means "path not found", ignore it
             currFolder += wcslen(currFolder) + 1;
         }
