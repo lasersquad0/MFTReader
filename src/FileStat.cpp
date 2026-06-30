@@ -122,7 +122,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
         {
             std::wstring ciwnm(GetFName(attr), attr->FileNameLen);
             
-            itemInfo.Node.FileList.AddValue({ wtos(ciwnm).c_str(), *attr, ref});
+            itemInfo.Node.FileList.AddValue({ convert_string<ci_string::value_type>(ciwnm).c_str(), *attr, ref});//TODO wtos(ciwnm).c_str() may be incorrect for unicode and non-unicode settings
         };
 
     NTFS_FILE_RECORD_INPUT_BUFFER nfrib{0};
@@ -291,7 +291,7 @@ bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInf
                     itemInfo.FileAttrib = fname->dup.FileAttrib;
                 }
 
-                assert((fname->dup.FileAttrib & FILE_ATTRIBUTE_NORMAL/*0x00000080*/) == 0);// check that NORMAL bit is always zero
+                assert((fname->dup.FileAttrib & FILE_ATTRIBUTE_NORMAL) == 0);// check that NORMAL bit is always zero
 
                 logger.DebugFmt("File Parent Rec ID: {}", fname->ParentDir.toHexString());
                 logger.DebugFmt("File Name Type: '{}' ({:#x})", FileNameTypes[fname->NameType], fname->NameType);

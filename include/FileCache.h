@@ -164,7 +164,7 @@ public:
 			{
 				std::wstring fn(sitem->Name(), sitem->FileAttr.FileNameLen);
 				
-				array.AddValue(wtos(fn));
+				array.AddValue(convert_string<string_t::value_type>(fn));
 				/*if (sitem->IsDir())
 					array.AddValue(fn + L"\\");
 				else
@@ -188,7 +188,7 @@ public:
 			{
 				std::wstring fn(sitem->Name(), sitem->FileAttr.FileNameLen);
 
-				array.AddValue(wtos(fn).c_str());
+				array.AddValue(convert_string<string_t::value_type>(fn).c_str());
 
 				sitem = level->Next(sitem);
 

@@ -19,9 +19,9 @@
 #define HR_CHECK(_hr) {if(FAILED(_hr)) LOG_CHECK_ERROR( MAKE_LOG_STR(std::system_category().message(_hr)));}
 #define BOOL_CHECK(_res) {if(!(_res)) LOG_CHECK_ERROR( MAKE_LOG_STR(std::system_category().message(GetLastError())));}
 
-std::string FileDateToString(const std::string& str, uint64_t dateTime);
+string_t FileDateToString(const string_t& str, uint64_t dateTime);
 
-// removes all leading and trailing \n \r and space symbols from string
+// removes all leading and trailing \n\t\r and space symbols from string
 std::wstring TrimSPCRLF(std::wstring str);
 
 void WCHARtoChar(char* dest, wchar_t* src);

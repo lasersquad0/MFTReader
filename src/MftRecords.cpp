@@ -245,16 +245,16 @@ bool DataRunsDecode(MFT_ATTR_HEADER* attr, TDataRuns& runs)
 
 
 
-bool ReadAllMftRecords(PCWSTR szVolume, TLCNRecs& mftRecs)
+bool ReadAllMftRecords(string_t volume, TLCNRecs& mftRecs)
 {
-    std::wcout << L"Opening volume: " << szVolume << std::endl;
+    cout_t << _T("Opening volume: ") << volume << std::endl;
 
-    HANDLE hVolume = CreateFile(szVolume, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0,
+    HANDLE hVolume = CreateFile(volume.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0,
         OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0);
 
     if (hVolume == INVALID_HANDLE_VALUE)
     {
-        std::wcout << L"Error opening volume: " << GetLastError() << std::endl;
+        cout_t << _T("Error opening volume: ") << GetLastError() << std::endl;
         return false;
     }
 
@@ -336,7 +336,7 @@ void ReadMft2(PCWSTR szVolume, HANDLE hVolume, PNTFS_VOLUME_DATA_BUFFER nvdb)
     //unsigned len2 = wcslen(lpFileName);
     wcscat_s(lpFileName, len, MFT);
 
-    HANDLE hFile = CreateFile(lpFileName, 0, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL /* FILE_FLAG_BACKUP_SEMANTICS FILE_OPEN_FOR_BACKUP_INTENT*/, 0);
+    HANDLE hFile = CreateFileW(lpFileName, 0, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL /* FILE_FLAG_BACKUP_SEMANTICS FILE_OPEN_FOR_BACKUP_INTENT*/, 0);
 
     if (hFile != INVALID_HANDLE_VALUE)
     {

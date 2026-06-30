@@ -65,9 +65,17 @@ std::string FormatFileAttributes(uint32_t a)
 // make volume look like \\.\\C: 
 string_t ParseVolume(const string_t& vol)
 {
-    if (vol.size() == 0) return _T(""); // indicates error
-    if (vol.size() == 1) return string_t{ _T("\\\\.\\") } + vol[0] + _T(':'); // extract C, append ':'
-    return std::wstring{ _T("\\\\.\\") } + vol[0] + vol[1]; // extract 'C:' from vol
+    if (vol.starts_with(_T("\\\\.\\")))
+    {
+        assert(vol.size() > 5);
+        return vol.substr(0, 6);
+    }
+    else
+    {
+        if (vol.size() == 0) return _T(""); // indicates error
+        if (vol.size() == 1) return string_t{ _T("\\\\.\\") } + vol[0] + _T(':'); // extract C, append ':'
+        return string_t{ _T("\\\\.\\") } + vol[0] + vol[1]; // extract 'C:' from vol
+    }
 }
 
 // volume should be in format \\.\c:
@@ -102,7 +110,7 @@ void ReadVolumeData(const string_t& volume, VOLUME_DATA& volumeData)
     }
 
     volumeData.hVolume = hVolume;
-    volumeData.Name = volume.substr(4); // remove \\.\ from \\.\C:
+    volumeData.Name = convert_string<wchar_t>(volume.substr(4)); // remove \\.\ from \\.\C:
 }
 
 /// calls predicate pred for all files got from ihdr
@@ -139,7 +147,7 @@ void GetFileList(INDEX_HDR* ihdr, FileListPred pred)
                 pred(fattr, de->ref);
             }
 
-            ci_string ciwnm(GetFName(fattr), fattr->FileNameLen);
+            std::wstring ciwnm(GetFName(fattr), fattr->FileNameLen);
             logger.DebugFmt("DE ATTR Parent Rec ID: {}", fattr->ParentDir.toHexString()); //TODO check that parent of each file refers to MFT Rec we are currently parsing
             logger.DebugFmt("DE ATTR File Name Type: '{}' ({:#x})", FileNameTypes[fattr->NameType], fattr->NameType);
             logger.DebugFmt("DE ATTR DOS Attrib: {:#x} {}", fattr->dup.FileAttrib, FormatFileAttributes(fattr->dup.FileAttrib));
@@ -215,7 +223,7 @@ static void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnam
             assert(de->key_size = sizeof(ATTR_FILE_NAME) + fattr->FileNameLen);
             assert((fattr->dup.FileAttrib & FILE_ATTRIBUTE_NORMAL) == 0);// check that NORMAL bit is always zero
 
-            ci_string ciwnm(GetFName(fattr), fattr->FileNameLen);
+            std::wstring ciwnm(GetFName(fattr), fattr->FileNameLen);
             logger.DebugFmt("Dir Entry Parent Rec ID: {}", fattr->ParentDir.toHexString());
             logger.DebugFmt("Dir Entry File Name Type: '{}' ({:#x})", FileNameTypes[fattr->NameType], fattr->NameType);
             logger.DebugFmt("Dir Entry File/Dir name: '{}'", wtos(ciwnm));
@@ -228,7 +236,7 @@ static void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnam
             */
             if (fattr->NameType != FILE_NAME_DOS) // bypass DOS filenames
             {
-                fnames.AddValue({ ciwnm, *fattr, de->ref });
+                fnames.AddValue({ convert_string<ci_string::value_type>(ciwnm).c_str(), *fattr, de->ref});//TODO wtos(ciwnm).c_str() may be incorrect for unicode and non-unicode settings
             }
         }
 

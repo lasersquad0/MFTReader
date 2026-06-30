@@ -109,19 +109,16 @@ struct ITEM_INFO
 
     uint16_t HardLinksCount{0};
     uint16_t AttrsCount{0};
-    ci_string MainName; // here is ci_string for quicker sorting array of ITEM_INFO
+    /*ci_string*/std::wstring MainName; // here is ci_string for quicker sorting array of ITEM_INFO
     THArray<std::wstring> FileNames; // contains filenames of all types - DOS, WIN and POSIX
     THash<std::wstring, uint16_t> DataStreamNames; // data stream name counts groupped by stream name
     
     DIR_NODE Node;
 
-    bool operator<(const ITEM_INFO& other) const 
+    /*bool operator<(const ITEM_INFO& other) const
     { 
-        /*ci_string n1 = MainName.c_str();
-        ci_string n2 = other.MainName.c_str();
-        return n1 < n2;*/
         return MainName < other.MainName;
-    }
+    }*/
 
     bool operator==(const ITEM_INFO& other) const { return RecID.Id == other.RecID.Id; }
 
