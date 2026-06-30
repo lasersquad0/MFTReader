@@ -14,9 +14,6 @@
 #include <vector>
 #include <filesystem>
 
-std::wstring stow(const std::string& str);
-//std::string MillisecToStr(long long ms);
-
 #if defined(UNICODE) || defined(_UNICODE)
 
 #define U(quote) L##quote  
@@ -46,37 +43,86 @@ void TrimAndUpper(std::string& str); //Note: str will be changed upon function r
 template<class WSTRING>
 std::string wtos(const WSTRING& wstr)
 {
-    // make sure that STRING is one of instantiations of std::wstring
+    // make sure that STRING is one of instantiations of strings
     static_assert(std::is_base_of<std::basic_string<typename WSTRING::value_type, typename WSTRING::traits_type>, WSTRING>::value);
-    static_assert(std::is_same_v<typename WSTRING::value_type, wchar_t>);
+    // make sure that wstr is either std::string (no conversion required) or std::wstring
+    static_assert(std::is_same_v<typename WSTRING::value_type, wchar_t> || std::is_same_v<typename WSTRING::value_type, char>);
 
-    if (wstr.size() == 0) return "";
+    if constexpr (std::is_same_v<typename WSTRING::value_type, char>)
+    {
+        return wstr; // wstr is actually std::string
+    }
+    else
+    {
+        if (wstr.size() == 0) return "";
 
-    int len = WideCharToMultiByte(CP_UTF8, 0 /*WC_NO_BEST_FIT_CHARS*/, wstr.data(), (int)wstr.length(), nullptr, 0, nullptr, nullptr);
+        int len = WideCharToMultiByte(CP_UTF8, 0 /*WC_NO_BEST_FIT_CHARS*/, wstr.data(), (int)wstr.length(), nullptr, 0, nullptr, nullptr);
 
-    if (len == 0)
-        throw std::runtime_error(std::format("Error in WideCharToMultiByte 1. Error code: {}", GetLastError()));
+        if (len == 0)
+            throw std::runtime_error(std::format("Error in WideCharToMultiByte 1. Error code: {}", GetLastError()));
 
-    std::string dest;
-    dest.resize(len);
-    int err = WideCharToMultiByte(CP_UTF8, 0 /*WC_NO_BEST_FIT_CHARS*/, wstr.data(), (int)wstr.size(), dest.data(), len, nullptr, nullptr);
+        std::string dest;
+        dest.resize(len);
+        int err = WideCharToMultiByte(CP_UTF8, 0 /*WC_NO_BEST_FIT_CHARS*/, wstr.data(), (int)wstr.size(), dest.data(), len, nullptr, nullptr);
 
-    if (!err)
-        throw std::runtime_error(std::format("Error in WideCharToMultiByte 2. Error code: {}", GetLastError()));
+        if (!err)
+            throw std::runtime_error(std::format("Error in WideCharToMultiByte 2. Error code: {}", GetLastError()));
 
-    return dest;
+        return dest;
+    }
+}
+
+
+template<typename STRING>
+std::wstring stow(const STRING& str)
+{
+    // make sure that STRING is one of instantiations of strings
+    static_assert(std::is_base_of<std::basic_string<typename STRING::value_type, typename STRING::traits_type>, STRING>::value);
+    // make sure that str is either std::wstring (no conversion required) or std::string
+    static_assert(std::is_same_v<typename STRING::value_type, wchar_t> || std::is_same_v<typename STRING::value_type, char>);
+
+    if constexpr (std::is_same_v<typename STRING::value_type, wchar_t>)
+    {
+        return str; // str is actually std::wstring
+    }
+    else
+    {
+        if (str.size() == 0) return L"";
+
+        int bufferSize = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0); // Get the required buffer size
+        if (bufferSize == 0)
+            throw std::runtime_error(std::format("Error in MultiByteToWideChar 1. Error code: {}", GetLastError()));
+
+        std::wstring wstr(bufferSize, 0);
+
+        int result = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &wstr[0], bufferSize);
+        if (result == 0)
+            throw std::runtime_error(std::format("Error in MultiByteToWideChar 2. Error code: {}", GetLastError()));
+
+        wstr.resize(bufferSize - 1);
+
+        return wstr;
+    }
 }
 
 typedef wchar_t* pwchar_t; // needed for proper specialization for wchar_t*
+typedef char* pchar_t;
 
 // special non-template function for wchar_t*
 template<>
 std::string wtos<wchar_t*>(const pwchar_t& wstr);
 
+// special non-template function for char*
+template<>
+std::wstring stow<char*>(const pchar_t& wstr);
+
+
 // makes conversion between string and wstring back and forth
 template<typename T>
 constexpr std::basic_string<T> convert_string(const std::filesystem::path& str)
 {
+    static_assert(std::is_same_v<T, char> || std::is_same_v<T, wchar_t>);
+
     if constexpr (std::is_same_v<T, char>)
     {
         return str.string();
@@ -91,6 +137,7 @@ constexpr std::basic_string<T> convert_string(const std::filesystem::path& str)
     else if (std::is_same_v<T, char32_t>) {
         return str.u32string();
     } */
+
 }
 
 template<class STRING>
@@ -98,6 +145,7 @@ STRING MillisecToStr(uint64_t ms)
 {
     // make sure that STRING is one of instantiations of std::string
     static_assert(std::is_base_of<std::basic_string<typename STRING::value_type, typename STRING::traits_type>, STRING>::value);
+    static_assert(std::is_same_v<typename STRING::value_type, char> || std::is_same_v<typename STRING::value_type, wchar_t>);
 
     uint32_t milliseconds = ms % 1000;
     uint32_t seconds = (ms / 1000) % 60;
