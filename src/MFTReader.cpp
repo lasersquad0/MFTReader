@@ -22,6 +22,7 @@
 #include "cli/HelpFormatter.h"
 #include "cli/DefaultParser.h"
 #include "Utils.h"
+#include "Readers.h"
 
 
 static void PrintUsage(COptionsList& options)
@@ -168,18 +169,24 @@ int _tmain(int argc, TCHAR* argv[])
         }
         else if (cmd.HasOption(OPT_S)) // volume statistics requested.
         {
-            string_t volume = ParseVolume(cmd.GetOptionValue(OPT_V, 0, _T("C:")));
-            
-            ReadVolumeData(volume, vol);
+            //string_t volume = ParseVolume(cmd.GetOptionValue(OPT_V, 0, _T("C:")));
+            //ReadVolumeData(volume, vol);
 
             auto start1 = std::chrono::high_resolution_clock::now();
             Ticks::Start(_T("FSReadingTime"));
             ResetCache();
 
+            string_t volume = cmd.GetOptionValue(OPT_V, 0, _T("C:"));
+
+            TMFTSearchReader srchrdr(volume);
+            srchrdr.ReadDirsV1();
+
+            TMFTStatReader srdr(volume);
+            srdr.ShowVolumeStat();
+
             //ReadDirsV1(vol);
             //ReadDirsV2(vol);
-            ShowVolumeStat(vol);
-
+            
             logger.InfoFmt("File System reading time : {}", MillisecToStr<std::string>(Ticks::Finish(_T("FSReadingTime"))));
 
             ResetCache();
@@ -194,7 +201,7 @@ int _tmain(int argc, TCHAR* argv[])
             {
                 logger.SetLogLevel(LogEngine::Levels::llDebug);
 
-                std::wcout << "Path: " << path << std::endl;
+                cout_t << "Path: " << path << std::endl;
 
                 MFT_REF MFTRef{ 0 };
                 ITEM_INFO info{ 0 };
