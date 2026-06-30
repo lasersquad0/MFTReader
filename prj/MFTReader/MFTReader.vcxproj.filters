@@ -57,7 +57,7 @@
     <ClCompile Include="..\..\include\external\cli\OptionsList.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>
-    <ClCompile Include="TMFTReader.cpp">
+    <ClCompile Include="..\..\src\Readers.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -107,7 +107,7 @@
     <ClInclude Include="..\..\include\external\strutils\include\Ticks.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="TMFTReader.h">
+    <ClInclude Include="..\..\include\Readers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
