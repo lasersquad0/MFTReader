@@ -7,6 +7,10 @@ class TMFTReaderBase
 protected:
 	VOLUME_DATA FVolumeData;
 public:
+	~TMFTReaderBase() { 
+		CloseHandle(FVolumeData.hVolume); 
+	};
+
 	string_t ParseVolume(const string_t& vol);
 	void ReadVolumeData(const string_t& vol);  // volume should be in format \\.\c:
 
@@ -19,7 +23,7 @@ private:
 public:
 	TMFTStatReader();
 	TMFTStatReader(string_t& volume); // throws an exception in case of cannot open volume
-
+	
 	//functions for reading ALL MFT records info and build statistics
 	bool ReadMftItems(MFT_REF startMmftRec, uint32_t dirLevel);
 	bool ReadMftItemInfo(MFT_REF mftRecRef, ITEM_INFO& itemInfo);

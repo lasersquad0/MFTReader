@@ -154,7 +154,7 @@ struct VOLUME_DATA : public NTFS_VOLUME_DATA_BUFFER
     VOLUME_DATA(const VOLUME_DATA&) = delete;
     VOLUME_DATA& operator=(const VOLUME_DATA&) = delete;
 
-    VOLUME_DATA() : NTFS_VOLUME_DATA_BUFFER{0}, BytesPerMFTRec(this->BytesPerFileRecordSegment), hVolume(0)
+    VOLUME_DATA() : NTFS_VOLUME_DATA_BUFFER{0}, BytesPerMFTRec(this->BytesPerFileRecordSegment), hVolume(INVALID_HANDLE_VALUE)
     {
     }
 
