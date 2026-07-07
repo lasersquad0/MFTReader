@@ -34,6 +34,7 @@ static void PrintUsage(COptionsList& options)
 #define OPT_V _T("v") // "Volume"
 #define OPT_P _T("p") // "Path"
 #define OPT_S _T("s") // "Statistic"
+#define OPT_C _T("c") // "Cache for file search"
 
 static void DefineOptions(COptionsList& options)
 {
@@ -49,13 +50,8 @@ static void DefineOptions(COptionsList& options)
     pp.ShortName(OPT_P).LongName(_T("path")).Descr(_T("Display information about file/directory by specified path.")).Required(false).NumArgs(1).RequiredArgs(1);
     options.AddOption(pp);
 
-    options.AddOption(OPT_S, _T("stat"), _T("Show overall volume/disk statistics."), 0, false);    
-}
-
-
-static void ResetCache()
-{
-    Singleton<TMFTRecCache>::Release();
+    options.AddOption(OPT_S, _T("stat"), _T("Show overall volume/disk statistics."), 0, false);
+    options.AddOption(OPT_C, _T("cache"), _T("Build cache for file sreach and show cache statistics."), 0, false);
 }
 
 static void InitLogger()
@@ -70,6 +66,7 @@ static void InitLogger()
     else // otherwise configure loggers in code 
     {
         std::shared_ptr<LogEngine::Sink> consoleSink(DBG_NEW LogEngine::StdoutSinkST("consolesink"));
+        consoleSink->SetPattern("%MSG%");
         consoleSink->SetLogLevel(llevel);
 
         std::shared_ptr<LogEngine::Sink> fileSink(DBG_NEW LogEngine::FileSinkST("file_sink", "LogMFTReader.log"));
@@ -85,7 +82,6 @@ static void InitLogger()
 //#define TRYCATCH(_,__) try {(_);}catch(...){logger.Warn(__);}
 
 int _tmain(int argc, TCHAR* argv[])
-//int main()
 {
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
     _CrtMemState s1, s2, s3;
@@ -95,12 +91,14 @@ int _tmain(int argc, TCHAR* argv[])
     //allows russian text printed in console
     std::locale::global(std::locale("ru_RU.UTF-8"));
     std::wcout.imbue(std::locale());
+    //std::cout.imbue(std::locale());
 
     InitLogger();
     LogEngine::Logger& logger = LogEngine::GetLogger(MFT_LOGGER_NAME);
     assert(logger.SinkCount() > 0); // make sure that we've got properly configured logger
 
     logger.Debug("--------------- START --------------");
+    logger.DebugFmt("LogEngine version {}.{}.{}", LOGENGINE_VER_MAJOR, LOGENGINE_VER_MINOR, LOGENGINE_VER_PATCH);
 
     CDefaultParser defaultParser;
     CCommandLine cmd;
@@ -126,32 +124,28 @@ int _tmain(int argc, TCHAR* argv[])
     try 
     {
         //TODO re-do this error handling to proper way
-        assert((cmd.HasOption(OPT_M) && !cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_P)) ||
-                (cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_M) && !cmd.HasOption(OPT_P)) ||
-                (cmd.HasOption(OPT_P) && !cmd.HasOption(OPT_M) && !cmd.HasOption(OPT_S)) );
+        assert((cmd.HasOption(OPT_M) && !cmd.HasOption(OPT_P) && !cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_C)) ||
+               (cmd.HasOption(OPT_P) && !cmd.HasOption(OPT_M) && !cmd.HasOption(OPT_S)) && !cmd.HasOption(OPT_C) ||
+               (cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_C) && !cmd.HasOption(OPT_M) && !cmd.HasOption(OPT_P)) ||
+               (cmd.HasOption(OPT_C) && !cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_M)) && !cmd.HasOption(OPT_P) );
                 
-        VOLUME_DATA vol;
 
         if (cmd.HasOption(OPT_M)) // info about one MFT record requested
         {
-            string_t volume = ParseVolume(cmd.GetOptionValue(OPT_V, 0, _T("C:")));
-            
-            ReadVolumeData(volume, vol);
-
             logger.SetLogLevel(LogEngine::Levels::llDebug);
 
-            // we support both 10based mftRecID and hex format. 
-            auto recIdStr = TrimSPCRLF(cmd.GetOptionValue(OPT_M, 0));
-            MFTRecIndex mftRecID;
-            if (recIdStr.size() > 1 && recIdStr[0] == '0' && (recIdStr[1] == 'x' || recIdStr[1] == 'X'))
-                mftRecID = std::stoul(recIdStr, nullptr, 16); // exception will be thrown if option value cannot be converted into uint
-            else
-                mftRecID = std::stoul(recIdStr);
+            string_t volume = cmd.GetOptionValue(OPT_V, 0, _T("C:"));
+            
+            TMFTRecordLoader ldr(volume);
+            TMFTStatCollector rdr(ldr);
 
+            auto mftRecID = StringToMFTRecID(cmd.GetOptionValue(OPT_M, 0));
+
+            MFT_REF MFTRef{ mftRecID };
+           // MFTRef.sId.low = mftRecID;
             THArray<std::wstring> paths;
-            MFT_REF MFTRef{ 0 };
-            MFTRef.sId.low = mftRecID;
-            GetPathByMFTRecID(vol, MFTRef, paths);
+            
+            rdr.GetPathByMFTRecID(MFTRef, paths);
 
             std::wcout << "Showing information about MFT record." << std::endl;
             std::wcout << "MFT Record ID: " << mftRecID << std::endl;
@@ -160,67 +154,65 @@ int _tmain(int argc, TCHAR* argv[])
                 std::wcout << "Full Path: " << pth << std::endl;
             }
             
-            //uint8_t* mftRecBuf = (uint8_t*)alloca(vol.BytesPerMFTRec);
-
             ITEM_INFO info{0};
-            
-            ReadMftItemInfo(vol, MFTRef, info);
+            rdr.ReadMftItemInfo(MFTRef, info);
 
-        }
-        else if (cmd.HasOption(OPT_S)) // volume statistics requested.
-        {
-            //string_t volume = ParseVolume(cmd.GetOptionValue(OPT_V, 0, _T("C:")));
-            //ReadVolumeData(volume, vol);
-
-            auto start1 = std::chrono::high_resolution_clock::now();
-            Ticks::Start(_T("FSReadingTime"));
-            ResetCache();
-
-            string_t volume = cmd.GetOptionValue(OPT_V, 0, _T("C:"));
-
-            TMFTSearchReader srchrdr(volume);
-            srchrdr.ReadDirsV1();
-
-            TMFTStatReader srdr(volume);
-            srdr.ShowVolumeStat();
-
-            //ReadDirsV1(vol);
-            //ReadDirsV2(vol);
-            
-            logger.InfoFmt("File System reading time : {}", MillisecToStr<std::string>(Ticks::Finish(_T("FSReadingTime"))));
-
-            ResetCache();
         }
         else if (cmd.HasOption(OPT_P))
         {         
             string_t path = cmd.GetOptionValue(OPT_P, 0);
-            ReadVolumeData(ParseVolume(path), vol);
-
-            MFTRecIndex MFTRecID = GetMFTRecIdByPath(vol, path.c_str());
+            TMFTRecordLoader ldr(path);
+            TMFTStatCollector rdr(ldr);
+            
+            MFTRecIndex MFTRecID = rdr.GetMFTRecIdByPath(path.c_str());
             if (MFTRecID > 0)
             {
                 logger.SetLogLevel(LogEngine::Levels::llDebug);
 
                 cout_t << "Path: " << path << std::endl;
 
-                MFT_REF MFTRef{ 0 };
+                MFT_REF MFTRef{ MFTRecID };
+                //MFTRef.sId.low = MFTRecID;
+
                 ITEM_INFO info{ 0 };
 
-                MFTRef.sId.low = MFTRecID;
-
-                ReadMftItemInfo(vol, MFTRef, info);
+                rdr.ReadMftItemInfo(MFTRef, info);
             }
             else
             {
                 std::wcout << "Specified path is incorrect." << std::endl;
             }
         }
+        else if (cmd.HasOption(OPT_S)) // volume statistics requested.
+        {
+            Ticks::Start(_T("FSReadingTime"));
+            string_t volume = cmd.GetOptionValue(OPT_V, 0, _T("C:"));
+
+            TMFTRecordLoader ldr(volume);
+            TMFTStatCollector srdr(ldr);
+            srdr.ShowVolumeStat();
+
+            //ReadDirsV2(vol);
+
+            logger.InfoFmt("File System reading time : {}", MillisecToStr<std::string>(Ticks::Finish(_T("FSReadingTime"))));
+        }
+        else if (cmd.HasOption(OPT_C)) // volume statistics requested.
+        {
+            Ticks::Start(_T("FSReadingTime"));
+            string_t volume = cmd.GetOptionValue(OPT_V, 0, _T("C:"));
+
+            TMFTRecordLoader ldr(volume);
+            TMFTSearchReader srchrdr(ldr);
+            srchrdr.ReadDirsV1();
+
+            logger.InfoFmt("File System reading time : {}", MillisecToStr<std::string>(Ticks::Finish(_T("FSReadingTime"))));
+        }
         else
         {
             std::wcout << "Incorrect command line argument specified." << std::endl;
         }
   
-        CloseHandle(vol.hVolume);
+        //CloseHandle(vol.hVolume);
 
         //uint32_t recID = MFTRecIdByPath(volumeData, L"C:\\Windows\\WinSxS\\FileMaps\\");
         //std::cout << "MFT Record ID: " << recID << std::endl;
