@@ -44,7 +44,7 @@
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v145</PlatformToolset>
-    <CharacterSet>MultiByte</CharacterSet>
+    <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -176,12 +176,12 @@
     <ClCompile Include="..\..\include\external\cli\Option.cpp" />
     <ClCompile Include="..\..\include\external\cli\OptionsList.cpp" />
     <ClCompile Include="..\..\include\external\strutils\src\string_utils.cpp" />
-    <ClCompile Include="..\..\src\FileStat.cpp" />
+    <ClCompile Include="..\..\src\MFTParserBase.cpp" />
+    <ClCompile Include="..\..\src\MFTRecordLoader.cpp" />
+    <ClCompile Include="..\..\src\MFTStatReader.cpp" />
     <ClCompile Include="..\..\src\Functions.cpp" />
     <ClCompile Include="..\..\src\MFTReader.cpp" />
-    <ClCompile Include="..\..\src\MftRecords.cpp" />
-    <ClCompile Include="..\..\src\Readers.cpp" />
-    <ClCompile Include="..\..\src\ReadFileCache.cpp" />
+    <ClCompile Include="..\..\src\MFTSearchReader.cpp" />
     <ClCompile Include="..\..\src\Utils.cpp" />
   </ItemGroup>
   <ItemGroup>
