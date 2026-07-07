@@ -72,6 +72,10 @@ std::string wtos(const WSTRING& wstr)
     }
 }
 
+typedef char* pchar_t;
+// special non-template function for char*
+//template<>
+std::wstring stow(const char* str);
 
 template<typename STRING>
 std::wstring stow(const STRING& str)
@@ -106,15 +110,10 @@ std::wstring stow(const STRING& str)
 }
 
 typedef wchar_t* pwchar_t; // needed for proper specialization for wchar_t*
-typedef char* pchar_t;
 
 // special non-template function for wchar_t*
 template<>
 std::string wtos<wchar_t*>(const pwchar_t& wstr);
-
-// special non-template function for char*
-template<>
-std::wstring stow<char*>(const pchar_t& wstr);
 
 
 // makes conversion between string and wstring back and forth
