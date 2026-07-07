@@ -1,12 +1,6 @@
 // MFTReaderDLL.cpp : Defines the exported functions for the DLL.
 //
 
-#include <iostream>
-#include <string>
-#include <cstdint>
-#include <algorithm>
-#include <stdexcept>
-
 #include "framework.h"
 
 
@@ -15,7 +9,9 @@
 
 // this cache variable needs to be global because cache needs to exist after ReadVolume call
 // because cache is returned to outer function. 
-TFileCache gFileCache;
+//TFileCache gFileCache;
+TMFTRecordLoader ldr;
+TMFTSearchReader srdr(ldr);
 
 // volume parameter can be any of these: C, C:, c:\, c:\folder
 // only first two symbols from volume will be used as volume name. if volume contains single symbol ("C") one symbol will be used.
@@ -25,40 +21,40 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, wchar_t* exclFolders, uint32
 
     try
     {
-        gFileCache.Clear(); //clear previous data if any
+        //gFileCache.Clear(); //clear previous data if any
         
         logger.InfoFmt("Reading volume data for: {}", wtos(volume));
 
-        string_t vol = ParseVolume(convert_string<string_t::value_type>(volume)); // gets first two symbols of volume (e.g. C:) and adds prefix "\\.\" in front of it 
+        ldr.OpenVolume(convert_string<string_t::value_type>(volume));
 
-        VOLUME_DATA volData;
-        ReadVolumeData(vol, volData); // throws exceptions in case of errors
+        //string_t vol = ParseVolume(convert_string<string_t::value_type>(volume)); // gets first two symbols of volume (e.g. C:) and adds prefix "\\.\" in front of it 
+        //VOLUME_DATA volData;
+        //ReadVolumeData(vol, volData); // throws exceptions in case of errors
 
         THArray<MFTRecIndex> exclIDs;
         wchar_t* currFolder = exclFolders;
         while (true)
         {
             if (*currFolder == '\0') break;
-            MFTRecIndex mftId = GetMFTRecIdByPath(volData, convert_string<ci_string::value_type>(currFolder).c_str());
+            MFTRecIndex mftId = srdr.GetMFTRecIdByPath(convert_string<ci_string::value_type>(currFolder).c_str());
             if(mftId != 0) exclIDs.AddValue(mftId); //0 means "path not found", ignore it
             currFolder += wcslen(currFolder) + 1;
         }
-
-        //auto start1 = std::chrono::high_resolution_clock::now();
+;
         Ticks::Start(_T("ReadVolumeTime"));
 
-        logger.InfoFmt("Reading file system: {}", wtos(vol));
+        logger.InfoFmt("Reading file system: {}", wtos(ldr.GetVolumeData().Name));
 
         uint64_t rootDirSize{0};
-        if (!ReadDirectoryV1(volData, 0, nullptr, rootDirSize, gFileCache, callback))
+        if (srdr.ReadDirectoryV1(0, nullptr, rootDirSize, callback))
             throw std::runtime_error("ReadDirectoryV1 finished with error.");
 
         // pcache - array of pointers to levels
         // pcache[i] is a pointer to list of CACHE_ITEMs in memory for i'th level
-        uint32_t** pcache = (uint32_t**)gFileCache.GetFirstLevelPointer(); //(uint32_t**)malloc(fileCache.LevelsCount() * sizeof(uint8_t*));
+        uint32_t** pcache = (uint32_t**)srdr.FFileList.GetFirstLevelPointer(); //(uint32_t**)malloc(fileCache.LevelsCount() * sizeof(uint8_t*));
         
         *data = (uint32_t*)pcache;
-        *count = gFileCache.LevelsCount();
+        *count = srdr.FFileList.LevelsCount();
 
         logger.DebugFmt("data: {:#X}", (uint64_t)(*data));
 
@@ -73,13 +69,12 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, wchar_t* exclFolders, uint32
 
         //fileCache.SaveTo("MFTReader_items.txt");
 
-        CloseHandle(volData.hVolume);
-        //Singleton<TMFTRecCache>::Release();
+        ldr.CloseVolume();
 
         auto stop = std::chrono::high_resolution_clock::now();
         Ticks::Finish(_T("ReadVolumeTime"));
 
-        logger.InfoFmt("Volume reading time : {}", MillisecToStr<std::string>(Ticks::GetTick(_T("ReadVolumeTime")))); //std::chrono::duration_cast<std::chrono::milliseconds>(stop - start1).count()));
+        logger.InfoFmt("Volume reading time : {}", MillisecToStr<std::string>(Ticks::GetTick(_T("ReadVolumeTime"))));
     }
 
     catch (std::system_error& ex) 
