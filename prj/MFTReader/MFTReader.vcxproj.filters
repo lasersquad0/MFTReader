@@ -27,10 +27,7 @@
     <ClCompile Include="..\..\src\MFTReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\MftRecords.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\src\ReadFileCache.cpp">
+    <ClCompile Include="..\..\src\MFTSearchReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\Utils.cpp">
@@ -39,7 +36,7 @@
     <ClCompile Include="..\..\include\external\strutils\src\string_utils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\FileStat.cpp">
+    <ClCompile Include="..\..\src\MFTStatReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\include\external\cli\CommandLine.cpp">
@@ -57,7 +54,10 @@
     <ClCompile Include="..\..\include\external\cli\OptionsList.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\Readers.cpp">
+    <ClCompile Include="..\..\src\MFTRecordLoader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\MFTParserBase.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
