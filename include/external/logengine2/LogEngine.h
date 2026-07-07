@@ -31,6 +31,8 @@ typedef FileLockSink<std::mutex> FileLockSinkMT;
 typedef FileLockSink<NullMutex> FileLockSinkST;
 typedef StdoutSink<std::mutex> StdoutSinkMT;
 typedef StdoutSink<NullMutex> StdoutSinkST;
+//typedef WStdoutSink<std::mutex> WStdoutSinkMT;
+//typedef WStdoutSink<NullMutex> WStdoutSinkST;
 typedef StderrSink<std::mutex> StderrSinkMT;
 typedef StderrSink<NullMutex> StderrSinkST;
 typedef StringSink<std::mutex> StringSinkMT;
