@@ -12,12 +12,12 @@
 
 string_t FileDateToString(const string_t& str, uint64_t dateTime)
 {
-    if (dateTime == 0) 
+    if (dateTime == 0)
         return std::format(_T("{}---"), str);
 
     const uint BUF_SZ = 100;
     string_t::value_type buf[BUF_SZ];
-    DWORD dateTimeFlags = FDTF_DEFAULT | FDTF_NOAUTOREADINGORDER;
+    DWORD dateTimeFlags = /*FDTF_DEFAULT */ FDTF_SHORTDATE | FDTF_LONGTIME | FDTF_NOAUTOREADINGORDER;
     FILETIME ft{ 0 };
 
     ft.dwLowDateTime = LODWORD(dateTime);
