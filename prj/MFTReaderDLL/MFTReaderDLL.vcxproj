@@ -189,8 +189,9 @@
   <ItemGroup>
     <ClCompile Include="..\..\include\external\strutils\src\string_utils.cpp" />
     <ClCompile Include="..\..\src\Functions.cpp" />
-    <ClCompile Include="..\..\src\MftRecords.cpp" />
-    <ClCompile Include="..\..\src\ReadFileCache.cpp" />
+    <ClCompile Include="..\..\src\MFTParserBase.cpp" />
+    <ClCompile Include="..\..\src\MFTRecordLoader.cpp" />
+    <ClCompile Include="..\..\src\MFTSearchReader.cpp" />
     <ClCompile Include="..\..\src\Utils.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="MFTReaderDLL.cpp" />
