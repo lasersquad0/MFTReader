@@ -50,7 +50,7 @@ public:
 	//TODO shall we add FQueue capacity size to constructor parameters?
 	Logger(const std::string& name, Levels::LogLevel ll = LL_DEFAULT) : FName(name), FQueue(10), FLogLevel(ll) {}
 	
-	Logger(const std::string& name, std::initializer_list<std::shared_ptr<Sink>> list, Levels::LogLevel ll = LL_DEFAULT) : Logger(name, ll) //FName(name), FQueue(10), FLogLevel(ll) 
+	Logger(const std::string& name, std::initializer_list<std::shared_ptr<Sink>> list, Levels::LogLevel ll = LL_DEFAULT) : Logger(name, ll) 
 	{
 		for (auto& item : list) AddSink(item);
 	}
