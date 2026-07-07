@@ -8,11 +8,13 @@
 
 
 
-// This class stores MFT records in memory and gets them by MFT Rec ID
-// It used as singleton in LoadMFTRecordCache to prevent loading the same record several times.
-// The difference from standard THash is that TMFTRecCache frees MFT records memory in its destructor.
-// MFT record is defined as uint8_t* type 
-// MFT Rec ID is uint32_t type
+/**
+* @brief This class stores MFT records in memory and gets them by MFT Rec ID
+* @details It is used by LoadMFTRecordCache to prevent loading the same record from disk several times.
+* The difference from standard THash is that TMFTRecCache frees MFT records memory in its destructor.
+* MFT record is defined as uint8_t* type 
+* MFT rec ID is defined as MFTRecIndex type which is equivalent to uint32_t
+**/
 class TMFTRecCache : public THash<MFTRecIndex, uint8_t*>
 {
 public:
@@ -22,10 +24,12 @@ public:
     }
 };
 
-// Memory storage for LCN records. 
-// LCNs are part of ALLOC attribute and contain lists of files
-// This memory storage contains all LCN records loaded into memory and defined by "data runs" of ALLOC attribute
-// Possible to get LCN record by LCN number of by VCN number
+/**
+* @brief Memory storage for LCN records.
+* @details LCNs are either part of ALLOC attribute(s) and contain lists of files or part of DATA attribute and contain file data
+* This memory storage contains all LCN records loaded into memory and defined by "data runs" of ALLOC/DATA attribute
+* Possibility to get LCN record by LCN number of by VCN number
+**/
 class TLCNRecs
 {
 private:
@@ -73,6 +77,7 @@ public:
     * which VCNs from Data Runs contains valid info and need to be loaded
     * @return Number of VCN's actually loaded into memory (may be zero if Bitmap contains only zeroes) or -1  in case of error.
     */
+    /*
     int64_t LoadDataRuns(const VOLUME_DATA& volData, DIR_NODE& node)
     {
         assert(FRecs.GetItemSize() == volData.BytesPerCluster);
@@ -140,7 +145,7 @@ public:
         delete[] dataBuf;
 
         return LCNCounter;
-    }
+    }*/
 };
 
 
