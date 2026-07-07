@@ -26,9 +26,9 @@
 
 #define GetAttrName(pRec, field) ( (wchar_t*)((uint8_t*)(pRec) + (pRec->field)) )
 #define GetFName(pRec)  ( (wchar_t*)((uint8_t*)(pRec) + sizeof(ATTR_FILE_NAME)) )
-#define AttrIsMetaFile(_) ( ((_)->ParentDir.sId.low == MFT_ROOT_REC_ID) && (GetFName(_)[0] == L'$') )
-#define AttrIsDotDir(_)   ( ((_)->FileNameLen == 1) && (GetFName(_)[0] == L'.')  )
-#define AttrIsNtfsInt(_) (AttrIsMetaFile(_) || AttrIsDotDir(_))
+//#define AttrIsMetaFile(_) ( ((_)->ParentDir.sId.low == MFT_ROOT_REC_ID) && (GetFName(_)[0] == L'$') )
+//#define AttrIsDotDir(_)   ( ((_)->FileNameLen == 1) && (GetFName(_)[0] == L'.')  )
+//#define AttrIsNtfsInt(_) (AttrIsMetaFile(_) || AttrIsDotDir(_))
 
 // ANSI charset, for logging purposes only
 #define ATTR_TYPE_NAMES { "ZERO", "STANDARD INFO", "ATTR LIST", "FILENAME", "OBJECT ID", "secure_info", "LABEL", \
@@ -39,7 +39,7 @@
 // Attr types have numbers 0x10, 0x20, 0x30, etc. - convert them into consecutive indexes in the array
 // used for indexing ATTR_TYPE_NAMES array and in some other places
 #define MakeAttrTypeIndex(_) ((_)>>4) 
-#define AttrName(_) (AttrTypeNames[MakeAttrTypeIndex(_)])
+#define AttrName(_) (AttrTypeNames[(_)>>4])
 
 static const char* AttrTypeNames[ATTR_TYPE_CNT] ATTR_TYPE_NAMES;
 static const char* FileNameTypes[]{ "POSIX", "UNICODE", "DOS", "UNICODE_AND_DOS" };
@@ -47,20 +47,6 @@ static const char* CollationRuleNames[]{ "BINARY",  "FILENAME", "UINT", "SID",  
 
 #define MakeCollationRuleIndex(_) ((_)==0?0:(_)==1?1:(_)==0x10?2:(_)==0x11?3:(_)==0x12?4:(_)==0x13?5:6) 
 #define CollRuleName(_) (CollationRuleNames[MakeCollationRuleIndex(_)])
-
-/*
-struct VOLUME_DATA
-{
-    HANDLE hVolume;
-    LARGE_INTEGER TotalClusters;
-    DWORD BytesPerCluster;
-    DWORD BytesPerMFTRec;
-    DWORD BytesPerSector;
-    DWORD MaxMFTIndex;
-    LARGE_INTEGER MFTZoneStart; 
-    LARGE_INTEGER MFTZoneEnd;
-    std::wstring Name;
-};*/
 
 struct FILE_NAME
 {
@@ -78,6 +64,7 @@ struct FILE_NAME
     bool IsReparse() const { return (Attr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::REPARSE_POINT) > 0; };
     bool NtfsInternal() const { return IsMetaFile() || IsDotDir(); }
 };
+
 
 typedef THArray<FILE_NAME> TFileList;
 typedef THArray<DATA_RUN_ITEM> TDataRuns;
@@ -139,17 +126,17 @@ struct ITEM_INFO
 
 typedef THArray<ITEM_INFO> TItemInfoList;
 
-typedef std::function<void(const ATTR_FILE_NAME*, const MFT_REF&)> FileListPred;
+typedef std::function<void(const ATTR_FILE_NAME*, const MFT_REF&)> AddFileAttrPred;
 typedef std::function<void(const MFT_REF&)> AttrListPred;
+typedef std::function<void(uint8_t* dataBuf, CLST VCN, CLST LCN)> ProcessLCNsPred;
 
 typedef int32_t (__stdcall *ProgressCallbackPtr)(int32_t progress);
 
 struct VOLUME_DATA : public NTFS_VOLUME_DATA_BUFFER
 {
-    DWORD& BytesPerMFTRec;  // alias to field = NTFS_VOLUME_DATA_BUFFER::BytesPerFileRecordSegment
+    DWORD& BytesPerMFTRec; // alias to field = NTFS_VOLUME_DATA_BUFFER::BytesPerFileRecordSegment
     HANDLE hVolume;
     std::wstring Name;
-
 
     VOLUME_DATA(const VOLUME_DATA&) = delete;
     VOLUME_DATA& operator=(const VOLUME_DATA&) = delete;
@@ -163,30 +150,6 @@ struct VOLUME_DATA : public NTFS_VOLUME_DATA_BUFFER
 LogEngine::Logger& GetLoggerFunc();
 std::string FormatFileAttributes(uint32_t a);
 
-string_t ParseVolume(const string_t& vol);
-void ReadVolumeData(const string_t& volume, VOLUME_DATA& volumeData);
-bool ParseNonresBitmap(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attr, TBitField& bitmap);
-bool ParseNonresAttrList(const VOLUME_DATA& volData, MFT_ATTR_HEADER* attrAttrList, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result);
-bool ReadDirectoryV1(VOLUME_DATA& volData, uint32_t parentIdx, CACHE_ITEM* parentItem , uint64_t& dirSize, TFileCache& gFileList, ProgressCallbackPtr callback);
-bool ReadDirectoryV2(VOLUME_DATA& volData, MFT_REF parentMftRecID, uint32_t dirLevel, TFileList& gDirList);
-bool DataRunsDecode(MFT_ATTR_HEADER* attr, TDataRuns& runs);
-bool ReadClusters(const VOLUME_DATA& volData, CLST lcnStart, CLST lcnCnt, PBYTE dataBuf);
-bool FixupUSA(const VOLUME_DATA& volData, PBYTE dataBuf, DATA_RUN_ITEM& rli, uint64_t rlilen);
-bool LoadMFTRecord(const VOLUME_DATA& volData, MFT_REF recID, uint8_t* mftRec);
-uint8_t* LoadMFTRecordCache(const VOLUME_DATA& volData, MFT_REF recID);
-//void GetAttr(const VOLUME_DATA& volData, ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues, PMFT_ATTR_HEADER* result);
-//void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues);
-//int32_t GetFileListFromMFTRec(const VOLUME_DATA& volData, MFT_FILE_RECORD* mftRec, DIR_NODE& node);
-void GetFileList(INDEX_HDR* ihdr, FileListPred pred);
-bool ProcessAllocDataRuns(VOLUME_DATA& volData, DIR_NODE& node, FileListPred pred);
-void ReadDirsV2(VOLUME_DATA& volData);
-void ReadDirsV1(VOLUME_DATA& volData);
-void ShowVolumeStat(VOLUME_DATA& volData);
-bool ReadMftItemInfo(VOLUME_DATA& volData, MFT_REF mftRecRef, ITEM_INFO& itemInfo);
-bool ReadMftItems(VOLUME_DATA& volData, MFT_REF startMmftRec, uint32_t dirLevel, TItemInfoList& list);
+//string_t ParseVolume(const string_t& vol);
+MFTRecIndex StringToMFTRecID(string_t strMFTRecID);
 
-MFTRecIndex GetMFTRecIdByPath(VOLUME_DATA& volData, const ci_string& path);
-bool GetPathByMFTRecID(VOLUME_DATA& volData, MFT_REF mftRecID, THArray<std::wstring>& paths);
-
-//void GetPointersToFileNameAttrs(MFT_FILE_RECORD* mftRec, THArray<ATTR_FILE_NAME*>& attrFileNames);
-//void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnames);
