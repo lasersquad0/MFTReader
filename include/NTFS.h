@@ -138,6 +138,8 @@ enum class NTFS_SIGNATURE: uint32_t
     /* Found in $LogFile/$DATA when a page is full or 0xff bytes and is thus not initialized.  
        User has to initialize the page before using it. */
     magic_empty =0xffffffff, // Record is empty and has to be initialized before it can be used.
+
+    magic_zero = 0x00000000, // for testing purposes
 };
 
 static_assert(sizeof(NTFS_SIGNATURE) == 4);
