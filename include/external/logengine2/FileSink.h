@@ -91,10 +91,22 @@ public:
 	void sendMsg(const LogEvent& e) override
 	{
 		std::string str = this->FormatString(e);
-		std::cout << str << EndLine;
+		std::cout << str << std::endl; //EndLine;
 	}
 };
 
+/*template<class Mutex>
+class WStdoutSink : public BaseSink<Mutex>
+{
+public:
+	WStdoutSink(const std::string& name) : BaseSink<Mutex>(name) { }
+
+	void sendMsg(const LogEvent& e) override
+	{
+		std::string str = this->FormatString(e);
+		std::wcout << str.c_str() << std::endl; //EndLine; // this line does not work well
+	}
+};*/
 
 template<class Mutex>
 class StderrSink : public BaseSink<Mutex>
