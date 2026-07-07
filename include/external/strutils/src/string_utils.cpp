@@ -28,16 +28,16 @@ std::string wtos<wchar_t*>(const pwchar_t& wstr)
 }
 
 // special non-template function for char*
-template<>
-std::wstring stow<char*>(const pchar_t& str)
+//template<>
+std::wstring stow(const char* astr)
 {
-    int bufferSize = MultiByteToWideChar(CP_UTF8, 0, str, -1, nullptr, 0); // Get the required buffer size
+    int bufferSize = MultiByteToWideChar(CP_UTF8, 0, astr, -1, nullptr, 0); // Get the required buffer size
     if (bufferSize == 0)
         throw std::runtime_error(std::format("Error in MultiByteToWideChar 1. Error code: {}", GetLastError()));
 
     std::wstring wstr(bufferSize, 0);
 
-    int result = MultiByteToWideChar(CP_UTF8, 0, str, -1, &wstr[0], bufferSize);
+    int result = MultiByteToWideChar(CP_UTF8, 0, astr, -1, &wstr[0], bufferSize);
     if (result == 0)
         throw std::runtime_error(std::format("Error in MultiByteToWideChar 2. Error code: {}", GetLastError()));
 
