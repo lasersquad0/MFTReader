@@ -163,8 +163,9 @@ bool TMFTParserBase::DecodeDataRuns(MFT_ATTR_HEADER* attr, TDataRuns& runs)
         for (; b > b2; b--) // read num of bytes specified in major half byte and interpret it as LCN
             deltaxcn = (deltaxcn << 8) + datarun[b];
 
-        ri.lcn += deltaxcn;
-        currLCN = ri.lcn;
+        currLCN += deltaxcn;
+        if (deltaxcn == 0) ri.lcn = 0; // for sparse files data run contains "virtual" LCN virtualy filled by zero
+        else ri.lcn = currLCN;
 
         runs.AddValue(ri);
 
