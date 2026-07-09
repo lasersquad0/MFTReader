@@ -259,7 +259,7 @@ struct MFT_ATTR_NONRESIDENT
 //  values here (1-5?), even if the implementation only generates a smaller set of values itself.
     uint8_t CompressionUnitSize; // 0x22: The compression unit for the attribute expressed as the logarithm to the base two of the number 
                                  // of clusters in a compression unit. If CompressionUnitSize is zero, the attribute is not compressed.
-    uint8_t res1[5];		     // 0x23:
+    uint8_t res1[5];		     // 0x23: Reserved
     uint64_t AllocatedSize;      // 0x28 Byte size of disk space allocated to hold the attribute value. Always is a multiple of the cluster size.
                                  // When a file is compressed, this field is a multiple of the compression block size (2 ^ compression_unit) and it represents 
                                  // the logically allocated space rather than the actual on disk usage. For this use the CompressedSize below.
@@ -267,8 +267,7 @@ struct MFT_ATTR_NONRESIDENT
     uint64_t StreamSize;         // 0x38 Byte size of initialized portion of the attribute value. Usually equals RealSize.see SetEndOfFile WINAPI function.
     uint64_t CompressedSize;     // 0x40 Byte size of the attribute value after compression. Only present when compressed. 
                                  // Always is a multiple of the cluster size. Represents the actual amount of disk space being used on the disk.
-    // (present only for the first segment (0 == vcn)
-    // of compressed attribute)
+                                 // (present only for the first segment (0 == vcn) of compressed attribute)
 
 }; // (0x30 or 0x38 if compressed) or 0x40 or 0x48 if counted with MFT_ATTR_HEADER
 
