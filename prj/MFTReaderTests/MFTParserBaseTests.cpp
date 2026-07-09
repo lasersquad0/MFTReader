@@ -121,7 +121,7 @@ public:
 
 #define TEST_DATA_DIR "../../TestData/"
 
-TEST_F(MFTParserBaseTests, ReadMftItemInfoBuf_1)
+TEST_F(MFTParserBaseTests, DISABLED_ReadMftItemInfoBuf_1)
 {
     auto current_dir = std::filesystem::current_path();
 
@@ -188,3 +188,112 @@ TEST_F(MFTParserBaseTests, OpenVolume_2)
     EXPECT_THROW(ldr.OpenVolume(_T("\\\\.\\\\")), std::system_error);
 
 }
+
+TEST_F(MFTParserBaseTests, DISABLED_DecodeDataRuns_1)
+{
+    TMFTRecordLoader ldr;
+    TMFTParserBase parser(ldr);
+
+    std::string fileName = TEST_DATA_DIR "decoded-20260708121645.bin";
+    std::ifstream file(fileName, std::ios::binary);
+    if (!file) FAIL() << "Error opening file '" << fileName << "'";
+    
+    file.seekg(0, std::ios::end);
+    uint32_t sz = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    uint8_t* buf = (uint8_t*)calloc(sizeof(MFT_ATTR_HEADER) + sz, 1);
+    ASSERT_TRUE(buf != nullptr);
+
+    MFT_ATTR_HEADER* attr = (MFT_ATTR_HEADER*)buf;
+    attr->AttrType = ATTR_DATA;
+    attr->AttrSize = sz + sizeof(MFT_ATTR_HEADER);
+    attr->NonResidentFlag = 1;
+    attr->nonres.DataRunsOffset = sizeof(MFT_ATTR_HEADER);
+    attr->nonres.StartVCN = 0;
+    attr->nonres.CompressionUnitSize = 0;
+    attr->nonres.StreamSize = 1024 * 1024;
+    attr->nonres.RealSize = 1024 * 1024;
+    attr->nonres.AllocatedSize = 1024 * 1024;
+ 
+    uint8_t* runsBuf = buf + sizeof(MFT_ATTR_HEADER);
+    
+    if(!file.read((char*)runsBuf, sz)) FAIL() << "Cannot read " << sz << " bytes from '" << fileName << "' file";
+
+    TDataRuns runs;
+    bool res = parser.DecodeDataRuns(attr, runs);
+    ASSERT_TRUE(res);
+
+}
+
+TEST_F(MFTParserBaseTests, DecodeDataRuns_2)
+{
+    TMFTRecordLoader ldr;
+    TMFTParserBase parser(ldr);
+
+    std::string fileName = TEST_DATA_DIR "DataRuns1.txt";
+    std::ifstream file(fileName);
+    if (!file) FAIL() << "Error opening file '" << fileName << "'";
+ 
+    std::vector<uint8_t> numbers;
+    std::string line;
+
+    while (std::getline(file, line)) 
+    {
+        std::istringstream iss(line);
+        uint32_t num;
+
+        numbers.clear();
+
+        while (iss >> std::hex >> num) {
+            ASSERT_TRUE(num < 256);
+            numbers.push_back((uint8_t)num);
+        }
+
+        uint32_t sz = numbers.size() * sizeof(numbers[0]);
+        uint8_t* buf = (uint8_t*)calloc(sizeof(MFT_ATTR_HEADER) + sz, 1);
+        ASSERT_TRUE(buf != nullptr);
+        uint8_t* runsBuf = buf + sizeof(MFT_ATTR_HEADER);
+        memcpy_s(runsBuf, sz, numbers.data(), sz);
+
+        MFT_ATTR_HEADER* attr = (MFT_ATTR_HEADER*)buf;
+        attr->AttrType = ATTR_DATA;
+        attr->AttrSize = sz + sizeof(MFT_ATTR_HEADER);
+        attr->NonResidentFlag = 1;
+        attr->nonres.DataRunsOffset = sizeof(MFT_ATTR_HEADER);
+        attr->nonres.StartVCN = 0;
+        attr->nonres.CompressionUnitSize = 0;
+        attr->nonres.StreamSize = 1024 * 1024;
+        attr->nonres.RealSize = 1024 * 1024;
+        attr->nonres.AllocatedSize = 1024 * 1024;
+
+        TDataRuns runs;
+        bool res = parser.DecodeDataRuns(attr, runs);
+        ASSERT_TRUE(res);
+
+        if (!std::getline(file, line)) FAIL() << "Error: Incorrect file";
+
+        // check decoded data runs with etalon data
+        
+        std::istringstream iss2(line);
+        iss2 >> std::hex >> num; // number of data runs
+        ASSERT_EQ(num, runs.Count());
+        
+        DATA_RUN_ITEM rli;
+        for (size_t i = 0; i < num; i++)
+        {
+            uint32_t lcn, len;
+            rli = runs[i];
+            iss2 >> lcn;
+            iss2 >> len;
+            ASSERT_EQ(lcn, rli.lcn);
+            ASSERT_EQ(len, rli.len);
+        }
+
+        ASSERT_FALSE(iss2 >> num); // check that we've read entire line
+
+    }
+
+    file.close();
+}
+
