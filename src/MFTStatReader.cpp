@@ -256,10 +256,10 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
     switch (mftRec->Flags)
     {
     case MFT_FLAG_IN_USE: logger.Debug("MFT Rec Type: 'IN USE' (file or anything else)"); break;
-    case MFT_FLAG_IS_DIRECTORY: logger.Debug("MFT Rec Type: DIRECTORY"); break;
-    case MFT_FLAG_IN_USE | MFT_FLAG_IS_DIRECTORY: logger.DebugFmt("MFT Rec Type: 'FILE or DIRECTORY' {:#x}", (uint16_t)mftRec->Flags); break;
+    case MFT_FLAG_IS_DIRECTORY: logger.Warn("! MFT Rec Type: DELETED Directory - unusual case"); break;
+    case MFT_FLAG_IN_USE | MFT_FLAG_IS_DIRECTORY: logger.DebugFmt("MFT Rec Type: 'IN USE DIRECTORY' {:#x}", (uint16_t)mftRec->Flags); break;
     default:
-        logger.DebugFmt("MFT Rec Type: UNKNOWN {:#x}", (uint16_t)mftRec->Flags);
+        logger.WarnFmt("MFT Rec Type: UNKNOWN {:#x}", (uint16_t)mftRec->Flags);
     }
 
     MFT_ATTR_HEADER* currAttr = (MFT_ATTR_HEADER*)Add2Ptr(mftRec, mftRec->FirstAttrOffset);
@@ -327,7 +327,6 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                 logger.DebugFmt("USN: {:#x}", stdinfo->usn);
                 logger.DebugFmt("Security ID: {}", stdinfo->security_id);
                 logger.DebugFmt("Quota Charged: {}", stdinfo->quota_charged);
-
 
                 break;
             }
