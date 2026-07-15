@@ -16,155 +16,19 @@
 #include "NTFS.h"
 #include "Readers.h"
 
-
-//parses either resident or non-resident ATTR_LIST
-static void ParseAttrList(MFTRecIndex indexMFTRec, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, AttrListPred processChildMFTRecPred)
-{
-    GET_LOGGER;
-
-    uint64_t processedAttrSize = 0;
-
-    ATTR_LIST_ENTRY* attrEntry = startListItem;
-
-    assert(attrEntry->AttrSize > 0);
-    assert(attrEntry->AttrType > 0);
-    assert(attrEntry->StartVCN == 0);
-    assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
-    assert(attrEntry->AttrType != ATTR_ZERO);
-    assert(attrEntry->AttrType != ATTR_END);
-
-    THArray<uint32_t> visitedMFTRec;
-
-    // this is do not not parse current indexMFTRec again when reading attrEntry->ref MFT record   
-    // because attrs located in current MFT rec either already parsed or will be parsed during usual cycle of parsing 
-    visitedMFTRec.AddValue(indexMFTRec);
-
-    while (true)
-    {
-        // StartVCN might be >0 when one attribute does not fit into one MFT record.
-        // This attribute may have very long Data Run list or anything else
-        // In this case ATTR_LIST contains several ATTR_LIST_ENTRY entries for this big attribute.
-        // First entry has StartVCN=0, others - preventry.StartVCN+num_of_vcns_in_preventry_dataruns, etc.
-        // all these entries build up a continious list of VCNs 
-        if ( (attrEntry->AttrType != ATTR_DATA) && (attrEntry->AttrType != ATTR_ALLOC) )  // StartVCN should be 0 for all attrs except ATTR_DATA and ATTR_ALLOC
-        {
-             if (attrEntry->StartVCN != 0)
-                logger.WarnFmt("Looks like we have met incorrect case. StartVCN({}) <> 0 for {} attribute. MFT Rec ID: {}.",
-                    attrEntry->StartVCN, AttrName(attrEntry->AttrType), MFT_REF::toHexString(indexMFTRec));
-             assert(attrEntry->StartVCN == 0);
-        }
-
-        // attributes in non-resident attr list located in a separate LCN cluster may refer back to the base record
-        // because some attributes may reside in base mft record and the others in "child" mft record(s)
-        // the attr list attribute itself is located in LCN cluster that is not mft record, it does not contain signature or Fixups values, etc.
- 
-        //if (attrEntry->ref.sId.low != indexMFTRec) 
-        {
-            if (visitedMFTRec.IndexOf(attrEntry->ref.sId.low) == -1) // whether we haven't parsed this MFT record yet
-            {
-                processChildMFTRecPred(attrEntry->ref);
-                // attrEntry->ref is a MFT rec where attr value is located
-                //if (!ReadMftItemInfo(volData, attrEntry->ref, itemInfo))
-                //{
-                //    logger.Error("ReadMftItemInfo() returned false!");
-                //}
-                visitedMFTRec.AddValue(attrEntry->ref.sId.low);
-            }
-        }
-
-        // StartVCN is a cluster where attribute portion value is located
-        if (attrEntry->StartVCN != 0)
-        {
-            assert( (attrEntry->AttrType == ATTR_DATA) || (attrEntry->AttrType == ATTR_ALLOC) );
-            if (attrEntry->AttrType != ATTR_DATA)
-                logger.WarnFmt("One attribute does not fit into one MFT record. StartVCN: {}, AttrType: {}, ref: {}, MFT Rec ID: {}",
-                        attrEntry->StartVCN, AttrName(attrEntry->AttrType), attrEntry->ref.toHexString(), MFT_REF::toHexString(indexMFTRec));
-        }
-
-        processedAttrSize += attrEntry->AttrSize;
-        if (processedAttrSize >= realSize)
-        {
-            logger.DebugFmt("Loop is finished by this condition: 'processedAttrSize >= realSize'. Last Attr: {}, realSize: {}", AttrName(attrEntry->AttrType), realSize);
-            break;
-        }
-
-        attrEntry = (ATTR_LIST_ENTRY*)Add2Ptr(attrEntry, attrEntry->AttrSize);
-
-        if ((uint8_t*)attrEntry >= attrListEnd)
-        {
-            logger.InfoFmt("Loop is finished by this condition: 'attrEntry >= attrEntryEnd' (end of buffer with clusters). Last Attr: {}, currAttr->nonres.RealSize: {}",
-                AttrName(attrEntry->AttrType), realSize);
-            break;
-        }
-
-        assert(attrEntry->AttrType > 0);
-        assert(attrEntry->AttrSize > 0);
-        assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
-        assert(attrEntry->AttrType != ATTR_ZERO);
-        assert(attrEntry->AttrType != ATTR_END);
-    }
-}
+// first 33 records are internal records
+#define IsMFTRecInternal(mftrec) ((mftrec) < 33) 
 
 /** 
 * @brief Reads information about one MFT record 
 * @details Reads information ONLY about one MFT record refered by mftRecRef 
 * Does NOT go to child items recursively
+* @param mftRecRef MFT record that will be read
 * @param itemInfo results of reading MFT record
 * @return true in case of success, false in case of error
 */ 
 bool TMFTStatCollector::ReadMftItemInfo(MFT_REF mftRecRef, ITEM_INFO& itemInfo)
 {
- /*   GET_LOGGER;
-
-    NTFS_FILE_RECORD_INPUT_BUFFER nfrib{ 0 };
-    nfrib.FileReferenceNumber.LowPart = mftRecRef.sId.low;
-
-    //ULONG cb = __builtin_offsetof(NTFS_FILE_RECORD_OUTPUT_BUFFER, FileRecordBuffer[FVolumeData.BytesPerMFTRec]);
-    ULONG cb = offsetof(NTFS_FILE_RECORD_OUTPUT_BUFFER, FileRecordBuffer[getVolData().BytesPerMFTRec]);
-
-    PNTFS_FILE_RECORD_OUTPUT_BUFFER pnfrob = (PNTFS_FILE_RECORD_OUTPUT_BUFFER)alloca(cb);
-
-    DWORD bytesReturned;
-    if (!DeviceIoControl(FVolumeData.hVolume, FSCTL_GET_NTFS_FILE_RECORD, &nfrib, sizeof(nfrib), pnfrob, cb, &bytesReturned, nullptr))
-    {
-        logger.ErrorFmt("[ReadMftItemInfo] DeviceIoControl failed with error: {}.", GetLastError());
-        return false;
-    }
-
-    // DeviceIoControl may return other MFT record than we requested.
-    // This may happen when requested MFT record has been deleted while we were parsing MFT structures and navigating,
-    // that happens not so rarely
-    // just exit from ReadMftItemInfo in that case.
-    // itemInfo will be "empty" in that case (no atributes) - so we can easily detect such items in the list.
-    if (nfrib.FileReferenceNumber.QuadPart != pnfrob->FileReferenceNumber.QuadPart)
-    {
-        logger.WarnFmt("[ReadMftItemInfo] Requested MFT rec ID differs from returned. Looks like requested MFT record is deleted. Requested: {:#x}, returned: {:#x}",
-            nfrib.FileReferenceNumber.QuadPart, pnfrob->FileReferenceNumber.QuadPart);
-        return false;
-    }
-    
-    MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)pnfrob->FileRecordBuffer;
-    
-    // Make sure DeviceIoControl returned exactly the MFT record number we requested.
-    // DeviceIoControl may return closest existing MFT record when record with requested ID is "free".
-    assert(pnfrob->FileReferenceNumber.LowPart == mftRec->IndexMFTRec);
-    assert(mftRecRef.sId.low == mftRec->IndexMFTRec); // make sure we've got the same record as requested.
-    assert(nfrib.FileReferenceNumber.LowPart == pnfrob->FileReferenceNumber.LowPart);
-
-    // checking that sequence numbers are the same in recID read from parent directory and MFT record read directly by number
-    // if seq number differ it means that MFT record has updated and recID contains old (and may be incorrect) info 
-    if (mftRecRef.sId.low != MFT_ROOT_REC_ID)
-    {
-        if ((mftRecRef.sId.seq > 0) && (mftRec->SeqNum != mftRecRef.sId.seq))
-        {
-            logger.WarnFmt("[ReadMftItemInfo] MFT record SEQ numbers differs from each other. Looks like MFT record is deleted or overwritten. From Dir: {}, From MFT Rec ID Seq: {:#x}",
-                mftRecRef.toHexString(), mftRec->SeqNum);
-        }
-        //diff in Seq is not major problem, allow to continue app work
-        //assert((mftRecRef.sId.seq == 0) || (mftRec->SeqNum == mftRecRef.sId.seq));
-    }
-    */
-
     uint8_t* mftRecBuf = (uint8_t*)alloca(getVolData().BytesPerMFTRec);
 
     if (!FLoader.LoadMFTRecord(mftRecRef, mftRecBuf))
@@ -179,6 +43,9 @@ bool TMFTStatCollector::ReadMftItemInfo(MFT_REF mftRecRef, ITEM_INFO& itemInfo)
     }
 }
 
+#define STREAM_NONAME "<noname>"
+#define STREAM_NONAME_W L"<noname>"
+
 bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& itemInfo)
 {
     GET_LOGGER;
@@ -190,7 +57,7 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
             itemInfo.Node.FileList.AddValue({convert_string<ci_string::value_type>(ciwnm).c_str(), *attr, ref});
         };
 
-    AttrListPred callReadMftItemInfo = [this, &itemInfo](const MFT_REF& ref)
+    AttrListPred callReadMftItemInfoPred = [this, &itemInfo](const MFT_REF& ref)
         {
             // ref - is a child MFT rec where attr value is located
             if (!ReadMftItemInfo(ref, itemInfo)) // ReadMftItemInfo write message to log file in case of an error
@@ -210,6 +77,7 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
             if (ntfs_is_indx_recp(allocIndex->RecHeader.Signature))
             {
                 assert(VCN == allocIndex->vcn);
+                UNREFERENCED_PARAMETER(VCN);
 
                 auto pihdr = &(allocIndex->ihdr);
                 GetFileList(pihdr, addToFileListPred);
@@ -274,8 +142,8 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
         logger.DebugFmt("Attr Size: {}", currAttr->AttrSize);
         logger.DebugFmt("Attr Flags: {}", currAttr->Flags);
 
-        std::wstring nameOfAttrW = L"<noname>";
-        std::string nameOfAttrA = "<noname>";
+        std::wstring nameOfAttrW = STREAM_NONAME_W;
+        std::string nameOfAttrA = STREAM_NONAME;
         if (currAttr->AttrNameSize > 0) // if attr has a name - show it
         {
             nameOfAttrW.assign(GetAttrName(currAttr, AttrNameOffset), currAttr->AttrNameSize);
@@ -336,6 +204,7 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                 std::wstring name(GetFName(fname), fname->FileNameLen);
                 itemInfo.FileNames.AddValue(name);
 
+                assert(fname->NameType <= FILE_NAME_UNICODE_AND_DOS);
                 if (fname->NameType != FILE_NAME_DOS)
                 { 
                     itemInfo.MainName = name.c_str();
@@ -372,16 +241,37 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
             }
             case ATTR_ID: // Resident. 
             {
-                /*
-                OBJECT_ID* objID = (OBJECT_ID*)attrValue;
+                ATTR_OBJECT_ID* objID = (ATTR_OBJECT_ID*)attrValue;
+                constexpr const uint BUF_SZ = 100;
+                std::wstring buf(BUF_SZ, 0);
 
-                wchar_t buf[100];
-                if (!StringFromGUID2(objID->ObjId, buf, 100))
-                    logger.Error("ATTR_ID Error in StringFromGUID2.");
+                if (!StringFromGUID2(objID->ObjId, buf.data(), BUF_SZ))
+                    logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 1.");
+                logger.DebugFmt("Attr Object ID: {}", wtos(buf));
+                
+                if (currAttr->AttrSize > 16) //0x10
+                {
+                    if (!StringFromGUID2(objID->BirthVolumeId, buf.data(), BUF_SZ))
+                        logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 2.");
+                    logger.DebugFmt("Attr Birth Volume ID: {}", wtos(buf));
 
-                logger.DebugFmt("Object ID: {}", wtos(buf));
-                */
-                logger.DebugFmt("We do not process this attribute. Attr: '{}', AttrName: '{}'.", AttrName(currAttr->AttrType), nameOfAttrA);
+
+                    if (currAttr->AttrSize > 32) //0x20
+                    {
+                        if (!StringFromGUID2(objID->BirthObjectId, buf.data(), BUF_SZ))
+                            logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 3.");
+                        logger.DebugFmt("Attr Birth Object ID: {}", wtos(buf));
+
+                        if (currAttr->AttrSize > 48) //0x30
+                        {
+                            if (!StringFromGUID2(objID->DomainId, buf.data(), BUF_SZ))
+                                logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 4.");
+                            logger.DebugFmt("Attr Domain ID: {}", wtos(buf));
+                        }
+                    }
+                }
+                
+                //logger.DebugFmt("We do not process this attribute. Attr: '{}', AttrName: '{}'.", AttrName(currAttr->AttrType), nameOfAttrA);
                 break;
             }
             case ATTR_ROOT: // Resident. ATTR_ROOT is resident only.
@@ -420,8 +310,9 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
 
                 ATTR_LIST_ENTRY* attrEntry = (ATTR_LIST_ENTRY*)attrValue;
                 uint8_t* attrEntryEnd = Add2Ptr(currAttr, currAttr->AttrSize);
+                uint64_t processedAttrSize = 0;
 
-                ::ParseAttrList(mftRec->IndexMFTRec, attrEntry, attrEntryEnd, currAttr->res.DataSize, callReadMftItemInfo);
+                ParseAttrList(mftRec->IndexMFTRec, attrEntry, attrEntryEnd, currAttr->res.DataSize, processedAttrSize, callReadMftItemInfoPred);
 
                 /*
                 assert(attrEntry->AttrType > 0);
@@ -492,12 +383,16 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
             {
                 logger.DebugFmt("Resident ATTR_DATA Data Size: {}", currAttr->res.DataSize);
 
-                if (itemInfo.ResidentData)
-                    logger.InfoFmt("Looks like two resident ATTR_DATA ('{}') attributes have met in one MFT record: {}.", 
-                              nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
-                itemInfo.ResidentData = true;
+                // "Zone.Identifier" is often a second data attribute for the file
+                //if (itemInfo.ResidentData && (nameOfAttrA != "Zone.Identifier"))
+                //    logger.InfoFmt("Looks like two resident ATTR_DATA attributes have met in one MFT record: {}, Second Data Attr Name: '{}' ", 
+                //              MFT_REF::toHexString(mftRec->IndexMFTRec), nameOfAttrA);
+                itemInfo.HasResidentDataAttr = true;
 
-                itemInfo.DataStreamNames[nameOfAttrW]++;
+                // each stream name can be met only once
+                assert(!itemInfo.DataStreamNames.IfExists(nameOfAttrW));
+                TDataRuns runs;
+                itemInfo.DataStreamNames.SetValue(nameOfAttrW, runs); // for resident - add empty data run class
                
                 break;
             }
@@ -562,34 +457,33 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                 logger.WarnFmt("'currAttr.RealSize < currAttr.StreamSize'. ReadlSize: {}, StreamSize: {}, MFT Rec ID: {}",
                     currAttr->nonres.RealSize, currAttr->nonres.StreamSize, MFT_REF::toHexString(mftRec->IndexMFTRec));
 
-            //assert(currAttr->nonres.RealSize == currAttr->nonres.StreamSize);
-
             switch (currAttr->AttrType)
             {
             case ATTR_DATA: // NON-resident. Can be either resident and non-resident
             {
-                if (itemInfo.ResidentData)
-                    logger.InfoFmt("Looks like resident DATA attr ('{}') is met in NONresident context. MFT Rec ID: {}", 
-                             nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
-                itemInfo.ResidentData = false;
-
-                //std::wstring name(GetAttrName(currAttr, AttrNameOffset), currAttr->AttrNameSize);
-                itemInfo.DataStreamNames[nameOfAttrW]++;
+                itemInfo.HasNonResidentDataAttr = true;
 
                 logger.DebugFmt("We do not process this attribute except for Data Runs decode. Attr: ATTR_DATA. Name: '{}'. ", nameOfAttrA);
                 
-                // decode data runs just for testing purposes
-                if (DecodeDataRuns(currAttr, itemInfo.Node.DataRuns)) 
-                {
-                    logger.DebugFmt("NON-Resident ATTR_DATA data runs count: {}, Stream Name: {}.", itemInfo.Node.DataRuns.Count(), nameOfAttrA);
-                }
-                else
+                // for big data runs we can come here several times when one file data runs are split between several MFT records.
+                // itemInfo.Node.DataRuns will accumulate all data runs from all parts.
+                if (!DecodeDataRuns(currAttr, itemInfo.Node.DataRuns))
                 {
                     //logger.Error("DataRunsDecode finished with ERROR.");
                     break; //DataRunsDecode writes a message into log file in case of an error
                 }
 
-                itemInfo.Node.DataRuns.Clear(); // we do not need data runs any more
+                logger.DebugFmt("NON-Resident ATTR_DATA Data Runs Count: {}, Stream Name: '{}'.", itemInfo.Node.DataRuns.Count(), nameOfAttrA);
+
+                itemInfo.DataStreamNames.SetValue(nameOfAttrW, itemInfo.Node.DataRuns);
+
+                // save data runs count only for the main (with empty name) data attribute (main data stream)
+                if (nameOfAttrA == STREAM_NONAME)
+                {
+                    uint64_t lcnCnt = 0;
+                    for (auto& rli : itemInfo.Node.DataRuns) lcnCnt += rli.len;
+                    itemInfo.DataLCNsCount = lcnCnt;
+                }
 
                 break;
             }
@@ -603,11 +497,15 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
 
                 logger.InfoFmt("Non-Resident ATTR_BITMAP ('{}') has been met. MFT Rec ID {}", nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
               
+                // most MFT record have BITMAP attribute with '$I30' name
+                // however special MFT records (#0...#33) have BITMAP attribute with other names
+                // special records have the following attr names: $O, $R, <empty> (for $MFT file record)
                 if (nameOfAttrA != "$I30")
                     logger.InfoFmt("Non-Resident ATTR_BITMAP has non standard attribute name '{}' while standard name is '$I30'. MFT Rec ID {}", 
                               nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
 
-                assert(nameOfAttrA == "$I30");
+                // all non-Internal BITMAP attrs have name '$I30'
+                if (!IsMFTRecInternal(mftRec->IndexMFTRec)) assert(nameOfAttrA == "$I30");
 
                 if (!ParseNonresBitmap(currAttr, itemInfo.Node.Bitmap))
                 {
@@ -646,7 +544,6 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
             }
             case ATTR_LIST_ATTR: // NON-resident. ATTR_LIST_ATTR can be either resident and non-resident
             {
-               // logger.Info("NON-Resident ATTR_LIST has been met");
                 logger.Debug("NON-Resident ATTR_LIST_ATTR START");
 
                 assert(isBASERec); // only base records can have ATTR_LIST_ATTR attribute
@@ -662,20 +559,25 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                     break;
                 }
 
-                if (dataRuns.Count() > 1)
-                    logger.InfoFmt("UNUSUAL case. Non-resident ATTR_LIST_ATTR occupies {} data runs instead one.", dataRuns.Count());
+                //if (dataRuns.Count() > 1)
+                //    logger.InfoFmt("UNUSUAL case. Non-resident ATTR_LIST_ATTR occupies {} data runs instead one.", dataRuns.Count());
 
                 THArray<uint32_t> visitedMFTRec;
                 uint32_t currRun = 0;
-                //uint64_t processedAttrSize = 0;
+
+                // "global" (outside of outer loop) counter of processed attributes in ATTR_LIST
+                // sometimes data run list contains 2 data runs, but number of attributes is limited by RealSize value 
+                // and may be limited by first data run only
+                // second data run is "officially" present, but is not parsed because of RealSize
+                uint64_t processedAttrSize = 0;
 
                 while (currRun < dataRuns.Count())
                 {
                     DATA_RUN_ITEM& rli = dataRuns[currRun];
                     logger.DebugFmt("Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
 
-                    if (rli.len > 1)
-                        logger.InfoFmt("UNUSUAL case. Non-resident ATTR_LIST_ATTR datarun item occupies {} LCNs instead of one.", rli.len);
+                    //if (rli.len > 1)
+                    //    logger.InfoFmt("UNUSUAL case. Non-resident ATTR_LIST_ATTR datarun item occupies {} LCNs instead of one.", rli.len);
 
                     auto dataBufSize = rli.len * getVolData().BytesPerCluster;
                     uint8_t* dataBuf = (uint8_t*)alloca(dataBufSize);
@@ -686,14 +588,20 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                     }
 
                     ATTR_LIST_ENTRY* attrEntry = (ATTR_LIST_ENTRY*)dataBuf;
-
+                    
                     //TODO probably we need to parse each cluster separately because end of last attrEntry in cluster#1 does not mean start of first attrEntry in cluster#2
                    
                     uint8_t* attrEntryEnd = dataBuf + dataBufSize;
+                    
+                    //assert(currAttr->nonres.RealSize < getVolData().BytesPerCluster);
+                    ParseAttrList(mftRec->IndexMFTRec, attrEntry, attrEntryEnd, currAttr->nonres.RealSize, processedAttrSize, callReadMftItemInfoPred);
 
-                    assert(currAttr->nonres.RealSize < getVolData().BytesPerCluster);
-                    ::ParseAttrList(mftRec->IndexMFTRec, attrEntry, attrEntryEnd, currAttr->nonres.RealSize, callReadMftItemInfo);
-
+                    if (processedAttrSize >= currAttr->nonres.RealSize)
+                    {
+                        logger.DebugFmt("Outer loop is finished by this condition: 'processedAttrSize >= realSize'. Last Attr: {}, realSize: {}", 
+                                AttrName(attrEntry->AttrType), currAttr->nonres.RealSize);
+                        break;
+                    }
                     /*assert(attrEntry->AttrSize > 0);
                     assert(attrEntry->AttrType > 0);
                     assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
@@ -799,24 +707,29 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
         currAttr = (MFT_ATTR_HEADER*)Add2Ptr(currAttr, currAttr->AttrSize);
         assert(mftRec->FileRecSize > Diff2Ptr(mftRec, currAttr));
 
-    } while (*((DWORD*)currAttr) != ATTR_END /*0xFFFFFFFF*/);
+    } while (*((DWORD*)currAttr) != ATTR_END);
 
     // only for base MFT records
     if (isBASERec)
     {
-        // once we read all attributes we are ready to process ALLOC data runs
-        if (itemInfo.Node.DataRuns.Count() > 0)
+        // once we read all attributes we are ready to process ALLOC data runs which exist for Dir type only
+        // when DataRuns.Count()==0 it means that all files (small number of files) are fit into INDEX_ROOT attribute
+        if (itemInfo.IsDir() && (itemInfo.Node.DataRuns.Count() > 0))
         {
             assert(itemInfo.AttrCounters[MakeAttrTypeIndex(ATTR_ALLOC)] > 0);
 
             // single function but different behaviour of adding files/dirs into lists
-            // in other place where ProcessAllocDataRuns called lambda adds found dirs into another list
+            // in other place where ProcessDataRuns called lambda adds found dirs into another list
             if (!ProcessDataRuns(itemInfo.Node, processAllocPred))
             {
                 logger.Error("ProcessAllocDataRuns finished with error.");
                 //return is not needed here because node.FileList may contain items from INDEX_ROOT and partially from ALLOCATION
             }
         }
+
+        // just to free some memory
+        itemInfo.Node.DataRuns.Clear();
+        itemInfo.Node.Bitmap.Clear();
 
         logger.DebugFmt("---------- FINISHED Reading BASE MFT Record ({}) ---------", MFT_REF::toHexString(mftRec->IndexMFTRec));
     }
@@ -844,7 +757,15 @@ bool TMFTStatCollector::ReadMftItems(MFT_REF startMftRecRef, uint32_t dirLevel)
         return false;
     }
 
+    assert(itemInfo.Node.Bitmap.Count() == 0);
+    assert(itemInfo.Node.DataRuns.Count() == 0);
+
+    if (!itemInfo.IsDir())
+        assert(itemInfo.DataStreamNames.Count() > 0); // file always has at least one data stream
+
+    itemInfo.FilesCount = itemInfo.Node.FileList.Count();
     FItemsList.AddValue(itemInfo);
+
 
     for (auto& item : itemInfo.Node.FileList)
     {     
@@ -900,9 +821,11 @@ void TMFTStatCollector::ShowVolumeStat()
     auto DirFilenamesCountEQ1 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.FileNames.Count() == 1; });
     auto HasNonresAttrList = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.NonResidentAttrList; });
     auto HasNonresBitmap = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.NonResidentBitmap; });
-    auto HasResidentData = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.ResidentData; });
+    auto HasResidentData = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.HasResidentDataAttr; });
+    auto HasNonResidentData = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.HasNonResidentDataAttr; });
     auto ReparsePointsCount = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MakeAttrTypeIndex(ATTR_REPARSE)] > 0; });
-    auto LoggedUtilityStreamCountGreater2 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MakeAttrTypeIndex(ATTR_LOGGED_UTILITY_STREAM)] > 2; });
+    auto LoggedUtilityStreamCountGreater1 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MakeAttrTypeIndex(ATTR_LOGGED_UTILITY_STREAM)] > 1; });
+    auto HasObjectID = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MakeAttrTypeIndex(ATTR_ID)] > 0; });
     auto DoesNotHaveDataAttribute = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MakeAttrTypeIndex(ATTR_DATA)] == 0; });
     auto DirsHardLinksGreater2 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.HardLinksCount > 2; });
 
@@ -910,6 +833,8 @@ void TMFTStatCollector::ShowVolumeStat()
     auto maxAttrs = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.AttrsCount < b.AttrsCount; });
     auto maxFilenames = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.FileNames.Count() < b.FileNames.Count(); });
     auto maxDataStreams = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.DataStreamNames.Count() < b.DataStreamNames.Count(); });
+    auto maxDataLCNsCount = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.DataLCNsCount < b.DataLCNsCount; });
+    auto maxFilesInDirCount = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.FilesCount < b.FilesCount; });
 
     uint32_t FileNamesTotalSymbols = std::accumulate(FItemsList.begin(), FItemsList.end(), (uint32_t)0,
         [](uint32_t acc, ITEM_INFO& x) 
@@ -938,28 +863,32 @@ void TMFTStatCollector::ShowVolumeStat()
     std::cout << "Filenames Count = 0: " << FilenamesCountEQ0 << std::endl;
     std::cout << "Dir Filenames Count > 2: " << DirFilenamesCountGreater2 << std::endl;
     std::cout << "Dir Filenames Count = 1: " << DirFilenamesCountEQ1 << std::endl;
-    std::cout << "Logged Utility Streams Count > 2: " << LoggedUtilityStreamCountGreater2 << std::endl;
+    std::cout << "Logged Utility Streams Count > 1: " << LoggedUtilityStreamCountGreater1 << std::endl;
     std::cout << "Reparse Points Count: " << ReparsePointsCount << std::endl;
     std::cout << "Have non-resident ATTR_LIST: " << HasNonresAttrList << std::endl;
     std::cout << "Have non-resident BITMAP: " << HasNonresBitmap << std::endl;
     std::cout << "Have resident Data: " << HasResidentData << std::endl;
+    std::cout << "Have non-resident Data: " << HasNonResidentData << std::endl;
+    std::cout << "Have Object ID: " << HasObjectID << std::endl;
     std::cout << "DOES NOT have Data attribute: " << DoesNotHaveDataAttribute << std::endl;
     std::cout << "Dirs with Hard Links Count > 2: " << DirsHardLinksGreater2 << std::endl;
-
-    std::cout << "Filenames Average Length: " << FileNamesAverageSymbols << " symbols (" << FileNamesAverageBytes << " bytes)"  << std::endl;
 
     std::cout << std::format("Max Hard Links Count: {}, file name: {} (mft red id: {})", (*maxHardLinks).HardLinksCount, wtos((*maxHardLinks).MainName), MFT_REF::toHexString((*maxHardLinks).RecID.sId.low)) << std::endl;
     std::cout << std::format("Max Attrs Count: {}, file name: {} (mft rec id: {})", (*maxAttrs).AttrsCount, wtos((*maxAttrs).MainName), MFT_REF::toHexString((*maxAttrs).RecID.sId.low)) << std::endl;
     std::cout << std::format("Max File Names Count: {}, file name: {} (mft rec id: {})", (*maxFilenames).FileNames.Count(), wtos((*maxFilenames).MainName), MFT_REF::toHexString((*maxFilenames).RecID.sId.low)) << std::endl;
-    std::cout << std::format("Max Data Streams Count: {}, filename:{} (mft rec id: {})", (*maxDataStreams).DataStreamNames.Count(), wtos((*maxDataStreams).MainName), MFT_REF::toHexString((*maxDataStreams).RecID.sId.low)) << std::endl;
+    std::cout << std::format("Max Data Streams Count: {}, filename: {} (mft rec id: {})", (*maxDataStreams).DataStreamNames.Count(), wtos((*maxDataStreams).MainName), MFT_REF::toHexString((*maxDataStreams).RecID.sId.low)) << std::endl;
+    std::cout << std::format("Max Data Runs Count: {}, filename: {} (mft rec id: {})", (*maxDataLCNsCount).DataLCNsCount, wtos((*maxDataLCNsCount).MainName), (*maxDataLCNsCount).RecID.toHexString()) << std::endl;
+    std::cout << std::format("Max Files Count in Dir: {}, filename: {} (mft rec id: {})", (*maxFilesInDirCount).FilesCount, wtos((*maxFilesInDirCount).MainName), (*maxFilesInDirCount).RecID.toHexString()) << std::endl;
+
+    std::cout << std::endl << "Filenames Average Length: " << FileNamesAverageSymbols << " symbols (" << FileNamesAverageBytes << " bytes)" << std::endl;
 
     std::wcout << std::endl << L"Datastream names for "<< (*maxDataStreams).MainName.c_str() << ":" << std::endl;
     for (auto ds : (*maxDataStreams).DataStreamNames)
     {
         if(ds.first.empty())
-            std::wcout << L"<empty> - " << ds.second << std::endl;
+            std::wcout << L"<empty> - data runs count " << ds.second.Count() << std::endl;
         else
-            std::wcout << ds.first << " - " << ds.second << std::endl;
+            std::wcout << ds.first << L" - data runs count " << ds.second.Count() << std::endl;
     }
 
    /* std::wcout << std::endl << "File names for " << (*maxFilenames).MainName.c_str() << ":" << std::endl;
@@ -1030,9 +959,9 @@ void TMFTStatCollector::ShowVolumeStat()
     Ticks::Finish(_T("Saving time"));
     */
 
-    std::cout << "Freeing memory..." << std::endl;
+    std::cout << std::endl << "Freeing memory..." << std::endl;
     FItemsList.ClearMem();
-    std::cout << "Freed" << std::endl;
+    std::cout << "Freed" << std::endl << std::endl;
 
     Ticks::PrintCon(1);
 }
