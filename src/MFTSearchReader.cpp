@@ -148,7 +148,6 @@ bool TMFTReaderBase::ProcessAllocDataRuns(DIR_NODE& node, AddFileAttrPred pred)
 *   ATTR_LIST_ATTR - goes to child records and parses 4 listed above attributes from there
 *   ATTR_ALLOC - only does data runs decoding, does not go to LCNs.
 * mftRec buffer should be volData.BytesPerMFTRec size
-* @param volData Contains general information about volume, need for LoadMFTRecord function and for others
 * @param mftRecData Pointer to MFT_FILE_RECORD structure in memory
 * @param node Will be filled with BITMAP and Data Runs data
 * @param parentIdx Index of parent item in upper level. Need for connection read items to parent item.
@@ -163,7 +162,7 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
         {
             // do not add NTFS internal files that are in root dir and start from $
             //if (!AttrIsNtfsInt(attr))
-                level->AddValue(parentIdx, /*level->Level(),*/ ref, attr);
+                level->AddValue(parentIdx, ref, attr);
         };
 
     MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecData;
@@ -186,7 +185,7 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
     switch (mftRec->Flags)
     {
     case MFT_FLAG_IN_USE: logger.Debug("MFT Rec Type: 'IN USE' (file or anything else)"); break;
-    case MFT_FLAG_IS_DIRECTORY: logger.Debug("MFT Rec Type: DIRECTORY"); break;
+    case MFT_FLAG_IS_DIRECTORY: logger.Warn("MFT Rec Type: DELETED Directory - unusual case"); break;
     case MFT_FLAG_IN_USE | MFT_FLAG_IS_DIRECTORY: logger.DebugFmt("MFT Rec Type: 'FILE or DIRECTORY' {:#x}", (uint16_t)mftRec->Flags); break;
     default:
         logger.WarnFmt("MFT Rec Type: UNKNOWN {:#x}", (uint16_t)mftRec->Flags);
@@ -257,7 +256,7 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
             }
             case ATTR_LIST_ATTR: // Resident. ATTR_LIST_ATTR can be either resident or non-resident
             {
-                logger.Debug("resident ATTR_LIST_ATTR START");
+                logger.Debug("Resident ATTR_LIST_ATTR START");
 
                 assert(IsBASERec); // ATTR_LIST cannot be located in child record
                 assert(node.FileList.Count() == 0);
@@ -281,9 +280,6 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
                     // because some attributes reside in base mft record and the others in "child" mft record(s)
                     // the attr list attribute itself is located in cluster that is not mft record, it does not contain signature or Fixups values, etc.
                     
-                    //if (attrEntry->ref.sId.low != mftRec->IndexMFTRec)
-                    //{
-
                     if ((attrListItem->AttrType == ATTR_ALLOC) || (attrListItem->AttrType == ATTR_ROOT) || (attrListItem->AttrType == ATTR_BITMAP))
                     {
                         // StartVCN might be >0 when one attribute does not fit into one MFT record.
@@ -314,7 +310,6 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
                             }
                         }
                     }
-                    //}
 
                     attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
                     //if (attrListItem->AttrType == ATTR_ZERO) break;
@@ -325,7 +320,7 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
                     assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
                 }
 
-                logger.Debug("resident ATTR_LIST_ATTR FINISHED");
+                logger.Debug("Resident ATTR_LIST_ATTR FINISHED");
 
                 break;
             }
@@ -365,13 +360,19 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
                 logger.WarnFmt("UNKNOWN Resident ATTR has been met. Attr: {0}, AttrName: {1}, MFT Rec ID: {2:#x} ({2})", AttrName(currAttr->AttrType), nameOfAttrA, mftRec->IndexMFTRec);
             } //switch
         }
-        else // Attribute is NON-resident
+        else // Attribute is NON-Resident
         {
             logger.DebugFmt("Attr StartVCN: {}",     currAttr->nonres.StartVCN);
             logger.DebugFmt("Attr LastVCN: {}",      currAttr->nonres.LastVCN);
             logger.DebugFmt("Attr RealSize: {}",     currAttr->nonres.RealSize);
             logger.DebugFmt("Attr StreamSize: {}",   currAttr->nonres.StreamSize);
             logger.DebugFmt("Attr AllocatedSize: {}",currAttr->nonres.AllocatedSize);
+
+            if (currAttr->nonres.CompressionUnitSize > 0) // for compressed files
+            {
+                logger.DebugFmt("Attr CompressionUnitSize: {}", currAttr->nonres.CompressionUnitSize);
+                logger.DebugFmt("Attr CompressedSize: {}", currAttr->nonres.CompressedSize);
+            }
 
             // this is rare case when file contains non-initialised portion of data
             // in this case RealSize contains total file size while StreamSize contains size of initialised data (StreamSize<RealSize) 
@@ -385,7 +386,7 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
 
             switch (currAttr->AttrType)
             {
-            case ATTR_BITMAP: // NON-resident. ATTR_BITMAP can be either resident and non-resident
+            case ATTR_BITMAP: // NON-Resident. ATTR_BITMAP can be either resident and non-resident
             {
                 logger.InfoFmt("Non-Resident ATTR_BITMAP ('{}') has been met. MFT Rec ID {}", nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
             
@@ -463,52 +464,49 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
                     // attributes in attr list located in a separate cluster may refer back to the base record
                     // because some attributes reside in base mft record and the others in "child" mft record(s)
                     // the attr list attribute itself is located in cluster that is not mft record, it does not contain signature or Fixups values, etc.
-                    //if (attrListItem->ref.sId.low != mftRec->IndexMFTRec)
-                    //{
 
-                        if ((attrListItem->AttrType == ATTR_ALLOC) || (attrListItem->AttrType == ATTR_ROOT) || (attrListItem->AttrType == ATTR_BITMAP))
+                    if ((attrListItem->AttrType == ATTR_ALLOC) || (attrListItem->AttrType == ATTR_ROOT) || (attrListItem->AttrType == ATTR_BITMAP))
+                    {
+                        // StartVCN might be >0 when one attribute does not fit into one MFT record.
+                        // This attribute may have very long Data Run list or anything else
+                        // In this case ATTR_LIST contains several ATTR_LIST_ENTRY entries for this big attribute.
+                        // First entry has StartVCN=0, others - prevEntry.StartVCN+num_of_vcns_in_prevEntry_dataruns, etc.
+                        // all these entries build up a continious list of VCNs 
+                        if (attrListItem->AttrType == ATTR_ALLOC) // StartVCN should be 0 for all attrs except ATTR_DATA and ATTR_ALLOC
                         {
-                            // StartVCN might be >0 when one attribute does not fit into one MFT record.
-                            // This attribute may have very long Data Run list or anything else
-                            // In this case ATTR_LIST contains several ATTR_LIST_ENTRY entries for this big attribute.
-                            // First entry has StartVCN=0, others - preventry.StartVCN+num_of_vcns_in_preventry_dataruns, etc.
-                            // all these entries build up a continious list of VCNs 
-                            if (attrListItem->AttrType == ATTR_ALLOC) // StartVCN should be 0 for all attrs except ATTR_DATA and ATTR_ALLOC
+                            // StartVCN is a cluster where attribute portion value is located
+                            if (attrListItem->StartVCN != 0)
                             {
-                                // StartVCN is a cluster where attribute portion value is located
-                                if (attrListItem->StartVCN != 0)
-                                {
-                                    logger.WarnFmt("One attribute does not fit into one MFT record. StartVCN: {}, AttrType: {}, ref: {}, MFT Rec ID: {}",
-                                          attrListItem->StartVCN, AttrName(attrListItem->AttrType), attrListItem->ref.toHexString(), MFT_REF::toHexString(mftRec->IndexMFTRec));
-                                }
+                                logger.WarnFmt("One attribute does not fit into one MFT record. StartVCN: {}, AttrType: {}, ref: {}, MFT Rec ID: {}",
+                                    attrListItem->StartVCN, AttrName(attrListItem->AttrType), attrListItem->ref.toHexString(), MFT_REF::toHexString(mftRec->IndexMFTRec));
+                            }
+                        }
+                        else
+                        {
+                            if (attrListItem->StartVCN != 0)
+                                logger.WarnFmt("Looks like we have met incorrect case. StartVCN({}) <> 0 for {} attribute. MFT Rec ID: {}.",
+                                    attrListItem->StartVCN, AttrName(attrListItem->AttrType), MFT_REF::toHexString(mftRec->IndexMFTRec));
+                            assert(attrListItem->StartVCN == 0);
+                        }
+
+                        if (visitedMFTRec.IndexOf(attrListItem->ref.sId.low) == -1) // make sure we parse each record only once
+                        {
+                            uint8_t* mftRecBuf = FLoader.LoadMFTRecordCache(attrListItem->ref);
+                            assert(mftRecBuf != nullptr);
+                            if (mftRecBuf)
+                            {
+                                //TODO There may be a case when 2 attributes located in a one child MFT record. 
+                                // They will be parsed twice now. Think of solution for it. 
+                                if (!ParseMFTRecord(mftRecBuf, node, parentIdx, level))
+                                    logger.Error("ParseMFTRecord finished with error.");
                             }
                             else
                             {
-                                if (attrListItem->StartVCN != 0)
-                                    logger.WarnFmt("Looks like we have met incorrect case. StartVCN({}) <> 0 for {} attribute. MFT Rec ID: {}.",
-                                        attrListItem->StartVCN, AttrName(attrListItem->AttrType), MFT_REF::toHexString(mftRec->IndexMFTRec));
-                                assert(attrListItem->StartVCN == 0);
+                                logger.Error("LoadMFTRecordCache returned nullptr.");
                             }
 
-                            if (visitedMFTRec.IndexOf(attrListItem->ref.sId.low) == -1) // make sure we parse each record only once
-                            {
-                                uint8_t* mftRecBuf = FLoader.LoadMFTRecordCache(attrListItem->ref);
-                                assert(mftRecBuf != nullptr);
-                                if (mftRecBuf)
-                                {
-                                    //TODO There may be a case when 2 attributes located in a one child MFT record. 
-                                    // They will be parsed twice now. Think of solution for it. 
-                                    if (!ParseMFTRecord(mftRecBuf, node, parentIdx, level))
-                                        logger.Error("ParseMFTRecord finished with error.");
-                                }
-                                else
-                                {
-                                    logger.Error("LoadMFTRecordCache returned nullptr.");
-                                }
-
-                                visitedMFTRec.AddValue(attrListItem->ref.sId.low);
-                            }
-                      //  }
+                            visitedMFTRec.AddValue(attrListItem->ref.sId.low);
+                        }
                     }
 
                     attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
@@ -656,6 +654,7 @@ bool TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentIte
             if (ntfs_is_indx_recp(allocIndex->RecHeader.Signature))
             {
                 assert(VCN == allocIndex->vcn);
+                UNREFERENCED_PARAMETER(VCN);
 
                 auto pihdr = &(allocIndex->ihdr);
                 GetFileList(pihdr, addToFileListPred);
