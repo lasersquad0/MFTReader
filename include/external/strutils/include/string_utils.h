@@ -39,6 +39,9 @@ typedef std::stringstream stringstream_t;
 //void Trim(std::string& str); //Note: str will be changed upon function return
 void TrimAndUpper(std::string& str); //Note: str will be changed upon function return
 
+// special non-template function for wchar_t*
+//template<>
+std::string wtos(const wchar_t* wstr);
 
 template<class WSTRING>
 std::string wtos(const WSTRING& wstr)
@@ -110,11 +113,6 @@ std::wstring stow(const STRING& str)
 }
 
 typedef wchar_t* pwchar_t; // needed for proper specialization for wchar_t*
-
-// special non-template function for wchar_t*
-template<>
-std::string wtos<wchar_t*>(const pwchar_t& wstr);
-
 
 // makes conversion between string and wstring back and forth
 template<typename T>
