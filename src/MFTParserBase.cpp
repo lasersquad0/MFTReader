@@ -14,7 +14,7 @@
 * @param node Contains Data Runs to be processed, and Bitmap that tells us what LCNs are valid.
 * @param pred Predicate used for processing each LCN.
 */
-bool TMFTParserBase::ProcessDataRuns(DIR_NODE& node, /*AddFileAttrPred*/ProcessLCNsPred pred)
+bool TMFTParserBase::ProcessDataRuns(DIR_NODE& node, ProcessLCNsPred pred)
 {
     GET_LOGGER;
     logger.Debug("---------- PROCESSING Alloc Attr Data Runs ---------");
@@ -307,11 +307,11 @@ void TMFTParserBase::GetFileList(INDEX_HDR* ihdr, AddFileAttrPred pred)
                 pred(fattr, de->ref);
             }
 
-            std::wstring ciwnm(GetFName(fattr), fattr->FileNameLen);
+            std::wstring wnm(GetFName(fattr), fattr->FileNameLen);
             logger.DebugFmt("DE ATTR Parent Rec ID: {}", fattr->ParentDir.toHexString()); //TODO check that parent of each file refers to MFT Rec we are currently parsing
             logger.DebugFmt("DE ATTR File Name Type: '{}' ({:#x})", FileNameTypes[fattr->NameType], fattr->NameType);
             logger.DebugFmt("DE ATTR DOS Attrib: {:#x} {}", fattr->dup.FileAttrib, FormatFileAttributes(fattr->dup.FileAttrib));
-            logger.DebugFmt("DE ATTR Name: '{}'", wtos(ciwnm));
+            logger.DebugFmt("DE ATTR Name: '{}'", wtos(wnm));
             logger.DebugFmt("DE ATTR File Size: {}", fattr->dup.FileSize);
 
             /*logger.Debug(FileDateToString("DE ATTR Created: ", fattr->dup.CreateTime));
@@ -383,10 +383,10 @@ void TMFTParserBase::GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileL
             assert(de->key_size = sizeof(ATTR_FILE_NAME) + fattr->FileNameLen);
             assert((fattr->dup.FileAttrib & FILE_ATTRIBUTE_NORMAL) == 0);// check that NORMAL bit is always zero
 
-            std::wstring ciwnm(GetFName(fattr), fattr->FileNameLen);
+            std::wstring wnm(GetFName(fattr), fattr->FileNameLen);
             logger.DebugFmt("Dir Entry Parent Rec ID: {}", fattr->ParentDir.toHexString());
             logger.DebugFmt("Dir Entry File Name Type: '{}' ({:#x})", FileNameTypes[fattr->NameType], fattr->NameType);
-            logger.DebugFmt("Dir Entry File/Dir name: '{}'", wtos(ciwnm));
+            logger.DebugFmt("Dir Entry File/Dir name: '{}'", wtos(wnm));
             logger.DebugFmt("Dir Entry File DOS Attrib: {:#x} {}", fattr->dup.FileAttrib, FormatFileAttributes(fattr->dup.FileAttrib));
             logger.DebugFmt("Dir Entry File Size: {}", fattr->dup.FileSize);
 
@@ -396,7 +396,7 @@ void TMFTParserBase::GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileL
             */
             if (fattr->NameType != FILE_NAME_DOS) // bypass DOS filenames
             {
-                fnames.AddValue({ convert_string<ci_string::value_type>(ciwnm).c_str(), *fattr, de->ref });//TODO wtos(ciwnm).c_str() may be incorrect for unicode and non-unicode settings
+                fnames.AddValue({ convert_string<ci_string::value_type>(wnm).c_str(), *fattr, de->ref });//TODO wtos(ciwnm).c_str() may be incorrect for unicode and non-unicode settings
             }
         }
 
@@ -410,19 +410,27 @@ void TMFTParserBase::GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileL
     }
 }
 
-// returns pointer to the first met ATTR_FILENAME attribute in mftRec
+// returns pointer to the first met non-DOS ATTR_FILENAME attribute in mftRec
+// called for dir MFT recs only
+// dir MFT rec can contain either one or two ATTR_FILENAME attributes, one of two is DOS attribute
+//TODO do we need to process ATTR_LIST here? because ATTR_FILENAMEs can be located in other MFT records 
 ATTR_FILE_NAME* TMFTParserBase::GetFirstFileNameAttr(MFT_FILE_RECORD* mftRec)
 {
     PMFT_ATTR_HEADER currAttr = (MFT_ATTR_HEADER*)Add2Ptr(mftRec, mftRec->FirstAttrOffset);
     assert(currAttr->res.DataSize + currAttr->res.DataOffset <= currAttr->AttrSize);
+    // should be called for dir MFT rec only
+    assert(mftRec->Flags == (MFT_FLAG_IN_USE | MFT_FLAG_IS_DIRECTORY));
+
+    ATTR_FILE_NAME* attrFNameNDOS{ 0 }, * attrFNames[2]{ 0,0 };
+    uint ind = 0;
 
     do
     {
         if (currAttr->AttrType == ATTR_FILENAME)
         {
-            // bypass DOS file names
-            auto attrFName = (ATTR_FILE_NAME*)Add2Ptr(currAttr, currAttr->res.DataOffset);
-            if (attrFName->NameType != FILE_NAME_DOS) return attrFName;
+            attrFNameNDOS = (ATTR_FILE_NAME*)Add2Ptr(currAttr, currAttr->res.DataOffset);
+            attrFNames[ind++] = attrFNameNDOS;
+            if (attrFNameNDOS->NameType == FILE_NAME_DOS) attrFNameNDOS = nullptr;
         }
 
         assert(currAttr->AttrSize > 0);
@@ -431,19 +439,38 @@ ATTR_FILE_NAME* TMFTParserBase::GetFirstFileNameAttr(MFT_FILE_RECORD* mftRec)
 
     } while (*((uint32_t*)currAttr) != ATTR_END);
 
-    //TODO or just return nullptr in this case?
-    throw std::runtime_error("[GetFirstFileNameAttr] Attribute ATTR_FILENAME not found in MFT Rec!");
+    if (attrFNames[0] == nullptr) //TODO or just return nullptr in this case?
+        throw std::runtime_error("[GetFirstFileNameAttr] Attribute ATTR_FILENAME not found in MFT Rec!");
+
+    assert(attrFNameNDOS); // non-DOS filename should always present
+
+#ifndef NDEBUG    
+    if (ind == 1) // if one, it should be non-DOS filename 
+    {
+        assert(attrFNameNDOS == attrFNames[0]);
+        assert(attrFNames[0]->NameType != FILE_NAME_DOS);
+    }
+
+    if (ind == 2)
+    {
+        // at least one of two needs to be non-DOS filename
+        assert((attrFNames[0]->NameType != FILE_NAME_DOS) || (attrFNames[1]->NameType != FILE_NAME_DOS));
+    }
+#endif
+
+    return attrFNameNDOS;
 }
 
 // fills array attrFileNames with pointers to all ATTR_FILENAME attributes which mftRec contains
 // attrFileNames is cleared each time before filling with new values
+//TODO need to go to ATTR_LIST and get ATTR_FILENAME attrs from there
 void TMFTParserBase::GetFileNameAttrPointers(MFT_FILE_RECORD* mftRec, THArray<ATTR_FILE_NAME*>& attrFileNames)
 {
     attrFileNames.Clear();
 
     PMFT_ATTR_HEADER currAttr = (MFT_ATTR_HEADER*)Add2Ptr(mftRec, mftRec->FirstAttrOffset);
     ATTR_FILE_NAME* attrFName;
-    THArray<uint32_t> parents;
+    THash<uint32_t, std::wstring> parents;
 
     assert(currAttr->res.DataSize + currAttr->res.DataOffset <= currAttr->AttrSize);
 
@@ -454,11 +481,15 @@ void TMFTParserBase::GetFileNameAttrPointers(MFT_FILE_RECORD* mftRec, THArray<AT
         if (currAttr->AttrType == ATTR_FILENAME)
         {
             attrFName = (ATTR_FILE_NAME*)Add2Ptr(currAttr, currAttr->res.DataOffset);
+            
             if (attrFName->NameType != FILE_NAME_DOS)
             {
-                assert(parents.IndexOf(attrFName->ParentDir.sId.low) == -1); // all FileName parents should be different (excluding FILE_NAME_DOS)
+                std::wstring wnm(GetFName(attrFName), attrFName->FileNameLen);
+
+                if (parents.IfExists(attrFName->ParentDir.sId.low)) // all pairs (FileName, parent ID) should be different (excluding FILE_NAME_DOS)
+                    assert(parents[attrFName->ParentDir.sId.low] != wnm);
                 attrFileNames.AddValue(attrFName);
-                parents.AddValue(attrFName->ParentDir.sId.low);
+                parents.SetValue(attrFName->ParentDir.sId.low, wnm);
             }
         }
 
@@ -472,14 +503,15 @@ void TMFTParserBase::GetFileNameAttrPointers(MFT_FILE_RECORD* mftRec, THArray<AT
 
 std::wstring TMFTParserBase::GetPathByAttrFileName(ATTR_FILE_NAME* attrFileName)
 {
-    THArray<std::wstring> apath;
+    THArray<std::wstring> arrPath;
     ATTR_FILE_NAME* attrFName = attrFileName;
     size_t ssize = 0;
+
     uint8_t* mftRecBuf = (uint8_t*)alloca(getVolData().BytesPerMFTRec);
     MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
 
     std::wstring str(GetFName(attrFName), attrFName->FileNameLen);
-    apath.AddValue(str);
+    arrPath.AddValue(str);
     ssize += str.size();
 
     do
@@ -487,23 +519,25 @@ std::wstring TMFTParserBase::GetPathByAttrFileName(ATTR_FILE_NAME* attrFileName)
         if (!FLoader.LoadMFTRecord(attrFName->ParentDir, mftRecBuf))
         {
             // throw exception because this is kind of critical error for this function
-            throw std::runtime_error("[PathFromMFTRecID] LoadMFTRecord call failed!");
+            throw std::runtime_error("[GetPathByAttrFileName] LoadMFTRecord call failed!");
         }
 
+        // dir can contain only one or two filenames
+        // in case of two - one is DOS another is WIN
         attrFName = GetFirstFileNameAttr(mftRec);
 
         str.assign(GetFName(attrFName), attrFName->FileNameLen);
-        apath.AddValue(str);
+        arrPath.AddValue(str);
         ssize += str.size();
 
     } while (attrFName->ParentDir.sId.low != MFT_ROOT_REC_ID);
 
     std::wstring result;
-    result.reserve((size_t)(ssize * 1.1)); //TODO pay attention here later
-    apath.Reverse();
-
+    result.reserve((size_t)(ssize * 1.1)); //TODO 1.1 is for backslashes, pay attention here later
     result = getVolData().Name;
-    for (auto it = apath.begin(); it != apath.end(); ++it) {
+    arrPath.Reverse();
+
+    for (auto it = arrPath.begin(); it != arrPath.end(); ++it) {
         result += '\\';
         result += *it;
     }
@@ -511,6 +545,7 @@ std::wstring TMFTParserBase::GetPathByAttrFileName(ATTR_FILE_NAME* attrFileName)
     return result;
 }
 
+// there can be several paths starting from one MFT record, because of hard links.
 bool TMFTParserBase::GetPathByMFTRecID(MFT_REF mftRecRef, THArray<std::wstring>& paths)
 {
     THArray<ATTR_FILE_NAME*> attrFileNames;
@@ -521,10 +556,10 @@ bool TMFTParserBase::GetPathByMFTRecID(MFT_REF mftRecRef, THArray<std::wstring>&
     if (!FLoader.LoadMFTRecord(mftRecRef, mftRecBuf))
     {
         // throw exception because this is kind of critical error for this function
-        throw std::runtime_error("[PathFromMFTRecID] LoadMFTRecord call failed!");
+        throw std::runtime_error("[GetPathByMFTRecID] LoadMFTRecord call failed!");
     }
 
-    GetFileNameAttrPointers(mftRec, attrFileNames); // get all file names except for DOS one
+    GetFileNameAttrPointers(mftRec, attrFileNames); // get all file names except for DOS ones
 
     for (auto attrFName : attrFileNames)
     {
@@ -533,6 +568,59 @@ bool TMFTParserBase::GetPathByMFTRecID(MFT_REF mftRecRef, THArray<std::wstring>&
 
     return true;
 }
+
+// fills array attrValues[] with pointers to all attributes which mftRec contains
+// DOES NOT go inside ATTR_LIST_ATTR even if present (for optimization purposes)
+// for ATTR_FILE_NAME and ATTR_LOGGED_UTILITY_STREAM only last such attribute placed into attrValues
+// assumes that attrValues has allocated size for ATTR_TYPE_CNT items
+void TMFTParserBase::FillAttrCollection(MFT_FILE_RECORD* mftRec, TAttrCollection& collection)
+{
+    MFT_ATTR_HEADER* currAttr = (MFT_ATTR_HEADER*)Add2Ptr(mftRec, mftRec->FirstAttrOffset);
+    do
+    {
+        assert(mftRec->FileRecSize > Diff2Ptr(mftRec, currAttr));
+        if (currAttr->NonResidentFlag == 0)
+            assert(currAttr->res.DataSize + currAttr->res.DataOffset <= currAttr->AttrSize);
+
+        if (currAttr->AttrType != ATTR_LIST_ATTR)
+        {
+            collection.Set(currAttr);
+        }
+        else
+        {
+            GET_LOGGER;
+
+            if (currAttr->NonResidentFlag == 1)
+            {
+                logger.Debug("[FillAttrCollection] ATTR_LIST_ATTR non-resident START");
+
+                if (!ParseNonresAttrList(currAttr, collection))
+                {
+                    logger.Error("ParseNonresAttrList returned error.");
+                    return;
+                }
+
+                return;
+            }
+            else // ATTR_LIST is Resident
+            {
+                logger.Debug("[FillAttrCollection] ATTR_LIST_ATTR resident START");
+
+                assert(currAttr->NonResidentFlag == 0);
+
+                ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(currAttr, currAttr->res.DataOffset);
+                uint8_t* currAttrEnd = (uint8_t*)currAttr + currAttr->AttrSize;
+
+                FillCollectionFromAttrList(attrListItem, currAttrEnd, currAttrEnd, collection); //TODO add error check
+
+            }
+        }
+
+        assert(currAttr->AttrSize > 0);
+        currAttr = (MFT_ATTR_HEADER*)Add2Ptr(currAttr, currAttr->AttrSize);
+    } while (*((uint32_t*)currAttr) != ATTR_END);
+}
+
 
 // fills array attrValues[] with pointers to all attributes which mftRec contains
 // DOES NOT go inside ATTR_LIST_ATTR even if present (for optimization purposes)
@@ -550,9 +638,9 @@ void TMFTParserBase::FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* a
 
         // all atributes except ATTR_FILENAME and ATTR_LOGGED_UTILITY_STREAM should be in a single copy in one MFT rec
         if ((currAttr->AttrType != ATTR_FILENAME) && (currAttr->AttrType != ATTR_LOGGED_UTILITY_STREAM))
-            assert(attrValues[MakeAttrTypeIndex(currAttr->AttrType)] == nullptr);
+            assert(attrValues[MATI(currAttr->AttrType)] == nullptr);
 
-        attrValues[MakeAttrTypeIndex(currAttr->AttrType)] = currAttr;
+        attrValues[MATI(currAttr->AttrType)] = currAttr;
 
         assert(currAttr->AttrSize > 0);
         currAttr = (MFT_ATTR_HEADER*)Add2Ptr(currAttr, currAttr->AttrSize);
@@ -561,9 +649,10 @@ void TMFTParserBase::FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* a
     } while (*((uint32_t*)currAttr) != ATTR_END);
 }
 
-// returns true if requested attribute found in ATTR_LIST
-// otherwise returns false 
-bool TMFTParserBase::ParseAttrList(ATTR_LIST_ENTRY* startListItem, ATTR_TYPE attrType, uint8_t* attrListEnd1, uint8_t* attrListEnd2, PMFT_ATTR_HEADER* result)
+// returns true if requested attribute found in ATTR_LIST otherwise returns false 
+// for resident ATTR_LIST it is called from GetAttr()
+// for non-resident ATTR_LIST it is called from ParseNonresAttrList()
+bool TMFTParserBase::GetAttrFromAttrList(ATTR_LIST_ENTRY* startListItem, ATTR_TYPE attrType, uint8_t* attrListEnd1, uint8_t* attrListEnd2, PMFT_ATTR_HEADER* result)
 {
     GET_LOGGER;
 
@@ -587,15 +676,15 @@ bool TMFTParserBase::ParseAttrList(ATTR_LIST_ENTRY* startListItem, ATTR_TYPE att
             {
                 PMFT_ATTR_HEADER attrValues2[ATTR_TYPE_CNT];
                 FillAttrValues(mftRec, attrValues2);
-                PMFT_ATTR_HEADER currAttr2 = attrValues2[MakeAttrTypeIndex(attrType)];
+                PMFT_ATTR_HEADER currAttr2 = attrValues2[MATI(attrType)];
                 assert(currAttr2);
-                assert(attrValues2[MakeAttrTypeIndex(ATTR_LIST_ATTR)] == nullptr); // this is check that no ATTR_LIST_ATTR inside ATTR_LIST_ATTR
+                assert(attrValues2[MATI(ATTR_LIST_ATTR)] == nullptr); // this is check that no ATTR_LIST_ATTR inside ATTR_LIST_ATTR
 
                 //TODO optimization - for attributes other than ATTR_ALLOC return immediately when first value found
                 if (currAttr2)
                     result[resIndex++] = currAttr2;
                 else
-                    logger.WarnFmt("[ParseAttrList] Attr: {} cannot be found is ATTR_LIST.", AttrName(attrType));
+                    logger.WarnFmt("[GetAttrFromAttrList] Attr: {} cannot be found is ATTR_LIST.", AttrName(attrType));
 
                 assert(resIndex < SAME_ATTR_CNT);
             }
@@ -603,7 +692,7 @@ bool TMFTParserBase::ParseAttrList(ATTR_LIST_ENTRY* startListItem, ATTR_TYPE att
             {
                 // error loading MFT record
                 // do not break loop and trying to load more records
-                logger.Error("[ParseAttrList] LoadMFTRecordCache returned NULL MFT record!");
+                logger.Error("[GetAttrFromAttrList] LoadMFTRecordCache returned NULL MFT record!");
                 //return;
             }
         }
@@ -619,10 +708,52 @@ bool TMFTParserBase::ParseAttrList(ATTR_LIST_ENTRY* startListItem, ATTR_TYPE att
 
     if (resIndex == 0) // no requested attribute found in ATTR_LIST
     {
-        logger.ErrorFmt("[ParseAttrList] Attr: {} is not found in the ATTR_LIST.", AttrName(attrListItem->AttrType));
+        logger.ErrorFmt("[GetAttrFromAttrList] Attr: {} is not found in the ATTR_LIST.", AttrName(attrListItem->AttrType));
         assert((attrType == ATTR_BITMAP) || (attrType == ATTR_ALLOC)); // only these two types can be missing
         return false;
     }
+
+    return true;
+}
+
+// fills attr collection with all attrs from ATTR_LIST
+// for resident ATTR_LIST it is called from GetAttr()
+// for non-resident ATTR_LIST it is called from ParseNonresAttrList()
+bool TMFTParserBase::FillCollectionFromAttrList(ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd1, uint8_t* attrListEnd2, TAttrCollection& collection)
+{
+    GET_LOGGER;
+
+    ATTR_LIST_ENTRY* attrListItem = startListItem;
+
+    assert(attrListItem->AttrSize > 0);
+    assert(attrListItem->AttrType > 0);
+    assert(attrListItem->StartVCN == 0);
+    assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
+
+    while (true)
+    {
+            MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)FLoader.LoadMFTRecordCache(attrListItem->ref);
+            assert(mftRec != nullptr);
+            if (mftRec)
+            {
+                FillAttrCollection(mftRec, collection);
+            }
+            else
+            {
+                // error loading MFT record
+                // do not break loop and trying to load more records
+                logger.Error("[GetAttrFromAttrList] LoadMFTRecordCache returned NULL MFT record!");
+                //return;
+            }
+
+        attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
+        if (((uint8_t*)attrListItem >= attrListEnd1)) break;
+        if (((uint8_t*)attrListItem >= attrListEnd2)) break;
+        assert(attrListItem->AttrType > 0);
+        assert(attrListItem->AttrSize > 0);
+        assert(attrListItem->StartVCN == 0);
+        assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero        
+    } //while
 
     return true;
 }
@@ -643,6 +774,7 @@ bool TMFTParserBase::ParseNonresAttrList(MFT_ATTR_HEADER* attrListAttr, ATTR_TYP
 
     ZeroMemory(result, SAME_ATTR_CNT * sizeof(result[0]));
 
+    assert(attrListAttr->AttrType == ATTR_LIST_ATTR);
     assert(attrListAttr->NonResidentFlag == 1);
 
     TDataRuns dataRuns;
@@ -651,16 +783,16 @@ bool TMFTParserBase::ParseNonresAttrList(MFT_ATTR_HEADER* attrListAttr, ATTR_TYP
         return false;
     }
 
-    assert(dataRuns.Count() == 1); // assuming that one data run is always enough for list of attributes
     if (dataRuns.Count() > 1)
         logger.InfoFmt("[ParseNonresAttrList] UNUSUAL case. Non-resident ATTR_LIST_ATTR occupies {} data runs instead one.", dataRuns.Count());
+    assert(dataRuns.Count() == 1); // assuming that one data run is always enough for list of attributes
 
     DATA_RUN_ITEM& rli = dataRuns[0];
     logger.DebugFmt("[ParseNonresAttrList] Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
 
-    assert(rli.len == 1); // assuming that one LCN is always enough for list of attributes
     if (rli.len > 1)
         logger.InfoFmt("[ParseNonresAttrList] UNUSUAL case. Non-resident ATTR_LIST_ATTR datarun item occupies {} LCNs instead of one.", rli.len);
+    assert(rli.len == 1); // assuming that one LCN is always enough for list of attributes
 
     auto dataBufSize = rli.len * getVolData().BytesPerCluster;
     uint8_t* dataBuf = (uint8_t*)alloca(dataBufSize);
@@ -670,72 +802,67 @@ bool TMFTParserBase::ParseNonresAttrList(MFT_ATTR_HEADER* attrListAttr, ATTR_TYP
         return false;
     }
 
+    assert(attrListAttr->nonres.RealSize < getVolData().BytesPerCluster); //may be incorrect assumption
+    
     ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)dataBuf;
     uint8_t* dataBufEnd1 = dataBuf + dataBufSize;
     uint8_t* dataBufEnd2 = dataBuf + attrListAttr->nonres.RealSize;
 
-    if (!ParseAttrList(attrListItem, attrType, dataBufEnd1, dataBufEnd2, result))
+    if (!GetAttrFromAttrList(attrListItem, attrType, dataBufEnd1, dataBufEnd2, result))
         return false;
 
-    /*
-    assert(attrListItem->AttrSize > 0);
-    assert(attrListItem->AttrType > 0);
-    assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
+    return true;
+}
 
-    uint32_t resIndex = 0;
-    while (true) // loop by LCNs in one data run
+bool TMFTParserBase::ParseNonresAttrList(MFT_ATTR_HEADER* attrListAttr, TAttrCollection& collection)
+{
+    GET_LOGGER_FUNC;
+
+    assert(attrListAttr->AttrType == ATTR_LIST_ATTR);
+    assert(attrListAttr->NonResidentFlag == 1);
+
+    TDataRuns dataRuns;
+    if (!DecodeDataRuns(attrListAttr, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
     {
-        if (attrListItem->AttrType == attrType)
-        {
-            MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)LoadMFTRecordCache(volData, attrListItem->ref);
-            assert(mftRec != nullptr);
-            if (mftRec)
-            {
-                PMFT_ATTR_HEADER attrValues2[ATTR_TYPE_CNT];
-                FillAttrValues(mftRec, attrValues2);
-                PMFT_ATTR_HEADER currAttr2 = attrValues2[MakeAttrTypeIndex(attrType)];
-                assert(currAttr2);
-                assert(attrValues2[MakeAttrTypeIndex(ATTR_LIST_ATTR)] == nullptr); // this is check that no ATTR_LIST_ATTR inside ATTR_LIST_ATTR
+        return false;
+    }
 
-                //TODO optimization - for attributes other than ATTR_ALLOC return immediately when first value found
-                if (currAttr2)
-                    result[resIndex++] = currAttr2;
-                else
-                    logger.WarnFmt("[ParseNonresAttrList] Attr: {} cannot be found is non-resident ATTR_LIST.", AttrName(attrType));
+    if (dataRuns.Count() > 1)
+        logger.InfoFmt("[ParseNonresAttrList] UNUSUAL case. Non-resident ATTR_LIST_ATTR occupies {} data runs instead one.", dataRuns.Count());
+    assert(dataRuns.Count() == 1); // assuming that one data run is always enough for list of attributes
 
-                assert(resIndex < SAME_ATTR_CNT);
-            }
-            else
-            {
-                // error loading MFT record
-                // do not break loop and trying to load more records
-                logger.Error("[ParseNonresAttrList] LoadMFTRecordCache returned null MFT record!");
-                //return;
-            }
-        }
+    DATA_RUN_ITEM& rli = dataRuns[0];
+    logger.DebugFmt("[ParseNonresAttrList] Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
 
+    if (rli.len > 1)
+        logger.InfoFmt("[ParseNonresAttrList] UNUSUAL case. Non-resident ATTR_LIST_ATTR datarun item occupies {} LCNs instead of one.", rli.len);
+    assert(rli.len == 1); // assuming that one LCN is always enough for list of attributes
 
-        attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
-        if (((uint8_t*)attrListItem >= dataBufEnd1)) break;
-        if (((uint8_t*)attrListItem >= dataBufEnd2)) break;
-        assert(attrListItem->AttrType > 0);
-        assert(attrListItem->AttrSize > 0);
-        assert(attrListItem->StartVCN == 0);
-        assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
-    } //while
+    auto dataBufSize = rli.len * getVolData().BytesPerCluster;
+    uint8_t* dataBuf = (uint8_t*)alloca(dataBufSize);
 
-    if(resIndex == 0)
-        logger.ErrorFmt("[ParseNonresAttrList] Attr: {} not found in the non-resident ATTR_LIST in LCN {}.", AttrName(attrListItem->AttrType), rli.lcn);
-    */
+    if (!ReadClusters(rli.lcn, rli.len, dataBuf)) // ReadClusters writes a message into log file in case of an error
+        return false;
+
+    assert(attrListAttr->nonres.RealSize < getVolData().BytesPerCluster); //may be incorrect assumption
+
+    ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)dataBuf;
+    uint8_t* dataBufEnd1 = dataBuf + dataBufSize;
+    uint8_t* dataBufEnd2 = dataBuf + attrListAttr->nonres.RealSize;
+
+    if (!FillCollectionFromAttrList(attrListItem, dataBufEnd1, dataBufEnd2, collection))
+        return false;
+
     return true;
 }
 
 // goes to ATTR_LIST when needed to get requested attribute
+//TODO what if MFT record contains several attrType attributes e.g. several ATTR_FILENAMEs?
 void TMFTParserBase::GetAttr(ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues, PMFT_ATTR_HEADER* result)
 {
     ZeroMemory(result, SAME_ATTR_CNT * sizeof(result[0]));
 
-    PMFT_ATTR_HEADER currAttr = attrValues[MakeAttrTypeIndex(attrType)];
+    MFT_ATTR_HEADER* currAttr = attrValues[MakeAttrTypeIndex(attrType)];
     if (currAttr)
     {
         result[0] = currAttr; // if attr is found return it
@@ -770,7 +897,7 @@ void TMFTParserBase::GetAttr(ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const a
 
         return;
     }
-    else // ATTR_LIST is resident
+    else // ATTR_LIST is Resident
     {
         logger.Debug("[GetAttr] ATTR_LIST_ATTR resident START");
 
@@ -779,7 +906,7 @@ void TMFTParserBase::GetAttr(ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const a
         ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(currAttr, currAttr->res.DataOffset);
         uint8_t* currAttrEnd = (uint8_t*)currAttr + currAttr->AttrSize;
 
-        ParseAttrList(attrListItem, attrType, currAttrEnd, currAttrEnd, result);//TODO add error check
+        GetAttrFromAttrList(attrListItem, attrType, currAttrEnd, currAttrEnd, result);//TODO add error check
 
         if (result[0] == nullptr)
             logger.Debug("[GetAttr] ATTR_LIST_ATTR resident FINISHED NULL");
@@ -1057,6 +1184,93 @@ int32_t TMFTParserBase::GetFileListFromMFTRec(MFT_FILE_RECORD* mftRec, DIR_NODE&
 
     return node.FileList.Count();
 }
+
+
+//parses either resident or non-resident ATTR_LIST
+void TMFTParserBase::ParseAttrList(MFTRecIndex indexMFTRec, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, uint64_t& processedAttrSize, AttrListPred processChildMFTRecPred)
+{
+    GET_LOGGER;
+
+    //uint64_t processedAttrSize = 0;
+
+    ATTR_LIST_ENTRY* attrEntry = startListItem;
+
+    assert(attrEntry->AttrSize > 0);
+    assert(attrEntry->AttrType > 0);
+    // assert(attrEntry->StartVCN == 0);
+    assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
+    assert(attrEntry->AttrType != ATTR_ZERO);
+    assert(attrEntry->AttrType != ATTR_END);
+
+    THArray<uint32_t> visitedMFTRec;
+
+    // this is do not not parse current indexMFTRec again when reading attrEntry->ref MFT record   
+    // because attrs located in current MFT rec either already parsed or will be parsed during usual cycle of parsing 
+    visitedMFTRec.AddValue(indexMFTRec);
+
+    while (true)
+    {
+        // StartVCN might be >0 when one attribute does not fit into one MFT record.
+        // This attribute may have very long Data Run list or anything else
+        // In this case ATTR_LIST contains several ATTR_LIST_ENTRY entries for this big attribute.
+        // First entry has StartVCN=0, others - preventry.StartVCN+num_of_vcns_in_preventry_dataruns, etc.
+        // all these entries build up a continious list of VCNs 
+        if ((attrEntry->AttrType != ATTR_DATA) && (attrEntry->AttrType != ATTR_ALLOC))  // StartVCN should be 0 for all attrs except ATTR_DATA and ATTR_ALLOC
+        {
+            if (attrEntry->StartVCN != 0)
+                logger.WarnFmt("Looks like we have met incorrect case. StartVCN({}) <> 0 for {} attribute. MFT Rec ID: {}.",
+                    attrEntry->StartVCN, AttrName(attrEntry->AttrType), MFT_REF::toHexString(indexMFTRec));
+            assert(attrEntry->StartVCN == 0);
+        }
+
+        // attributes in non-resident attr list located in a separate LCN cluster may refer back to the base record
+        // because some attributes may reside in base mft record and the others in "child" mft record(s)
+        // the attr list attribute itself is located in LCN cluster that is not mft record, it does not contain signature or Fixups values, etc.
+
+        if (visitedMFTRec.IndexOf(attrEntry->ref.sId.low) == -1) // whether we haven't parsed this MFT record yet
+        {
+            processChildMFTRecPred(attrEntry->ref);
+            // attrEntry->ref is a MFT rec where attr value is located
+            //if (!ReadMftItemInfo(volData, attrEntry->ref, itemInfo))
+            //{
+            //    logger.Error("ReadMftItemInfo() returned false!");
+            //}
+            visitedMFTRec.AddValue(attrEntry->ref.sId.low);
+        }
+
+        // StartVCN is a cluster where attribute portion value is located
+        if (attrEntry->StartVCN != 0)
+        {
+            assert((attrEntry->AttrType == ATTR_DATA) || (attrEntry->AttrType == ATTR_ALLOC));
+            if (attrEntry->AttrType != ATTR_DATA)
+                logger.WarnFmt("One attribute does not fit into one MFT record. StartVCN: {}, AttrType: {}, ref: {}, MFT Rec ID: {}",
+                    attrEntry->StartVCN, AttrName(attrEntry->AttrType), attrEntry->ref.toHexString(), MFT_REF::toHexString(indexMFTRec));
+        }
+
+        processedAttrSize += attrEntry->AttrSize;
+        if (processedAttrSize >= realSize)
+        {
+            logger.DebugFmt("Loop is finished by this condition: 'processedAttrSize >= realSize'. Last Attr: {}, realSize: {}", AttrName(attrEntry->AttrType), realSize);
+            break;
+        }
+
+        attrEntry = (ATTR_LIST_ENTRY*)Add2Ptr(attrEntry, attrEntry->AttrSize);
+
+        if ((uint8_t*)attrEntry >= attrListEnd)
+        {
+            logger.InfoFmt("Loop is finished by this condition: 'attrEntry >= attrEntryEnd' (end of buffer with clusters). Last Attr: {}, currAttr->nonres.RealSize: {}",
+                AttrName(attrEntry->AttrType), realSize);
+            break;
+        }
+
+        assert(attrEntry->AttrType > 0);
+        assert(attrEntry->AttrSize > 0);
+        assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
+        assert(attrEntry->AttrType != ATTR_ZERO);
+        assert(attrEntry->AttrType != ATTR_END);
+    }
+}
+
 
 /**
 * @brief Returns MFT Record ID (low part of it) for specified path string
