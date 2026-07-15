@@ -30,7 +30,7 @@ LogEngine::Logger& GetLoggerFunc()
 }
 
 // Supports both 10based mftRecID and hex format. 
-MFTRecIndex StringToMFTRecID(string_t strMFTRecID)
+MFTRecIndex StringToMFTRecID(const string_t& strMFTRecID)
 {
     auto recIdStr = TrimSPCRLF(strMFTRecID);
     
