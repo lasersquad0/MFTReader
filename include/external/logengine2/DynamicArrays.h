@@ -367,10 +367,10 @@ public:
 	// readonly method that just calcualted size in bytes of element in the array
 	inline uint ItemSize() const override { return sizeof(T); }
 
-	// number of element stored in the array
+	// number of elements stored in the array
 	inline uint Count() const override { return FCount; }
 
-	// just zeroes number of elements in the array.
+	// just sets the number of elements in the array to zero.
 	// allocated memory remains allocated
 	void		Clear() override { FCount = 0; }
 	
