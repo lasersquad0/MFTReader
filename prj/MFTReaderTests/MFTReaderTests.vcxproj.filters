@@ -22,6 +22,16 @@
     <ClCompile Include="..\..\src\MFTParserBase.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="MFTRawImagesTest.cpp" />
+    <ClCompile Include="MFTDataRunsTest.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="MFTPlainRecordsTest.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\include\external\strutils\src\string_utils.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -33,5 +43,13 @@
     <Filter Include="Tests">
       <UniqueIdentifier>{69e32b82-9d5c-4ce0-97f5-9c7ce3f6d870}</UniqueIdentifier>
     </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="MFTBaseParamTest.h">
+      <Filter>Tests</Filter>
+    </ClInclude>
+    <ClInclude Include="TestUtils.h">
+      <Filter>Tests</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
