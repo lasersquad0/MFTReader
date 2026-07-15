@@ -8,8 +8,8 @@
 
 
 // special non-template function for wchar_t*
-template<>
-std::string wtos<wchar_t*>(const pwchar_t& wstr)
+//template<>
+std::string wtos(const wchar_t* wstr)
 {
     std::wstring wwstr(wstr);
     int len = WideCharToMultiByte(CP_UTF8, 0 /*WC_NO_BEST_FIT_CHARS*/, wwstr.data(), (int)wwstr.length(), nullptr, 0, nullptr, nullptr);
