@@ -458,15 +458,13 @@ struct ATTR_OBJECT_ID
 {
     GUID ObjId;	        // 0x00: Unique Id assigned to file.
     GUID BirthVolumeId; // 0x10: Birth Volume Id is the Object Id of the Volume on.
-    // which the Object Id was allocated. It never changes.
-    GUID BirthObjectId; // 0x20: Birth Object Id is the first Object Id that was
-    // ever assigned to this MFT Record. I.e. If the Object Id
-    // is changed for some reason, this field will reflect the
-    // original value of the Object Id.
-    GUID DomainId;	    // 0x30: Domain Id is currently unused but it is intended to be
-    // used in a network environment where the local machine is
-    // part of a Windows 2000 Domain. This may be used in a Windows
-    // 2000 Advanced Server managed domain.
+                        // which the Object Id was allocated. It never changes.
+    GUID BirthObjectId; // 0x20: Birth Object Id is the first Object Id that was ever assigned to this MFT Record. 
+                        // I.e. If the Object Id is changed for some reason, this field will reflect the
+                        // original value of the Object Id.
+    GUID DomainId;	    // 0x30: Domain Id is currently unused, but it is intended to be used in a network environment 
+                        // where the local machine is part of a Windows 2000 Domain. 
+                        // This may be used in a Windows 2000 Advanced Server managed domain.
 }; // 0x40
 
 static_assert(sizeof(ATTR_OBJECT_ID) == 0x40);
@@ -545,8 +543,7 @@ struct NTFS_DE
     uint16_t res;		// 0x0E:
 
     // Here any indexed attribute can be placed.
-    // One of them is:
-    // struct ATTR_FILE_NAME 
+    // One of them is: ATTR_FILE_NAME 
 
     // The last 8 bytes of this structure can contain the VCN of subnode.
     // This field is presented only if (flags & NTFS_IE_HAS_SUBNODES)
