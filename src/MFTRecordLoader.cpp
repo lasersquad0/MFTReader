@@ -1,8 +1,6 @@
 
 #include "Readers.h"
 
-
-
 // make volume look like \\.\\C: 
 string_t IRecordLoader::ParseVolume(const string_t& vol)
 {
@@ -18,18 +16,6 @@ string_t IRecordLoader::ParseVolume(const string_t& vol)
         if (vol.size() == 1) return string_t{ _T("\\\\.\\") } + vol[0] + _T(':'); // extract C, append ':'
         return string_t{ _T("\\\\.\\") } + vol[0] + vol[1]; // extract 'C:' from vol
     }
-}
-
-// closes volume handle opened by OpenVolume
-// clears data about volume, clears caches
-void TMFTRecordLoader::CloseVolume()
-{
-    GET_LOGGER;
-    logger.DebugFmt("Closing volume: {}", wtos(FVolumeData.Name));
-
-    CloseHandle(FVolumeData.hVolume);
-    ZeroMemory(&FVolumeData, sizeof(FVolumeData));
-    FMFTRecCache.Clear();
 }
 
 void TMFTRecordLoader::OpenVolume(const string_t& vol)
@@ -52,21 +38,20 @@ void TMFTRecordLoader::OpenVolume(const string_t& vol)
         auto errMsg = GetErrorMessageTextA(err, "CreateFile");
         logger.Error(errMsg);
         throw std::system_error(std::error_code(err, std::system_category()), errMsg);
-        //throw std::runtime_error(errMsg); // "Error opening volume.");
     }
 
-    //NTFS_VOLUME_DATA_BUFFER nvdb{0};
     DWORD bytesReturned;
-
-    if (!DeviceIoControl(hVolume, FSCTL_GET_NTFS_VOLUME_DATA, 0, 0, &FVolumeData /*&nvdb*/, sizeof(NTFS_VOLUME_DATA_BUFFER /*nvdb*/), &bytesReturned, nullptr))
+    // this is correct that we pass sizeof(NTFS_VOLUME_DATA_BUFFER) because DeviceIoControl expects NTFS_VOLUME_DATA_BUFFER
+    if (!DeviceIoControl(hVolume, FSCTL_GET_NTFS_VOLUME_DATA, 0, 0, &FVolumeData, sizeof(NTFS_VOLUME_DATA_BUFFER), &bytesReturned, nullptr))
     {
         DWORD err = GetLastError();
 
-        std::string errMsg = GetErrorMessageTextA(err, "DeviceIoControl"); //std::format("[DeviceIoControl] Error reading volume data. Volume: {}, error: {}", wtos(volume), GetLastError());
+        std::string errMsg = GetErrorMessageTextA(err, "DeviceIoControl"); 
         logger.Error(errMsg);
         throw std::system_error(std::error_code(err, std::system_category()), errMsg);
-        //throw std::runtime_error(errMsg); // "Error reading volume data.");
     }
+
+    assert(FVolumeData.BytesPerMFTRec == DEFAULT_BYTES_PER_MFT_REC); // always 1024 ??
 
     FVolumeData.hVolume = hVolume;
     FVolumeData.Name = convert_string<wchar_t>(vol2.substr(4)); // remove \\.\ from \\.\C:
@@ -80,7 +65,6 @@ bool TMFTRecordLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
 
     NTFS_FILE_RECORD_INPUT_BUFFER nfrib{ 0 };
     nfrib.FileReferenceNumber.LowPart = mftRecRef.sId.low;
-    //nfrib.FileReferenceNumber.QuadPart = nvdb.MftValidDataLength.QuadPart / nvdb.BytesPerFileRecordSegment - 1;
 
     //ULONG cb = __builtin_offsetof(NTFS_FILE_RECORD_OUTPUT_BUFFER, FileRecordBuffer[volData.BytesPerMFTRec]);
     ULONG cb = offsetof(NTFS_FILE_RECORD_OUTPUT_BUFFER, FileRecordBuffer[FVolumeData.BytesPerMFTRec]);
@@ -120,7 +104,7 @@ bool TMFTRecordLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
         if ((mftRecRef.sId.seq > 0) && (mftRecord->SeqNum != mftRecRef.sId.seq))
         {
             GET_LOGGER;
-            logger.WarnFmt("MFT record SEQ numbers differs from each other. Looks like MFT record is deleted or overwritten. From Dir: {}, From MFT Rec ID Seq: {:#x}",
+            logger.WarnFmt("MFT record SEQ numbers differs from each other. Looks like MFT record is overwritten. From Dir: {}, From MFT Rec ID Seq: {:#x}",
                 mftRecRef.toHexString(), mftRecord->SeqNum);
         }
         //diff in Seq is not major problem, allow to continue app work
@@ -135,21 +119,3 @@ bool TMFTRecordLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
     return true;
 }
 
-// returns NULL if error occurred during loading MFT record
-uint8_t* TMFTRecordLoader::LoadMFTRecordCache(MFT_REF mftRecRef)
-{
-    uint8_t** result = FMFTRecCache.GetValuePointer(mftRecRef.sId.low);
-    if (result == nullptr) // no value in cache, load MFT record from disk
-    {
-        uint8_t* mftRecBuf = DBG_NEW uint8_t[FVolumeData.BytesPerMFTRec];
-        if (!LoadMFTRecord(mftRecRef, mftRecBuf))
-            return nullptr; // error loading MFT record, it means that DeviceIoControl failed with error
-
-        //we use mftRecRef.sId.low here because high part of mftRecRef.Id may change when MFT record is modified
-        FMFTRecCache.SetValue(mftRecRef.sId.low, mftRecBuf); // update cache
-
-        return mftRecBuf;
-    }
-
-    return *result; // return MFT record from cache
-}
