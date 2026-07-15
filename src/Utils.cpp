@@ -4,6 +4,7 @@
 
 #include "Debug.h"
 #include <string>
+#include <cassert>
 #include <windows.h>
 #include <shlwapi.h>
 #include <strsafe.h>
