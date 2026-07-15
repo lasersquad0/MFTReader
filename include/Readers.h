@@ -13,9 +13,41 @@ public:
 	static string_t ParseVolume(const string_t& vol);
 	virtual const VOLUME_DATA& GetVolumeData() const { return FVolumeData; }
 	virtual void OpenVolume(const string_t& vol) = 0;
-	virtual void CloseVolume() = 0;
 	virtual bool LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) = 0;
-	virtual uint8_t* LoadMFTRecordCache(MFT_REF mftRecRef) = 0;
+
+	virtual uint8_t* LoadMFTRecordCache(MFT_REF mftRecRef) // returns NULL if error occurred during loading MFT record
+	{
+		uint8_t** result = FMFTRecCache.GetValuePointer(mftRecRef.sId.low);
+		if (result == nullptr) // no value in cache, load MFT record from disk
+		{
+			uint8_t* mftRecBuf = DBG_NEW uint8_t[FVolumeData.BytesPerMFTRec];
+			if (!LoadMFTRecord(mftRecRef, mftRecBuf))
+				return nullptr; // error loading MFT record
+
+			//we use mftRecRef.sId.low here because high part of mftRecRef.Id may change when MFT record is modified
+			FMFTRecCache.SetValue(mftRecRef.sId.low, mftRecBuf); // update cache
+
+			return mftRecBuf;
+		}
+
+		return *result; // return MFT record from cache
+	}
+
+	virtual void CloseVolume()
+	{
+		// closes volume handle opened by OpenVolume
+		// clears data about volume, clears caches
+
+		GET_LOGGER;
+		logger.DebugFmt("Closing volume: {}", wtos(FVolumeData.Name));
+
+		CloseHandle(FVolumeData.hVolume);
+		auto& volDataBuf = (NTFS_VOLUME_DATA_BUFFER&)FVolumeData;
+		ZeroMemory(&volDataBuf, sizeof(NTFS_VOLUME_DATA_BUFFER));
+		FVolumeData.hVolume = INVALID_HANDLE_VALUE;
+		FVolumeData.Name.clear();
+		FMFTRecCache.Clear();
+	}
 };
 
 class TMFTRecordLoader : public IRecordLoader
@@ -24,9 +56,9 @@ public:
 	TMFTRecordLoader() { }
 	TMFTRecordLoader(const string_t& vol) { OpenVolume(vol); }
 	void OpenVolume(const string_t& vol) override;
-	void CloseVolume() override;
+	//void CloseVolume() override;
 	bool LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override;
-	uint8_t* LoadMFTRecordCache(MFT_REF mftRecRef) override;
+	//uint8_t* LoadMFTRecordCache(MFT_REF mftRecRef) override;
 };
 
 
@@ -40,17 +72,22 @@ public:
 
 	bool FixupUSA(uint8_t* dataBuf, DATA_RUN_ITEM& rli, uint64_t rlilen);
 	void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues);
+	void FillAttrCollection(MFT_FILE_RECORD* mftRec, TAttrCollection& collection);
+	bool FillCollectionFromAttrList(ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd1, uint8_t* attrListEnd2, TAttrCollection& collection);
+
 	void GetAttr(ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues, PMFT_ATTR_HEADER* result);
 	void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnames);
 	void GetFileList(INDEX_HDR* ihdr, AddFileAttrPred pred);
 
 	bool ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf);
 	bool ParseNonresAttrList(MFT_ATTR_HEADER* attrListAttr, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result);
-	bool ParseAttrList(ATTR_LIST_ENTRY* startListItem, ATTR_TYPE attrType, uint8_t* attrListEnd1, uint8_t* attrListEnd2, PMFT_ATTR_HEADER* result);
+	bool ParseNonresAttrList(MFT_ATTR_HEADER* attrListAttr, TAttrCollection& collection);
+	bool GetAttrFromAttrList(ATTR_LIST_ENTRY* startListItem, ATTR_TYPE attrType, uint8_t* attrListEnd1, uint8_t* attrListEnd2, PMFT_ATTR_HEADER* result);
 	bool ParseNonresBitmap(MFT_ATTR_HEADER* attr, TBitField& bitmap);
 	bool ParseBitmap(MFT_ATTR_HEADER* attr, TBitField& bitmap);
 	void ParseIndexRoot(MFT_ATTR_HEADER* attr, TLCNRecs& lcns, TFileList& fileList);
 	bool ParseAlloc(MFT_ATTR_HEADER* attr, TDataRuns& dataRuns);
+	void ParseAttrList(MFTRecIndex indexMFTRec, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, uint64_t& processedAttrSize, AttrListPred processChildMFTRecPred);
 	bool ProcessDataRuns(DIR_NODE& node, ProcessLCNsPred pred);
 	bool DecodeDataRuns(MFT_ATTR_HEADER* attr, TDataRuns& runs);
 	
