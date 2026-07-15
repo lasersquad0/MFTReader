@@ -18,6 +18,8 @@
 #define MFT_LOGGER_NAME_FUNC "mftlogfunc"
 #define MFT_LOGGER_NAME_LIST "mftlist"
 
+constexpr uint32_t DEFAULT_BYTES_PER_MFT_REC = 1024;
+
 #define GET_LOGGER auto& logger = LogEngine::GetLogger(MFT_LOGGER_NAME)
 #define GET_LOGGER_FUNC auto& logger = GetLoggerFunc()
 
@@ -39,6 +41,7 @@
 // Attr types have numbers 0x10, 0x20, 0x30, etc. - convert them into consecutive indexes in the array
 // used for indexing ATTR_TYPE_NAMES array and in some other places
 #define MakeAttrTypeIndex(_) ((_)>>4) 
+#define MATI(_) ((_)>>4) 
 #define AttrName(_) (AttrTypeNames[(_)>>4])
 
 static const char* AttrTypeNames[ATTR_TYPE_CNT] ATTR_TYPE_NAMES;
@@ -76,6 +79,16 @@ struct DIR_NODE
     TBitField Bitmap;   // tells us which LCNs from data runs are valid ones
     uint64_t DirSize = 0;
 
+    uint64_t GetDataRunsLCNsCount()
+    {
+        uint64_t result = 0;
+        for (auto& rli : DataRuns)
+        {
+            result += rli.len;
+        }
+        return result;
+    }
+
     void Clear() 
     {
         FileList.ClearMem();
@@ -87,19 +100,22 @@ struct DIR_NODE
 
 struct ITEM_INFO
 {
-    MFT_REF RecID{0};
-    uint16_t AttrCounters[ATTR_TYPE_CNT]{0};
+    MFT_REF RecID{ 0 };
+    uint16_t AttrCounters[ATTR_TYPE_CNT]{ 0 };
     std::optional<bool> NonResidentAttrList = std::nullopt; // rare case. has an ATTR_LIST attribute that is non-resident
     std::optional<bool> NonResidentBitmap = std::nullopt;   // rare case. has an BITMAP attribute that is non-resident  
-    bool ResidentData{false};   // Has an DATA attribute that is resident. Not so rare case.
-    uint32_t FileAttrib{0};
+    bool HasResidentDataAttr{ false };      // Has resident DATA attribute. Not so rare case.
+    bool HasNonResidentDataAttr{ false }; // Has non-resident DATA attribute
+    uint32_t FileAttrib{ 0 };
 
-    uint16_t HardLinksCount{0};
-    uint16_t AttrsCount{0};
+    uint16_t HardLinksCount{ 0 };
+    uint16_t AttrsCount{ 0 };
+    uint64_t DataLCNsCount{ 0 }; // how many LCNs the file uses. filled for non-resident data attributes only
+    uint32_t FilesCount{ 0 }; // valid for directoriy records only. number of dirs/files in a directory.
     /*ci_string*/std::wstring MainName; // here is ci_string for quicker sorting array of ITEM_INFO
     THArray<std::wstring> FileNames; // contains filenames of all types - DOS, WIN and POSIX
-    THash<std::wstring, uint16_t> DataStreamNames; // data stream name counts groupped by stream name
-    
+    THash<std::wstring, TDataRuns> DataStreamNames; // data stream name counts groupped by stream name
+  
     DIR_NODE Node;
 
     /*bool operator<(const ITEM_INFO& other) const
@@ -110,9 +126,9 @@ struct ITEM_INFO
     bool operator==(const ITEM_INFO& other) const { return RecID.Id == other.RecID.Id; }
 
     bool IsDir() const { return (FileAttrib & (uint32_t)FILE_ATTR_FLAGS::DIRECTORY) > 0; }
-//    bool IsMetaFile() const { return (Attr.ParentDir.sId.low == MFT_ROOT_REC_ID) && (ciName[0] == L'$'); }
-//    bool IsDotDir() const { return (ciName.size() == 1) && (ciName[0] == L'.'); }
-//    bool NtfsInternal() const { return IsMetaFile() || IsDotDir(); }
+    //bool IsMetaFile() const { return (RecID.sId.low == MFT_ROOT_REC_ID) && (ciName[0] == L'$'); }
+    //bool IsDotDir() const { return (ciName.size() == 1) && (ciName[0] == L'.'); }
+    //bool NtfsInternal() const { return IsMetaFile() || IsDotDir(); }
 
     //ITEM_INFO() {};
     //ITEM_INFO(const ITEM_INFO&) = delete;
@@ -147,9 +163,58 @@ struct VOLUME_DATA : public NTFS_VOLUME_DATA_BUFFER
 
 };
 
+class TAttrCollection
+{
+private:
+    THArray<MFT_ATTR_HEADER*> FAttrList;
+    THArray<MFT_ATTR_HEADER*> FFileNames;
+    THArray<MFT_ATTR_HEADER*> FLUS;
+public:
+    TAttrCollection()
+    {
+        FAttrList.SetCount(ATTR_TYPE_CNT);
+        FAttrList.Zero(); // needed to check which attrs are not present (will be nulls in FAttrList)
+    }
+    
+    void Set(MFT_ATTR_HEADER* attr)
+    {
+        assert(attr->AttrType <= ATTR_LOGGED_UTILITY_STREAM); // this is last attribute in list of attr types
+
+        if (attr->AttrType == ATTR_FILENAME)
+        {
+            assert(FFileNames.IndexOf(attr) == -1);
+            FFileNames.AddValue(attr);
+        }
+        else if (attr->AttrType == ATTR_LOGGED_UTILITY_STREAM)
+        {
+            assert(FLUS.IndexOf(attr) == -1);
+            FLUS.AddValue(attr);
+        }
+        else
+        {
+            assert(FAttrList[MATI(attr->AttrType)] == nullptr);
+            FAttrList[MATI(attr->AttrType)] = attr;
+        }
+    }
+
+    MFT_ATTR_HEADER* Get(ATTR_TYPE attrType)
+    {
+        assert((attrType != ATTR_FILENAME) && (attrType != ATTR_LOGGED_UTILITY_STREAM));
+        return FAttrList[MATI(attrType)];
+    }
+
+    THArray<MFT_ATTR_HEADER*>& Get2(ATTR_TYPE attrType)
+    {
+        assert((attrType == ATTR_FILENAME) || (attrType == ATTR_LOGGED_UTILITY_STREAM));
+      
+        if (attrType == ATTR_FILENAME)
+            return FFileNames;
+        else if (attrType == ATTR_LOGGED_UTILITY_STREAM)
+            return FLUS;
+    }
+};
+
 LogEngine::Logger& GetLoggerFunc();
 std::string FormatFileAttributes(uint32_t a);
-
-//string_t ParseVolume(const string_t& vol);
-MFTRecIndex StringToMFTRecID(string_t strMFTRecID);
+MFTRecIndex StringToMFTRecID(const string_t& strMFTRecID);
 
