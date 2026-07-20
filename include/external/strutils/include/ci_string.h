@@ -7,6 +7,8 @@
 #pragma once
 
 #include <string>
+#include <ostream>
+#include "../include/string_utils.h"
 
 template <class CH>
 struct ci_char_traits : public std::char_traits<CH>
@@ -58,3 +60,8 @@ typedef ci_wstring ci_string;
 #else
 typedef ci_astring ci_string;
 #endif
+
+inline void PrintTo(const ci_string& s, std::ostream* os)
+{    
+    *os << convert_string<char>(s);
+}
