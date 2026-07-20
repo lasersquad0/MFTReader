@@ -13,10 +13,10 @@
 #include "BitField.h"
 
 
-#define SAME_ATTR_CNT 5
+//#define SAME_ATTR_CNT 5
 #define MFT_LOGGER_NAME "mftlog"
 #define MFT_LOGGER_NAME_FUNC "mftlogfunc"
-#define MFT_LOGGER_NAME_LIST "mftlist"
+//#define MFT_LOGGER_NAME_LIST "mftlist"
 
 constexpr uint32_t DEFAULT_BYTES_PER_MFT_REC = 1024;
 
@@ -43,6 +43,7 @@ constexpr uint32_t DEFAULT_BYTES_PER_MFT_REC = 1024;
 #define MakeAttrTypeIndex(_) ((_)>>4) 
 #define MATI(_) ((_)>>4) 
 #define AttrName(_) (AttrTypeNames[(_)>>4])
+#define MakeAttrBitmask(_) (1<<((_)>>4))
 
 static const char* AttrTypeNames[ATTR_TYPE_CNT] ATTR_TYPE_NAMES;
 static const char* FileNameTypes[]{ "POSIX", "UNICODE", "DOS", "UNICODE_AND_DOS" };
@@ -209,7 +210,7 @@ public:
       
         if (attrType == ATTR_FILENAME)
             return FFileNames;
-        else if (attrType == ATTR_LOGGED_UTILITY_STREAM)
+        else //if (attrType == ATTR_LOGGED_UTILITY_STREAM)
             return FLUS;
     }
 };
