@@ -3,6 +3,9 @@
 #include "Functions.h"
 #include "Caches.h"
 
+#define STREAM_NONAME "<noname>"
+#define STREAM_NONAME_W L"<noname>"
+
 class IRecordLoader
 {
 protected:
@@ -71,27 +74,29 @@ public:
 	TMFTParserBase(IRecordLoader& loader) : FLoader(loader) {};
 
 	bool FixupUSA(uint8_t* dataBuf, DATA_RUN_ITEM& rli, uint64_t rlilen);
-	void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues);
+	//void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues);
 	void FillAttrCollection(MFT_FILE_RECORD* mftRec, TAttrCollection& collection);
-	bool FillCollectionFromAttrList(ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd1, uint8_t* attrListEnd2, TAttrCollection& collection);
+	void FillAttrCollection(MFT_FILE_RECORD* mftRec, uint32_t attrFilter, TAttrCollection& collection);
+	//bool FillCollectionFromAttrList(MFTRecIndex indexMFTRec, uint32_t attrFilter, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd1, uint8_t* attrListEnd2, TAttrCollection& collection);
 
-	void GetAttr(ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues, PMFT_ATTR_HEADER* result);
+	//void GetAttr(ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues, PMFT_ATTR_HEADER* result);
 	void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnames);
 	void GetFileList(INDEX_HDR* ihdr, AddFileAttrPred pred);
 
 	bool ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf);
-	bool ParseNonresAttrList(MFT_ATTR_HEADER* attrListAttr, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result);
-	bool ParseNonresAttrList(MFT_ATTR_HEADER* attrListAttr, TAttrCollection& collection);
-	bool GetAttrFromAttrList(ATTR_LIST_ENTRY* startListItem, ATTR_TYPE attrType, uint8_t* attrListEnd1, uint8_t* attrListEnd2, PMFT_ATTR_HEADER* result);
+	bool ParseNonresAttrList(MFTRecIndex indexMFTRec, MFT_ATTR_HEADER* attrListAttr, AttrListPred processChildMFTRecPred);
+	bool ParseNonresAttrList(MFTRecIndex indexMFTRec, uint32_t attrFilter, MFT_ATTR_HEADER* attrListAttr, AttrListPred processChildMFTRecPred);
+	//bool GetAttrFromAttrList(ATTR_LIST_ENTRY* startListItem, ATTR_TYPE attrType, uint8_t* attrListEnd1, uint8_t* attrListEnd2, PMFT_ATTR_HEADER* result);
 	bool ParseNonresBitmap(MFT_ATTR_HEADER* attr, TBitField& bitmap);
 	bool ParseBitmap(MFT_ATTR_HEADER* attr, TBitField& bitmap);
 	void ParseIndexRoot(MFT_ATTR_HEADER* attr, TLCNRecs& lcns, TFileList& fileList);
 	bool ParseAlloc(MFT_ATTR_HEADER* attr, TDataRuns& dataRuns);
+	void ParseAttrList(MFTRecIndex indexMFTRec, uint32_t attrFilter, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, uint64_t& processedAttrSize, AttrListPred processChildMFTRecPred);
 	void ParseAttrList(MFTRecIndex indexMFTRec, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, uint64_t& processedAttrSize, AttrListPred processChildMFTRecPred);
 	bool ProcessDataRuns(DIR_NODE& node, ProcessLCNsPred pred);
 	bool DecodeDataRuns(MFT_ATTR_HEADER* attr, TDataRuns& runs);
 	
-	ATTR_FILE_NAME* GetFirstFileNameAttr(MFT_FILE_RECORD* mftRec);
+	ATTR_FILE_NAME* GetFileNameAttr(MFT_FILE_RECORD* mftRec);
 	std::wstring GetPathByAttrFileName(ATTR_FILE_NAME* attrFileName);
 	void GetFileNameAttrPointers(MFT_FILE_RECORD* mftRec, THArray<ATTR_FILE_NAME*>& attrFileNames);
 	
