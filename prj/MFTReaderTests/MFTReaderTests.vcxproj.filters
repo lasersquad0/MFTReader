@@ -22,7 +22,6 @@
     <ClCompile Include="..\..\src\MFTParserBase.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="MFTRawImagesTest.cpp" />
     <ClCompile Include="MFTDataRunsTest.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -31,6 +30,9 @@
     </ClCompile>
     <ClCompile Include="..\..\include\external\strutils\src\string_utils.cpp">
       <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="MFTRawImagesTest.cpp">
+      <Filter>Tests</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
