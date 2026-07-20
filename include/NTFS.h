@@ -33,7 +33,7 @@ Some attrs may not present in MFT Rec. e.g. BITMAP is not created for empty dire
 #include <format>
 
 // mask to remove sequence number of MFT_REF
-#define MFT_REF_MASK 0x0000FFFFFFFFFFFF
+//#define MFT_REF_MASK 0x0000FFFFFFFFFFFF
 
 // volume root MFT rec ID. This is ID of '.' (or c:\) directory
 constexpr uint32_t MFT_ROOT_REC_ID = 5;
@@ -206,6 +206,7 @@ struct MFT_FILE_RECORD
 static_assert(sizeof(MFT_FILE_RECORD) == 0x30);
 
 #define ATTR_TYPE_CNT 18  // includes ATTR_ZERO but does NOT include ATTR_END
+#define ALL_ATTRS_FILTER 0xFFFFFFFF
 
 enum ATTR_TYPE : uint32_t
 {
@@ -570,7 +571,7 @@ struct DATA_RUN_ITEM
     CLST vcn; // Virtual cluster number.
     CLST lcn; // Logical cluster number.
 
-    bool operator==(const DATA_RUN_ITEM& other) const { return len == other.len && vcn == other.vcn && lcn == other.lcn; }
+    bool operator==(const DATA_RUN_ITEM& other) const { return (len == other.len) && (vcn == other.vcn) && (lcn == other.lcn); }
 };
 
 /**
