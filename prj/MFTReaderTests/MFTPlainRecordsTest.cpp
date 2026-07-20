@@ -56,6 +56,7 @@ class MFTPlainRecordsTest : public MFTStringParamTest
 public:
     static void SetUpTestCase()
     {
+        //GTEST_SKIP() << "Temporarily disabled";
         FName = "MFTPlainRecordsTest";
         MFTStringParamTest::SetUpTestCase();
     }
@@ -72,7 +73,7 @@ public:
     // To access the test parameter, call GetParam() from class TestWithParam<T>.
 };
 
-TEST_F(MFTPlainRecordsTest, DISABLED_ReadMftItemInfoBuf_1)
+TEST_P(MFTPlainRecordsTest, ReadMftItemInfoBuf_1)
 {
     auto& fileName = GetParam();
     TMFTPlainRecordsLoader tldr(fileName);
@@ -86,8 +87,8 @@ TEST_F(MFTPlainRecordsTest, DISABLED_ReadMftItemInfoBuf_1)
     {
         ITEM_INFO item; // item declaration should be here in the loop   
 
-        if ((mftRef.sId.low != 0) && (mftRef.sId.low != 9) && (mftRef.sId.low != 24) &&
-            (mftRef.sId.low != 25) && (mftRef.sId.low != 26))
+        if (/*(mftRef.sId.low != 0) && */(mftRef.sId.low != 9) && (mftRef.sId.low != 24) &&
+            (mftRef.sId.low != 25) /*&& (mftRef.sId.low != 26) */ )
         {
             bool res;
             res = tldr.LoadMFTRecord(mftRef, buf);
@@ -96,10 +97,14 @@ TEST_F(MFTPlainRecordsTest, DISABLED_ReadMftItemInfoBuf_1)
             if (!ntfs_is_file_recp(mftRec->RecHeader.Signature) && !ntfs_is_magicp(mftRec->RecHeader.Signature, zero))
                 FAIL() << "MFT record with incorrect signature found " << mftRec->RecHeader.Signature << " (neither 'FILE' nor '0000')";
 
-            // try to parse only 'FILE' records
-            if (ntfs_is_file_recp(mftRec->RecHeader.Signature))
+            // parse only 'IN USE' records, bypass free ones
+            if (mftRec->Flags & MFT_FLAG_IN_USE)
+            {
+                // parse only 'FILE' records
+                ASSERT_TRUE(ntfs_is_file_recp(mftRec->RecHeader.Signature));
                 res = stat.ReadMftItemInfoBuf(mftRec, item);
-            EXPECT_TRUE(res);
+                EXPECT_TRUE(res);
+            }
 
             // when assert() fails inside calling function then Google Test aborts immediately, and do not execute remaining tests
             // to prevent this, cover calling function into ASSERT_DEATH macro.
