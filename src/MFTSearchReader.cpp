@@ -158,7 +158,7 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
 {
     GET_LOGGER;
 
-    AddFileAttrPred pred = [parentIdx, &level](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
+    AddFileAttrPred AddFilePred = [parentIdx, &level](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
         {
             // do not add NTFS internal files that are in root dir and start from $
             //if (!AttrIsNtfsInt(attr))
@@ -250,7 +250,7 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
                 auto pihdr = &(indexR->ihdr);
 
                 // does not go to subnodes
-                GetFileList(pihdr, pred);
+                GetFileList(pihdr, AddFilePred);
 
                 break;
             }
@@ -420,7 +420,7 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
             case ATTR_LIST_ATTR: // NON-resident. ATTR_LIST_ATTR can be either resident and non-resident
             {
                 logger.Info("NON-Resident ATTR_LIST has been met");
-                logger.Debug("NON-Resident ATTR_LIST_ATTR START");
+                logger.Debug("[NON-Resident ATTR_LIST_ATTR] - START PARSING");
 
                 assert(IsBASERec); // ATTR_LIST cannot be located in child record
                 assert(node.FileList.Count() == 0);
@@ -434,7 +434,7 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
                 assert(dataRuns.Count() == 1); //assuming that one data run is always enough for directory attr list
 
                 DATA_RUN_ITEM& rli = dataRuns[0];
-                logger.DebugFmt("Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
+                logger.DebugFmt("Data Run Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
 
                 assert(rli.len == 1); // assuming that one LCN is enough for directory attr list
                 
@@ -518,7 +518,7 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
                     assert(attrListItem->AttrSize > 0);
                 }
 
-                logger.Debug("NON-Resident ATTR_LIST_ATTR FINISH");
+                logger.Debug("[NON-Resident ATTR_LIST_ATTR] - FINISH PARSING");
                 break;
             }
 
@@ -628,7 +628,7 @@ bool TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentIte
     auto level = FFileList.GetLevel(parentItem->FLevel + 1);
     assert(level->Level() == parentItem->FLevel + 1);
     uint32_t startPos = level->Count(); // remember start position for newly added items
-    //CACHE_ITEM* startItem = level->Last(); // NOTE! Last() returns pointer to item that WILL BE added next. Also startItem may become invalid if realloc happened in the level duing adding new items
+    CACHE_ITEM* startItem = level->Last(); // NOTE! Last() returns pointer to item that WILL BE added next. Also startItem may become invalid if realloc happened in the level duing adding new items
 
     DIR_NODE node; //TODO replace two last parameters with predicate FileListPred similar to passed into ProcessAllocDataRuns below.
     if (!ParseMFTRecord(mftRecBuf, node, parentIdx, level))
@@ -680,19 +680,23 @@ bool TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentIte
     auto newcnt = level->Count(); // count will be changing during for loop below 
     CACHE_ITEM* item = nullptr;
 
-    // this is check if realloc has happened in level array during ParseMFTRecord and ProcessAllocDataRuns calls
-    // if it is then startItem pointer became invalid and we need to locate that item again
-    //if(level->Belongs(startItem)) // Belongs will return false when startItem==level->last()
-    //    item = startItem;
-    //else
-    if (newcnt > startPos)
+    if (newcnt > startPos) // whether new items were added (directory is NOT empty)
     {
-        item = level->GetValue(startPos);
-        assert(item->FLevel == parentItem->FLevel + 1);
-        assert(item->FParent == parentIdx);
+        // this is check if realloc has happened in level array during ParseMFTRecord and ProcessAllocDataRuns calls
+        // if it is then startItem pointer became invalid and we need to locate that item again
+        if (level->Belongs(startItem))
+        {
+            item = startItem;
+        }
+        else
+        {
+            item = level->GetValue(startPos);
+            assert(item->FLevel == parentItem->FLevel + 1);
+            assert(item->FParent == parentIdx);
+        }
     }
     
-    // item may be NULL here for empty directories when startPos=newcnt=0
+    // item may be NULL here for empty directories when startPos=newcnt
     
     assert(parentItem->IsDir());
 
