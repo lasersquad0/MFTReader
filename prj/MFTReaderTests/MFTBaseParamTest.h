@@ -13,7 +13,7 @@ public:
     static void SetUpTestCase()
     {
         LogEngine::Logger& logger = LogEngine::GetFileLoggerST(MFT_LOGGER_NAME, MFT_TESTS_LOG_FILE);
-        logger.SetLogLevel(LogEngine::Levels::llDebug);
+        logger.SetLogLevel(LogEngine::Levels::llInfo);
         //logger.Debug("MFTImgFileParserParamTest START");
     }
     static void TearDownTestCase()
