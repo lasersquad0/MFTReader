@@ -75,6 +75,7 @@ typedef THArray<DATA_RUN_ITEM> TDataRuns;
 
 struct DIR_NODE
 {
+    uint32_t IndexBlockSize; // got from INDEX_ROOT attr, required for processing ALLOC data runs
     TFileList FileList; // filled from INDEX_ROOT attribute and then from ALLOCATE after processing data runs 
     TDataRuns DataRuns; // from ALLOCATE attribute
     TBitField Bitmap;   // tells us which LCNs from data runs are valid ones
@@ -145,7 +146,7 @@ typedef THArray<ITEM_INFO> TItemInfoList;
 
 typedef std::function<void(const ATTR_FILE_NAME*, const MFT_REF&)> AddFileAttrPred;
 typedef std::function<void(const MFT_REF&)> AttrListPred;
-typedef std::function<void(uint8_t* dataBuf, CLST VCN, CLST LCN)> ProcessLCNsPred;
+typedef std::function<void(uint8_t* dataBuf, CLST VCN, CLST LCN)> ProcessiBlocksPred;
 
 typedef int32_t (__stdcall *ProgressCallbackPtr)(int32_t progress);
 
