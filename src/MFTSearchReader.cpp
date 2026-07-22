@@ -239,15 +239,21 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
 
                 ATTR_INDEX_ROOT* indexR = (ATTR_INDEX_ROOT*)attrValue;
                 assert(indexR->AttrType == ATTR_FILENAME);
-                assert(indexR->IndexBlockSize == getVolData().BytesPerCluster);
-                assert(indexR->IndexBlockClst == 1);
+                //assert below is not always true. e.g. on some filesystems BytesPerCluster may be=2048 while IndexBlockSize=4096
+                //assert(indexR->IndexBlockSize == getVolData().BytesPerCluster);
+                assert(indexR->IndexBlockClst == indexR->IndexBlockSize / getVolData().BytesPerCluster);
                 assert(indexR->Rule == COLLATION_RULE::FILENAME);
+
+                node.IndexBlockSize = indexR->IndexBlockSize; // need this value for further processing ALLOC Data Runs
 
                 logger.DebugFmt("IndexRoot Indexed Attr Type: {} {:#x}", AttrName(indexR->AttrType), (uint32_t)indexR->AttrType);
                 logger.DebugFmt("IndexRoot Collation Rule: {} ({:#x})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
                 logger.DebugFmt("IndexRoot Dir Type: {} ({:#x})", indexR->ihdr.Flags == 0 ? "SMALL DIR" : "BIG DIR", indexR->ihdr.Flags);
+                logger.DebugFmt("IndexRoot IndexBlockSize: {}", indexR->IndexBlockSize);
+                logger.DebugFmt("IndexRoot IndexBlockClst: {}", indexR->IndexBlockClst);
 
                 auto pihdr = &(indexR->ihdr);
+                logger.DebugFmt("IHDR Used Bytes: {}", pihdr->Used);
 
                 // does not go to subnodes
                 GetFileList(pihdr, AddFilePred);
@@ -441,7 +447,7 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
                 auto dataBufSize = rli.len * getVolData().BytesPerCluster;
                 uint8_t* dataBuf = (uint8_t*)alloca(dataBufSize);
 
-                if (!ReadClusters(rli.lcn, rli.len, dataBuf)) // ReadClusters writes a message into log file in case of an error
+                if (!FLoader.ReadClusters(rli.lcn, rli.len, dataBuf)) // ReadClusters writes a message into log file in case of an error
                 {
                     logger.Error("ReadClusters finished with error."); 
                     break;
@@ -645,11 +651,11 @@ bool TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentIte
         };
 
     //TODO this is the same predicate code as in FileStat.cpp. Think how to avoid duplication
-    ProcessLCNsPred processAllocPred = [this, &addToFileListPred](uint8_t* dataBuf, CLST VCN, CLST LCN)
+    ProcessiBlocksPred processAllocPred = [this, &addToFileListPred](uint8_t* dataBuf, CLST VCN, CLST LCN)
         {
             auto allocIndex = (INDEX_BUFFER*)dataBuf;
 
-            // read items only if cluster starts from correct signature INDX
+            // read items only if Index Block starts from correct signature INDX
             // sometimes fully empty (filled with zero) clusters present in run list without INDX signature
             if (ntfs_is_indx_recp(allocIndex->RecHeader.Signature))
             {
