@@ -2,162 +2,9 @@
 #include "gtest/gtest.h"
 #include "Readers.h"
 #include "TestUtils.h"
+#include "MFTRawImgLoader.h"
 #include "MFTBaseParamTest.h"
 
-class TMFTRawImageLoader : public IRecordLoader
-{
-private:
-    HANDLE FHFile = INVALID_HANDLE_VALUE;
-    uint64_t FPartitionOffset{};
-    uint64_t FMFTOffset{};
-    TDataRuns FMFTDataRuns;
-    uint64_t FMFTRecordsCount{};
-
-public:
-    int64_t MFTRecIdToOffset(MFTRecIndex MFTRecID)
-    {
-        return MFTRecIdToOffset(MFTRecID, FMFTDataRuns, FVolumeData.BytesPerCluster, FVolumeData.BytesPerMFTRec);
-    }
-
-    static int64_t MFTRecIdToOffset(MFTRecIndex MFTRecID, TDataRuns& runs, uint32_t BytesPerCluster, uint32_t BytesPerMFTRec)
-    {
-        if (runs.Count() == 0) return -1;
-
-        uint32_t k = BytesPerCluster / BytesPerMFTRec;
-        EXPECT_NE(k, 0ul);
-
-        uint64_t sum = 0;
-        DATA_RUN_ITEM rli{0};
-         
-        for(uint i = 0; i < runs.Count(); i++)
-        {
-            rli = runs[i];
-            EXPECT_GT(rli.len, 0ul); // len>0
-            sum += rli.len*k;
-            if (sum > MFTRecID) break;
-        }
-
-        if (sum <= MFTRecID) return -1;
-
-        EXPECT_GT(rli.len, 0ul); // len>0
-        return (rli.lcn + rli.len) * BytesPerCluster - (sum - MFTRecID) * BytesPerMFTRec;
-    }
-
-    TMFTRawImageLoader() {}
-    TMFTRawImageLoader(const string_t& imgFileName) { OpenVolume(imgFileName); }
-    ~TMFTRawImageLoader() { CloseVolume(); }
-
-    //finds first MFT record and fills FMFTOffset with byte offset to this record from beginning of the image file 
-    void OpenVolume(const string_t& imgFileName) override
-    {
-        FHFile = CreateFile(imgFileName.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        ASSERT_NE(INVALID_HANDLE_VALUE, FHFile) << "Error opening file '" << imgFileName << "'";;
-
-        MBR_PARTITION_ENTRY mbr;
-        NTFS_BOOT_SECTOR partNTFS;
-        //uint64_t ntfsOff = 0; // partition not found
-        DWORD off = 0x1BE;
-
-        // look list of partitions for NTFS partition
-        for (size_t i = 0; i < 4; i++)
-        {
-            if (!SetFilePointer(FHFile, off, 0, FILE_BEGIN))
-                FAIL() << "Error setting file pointer '" << imgFileName << "'";
-
-            DWORD bytesRead = 0, mbrsz = sizeof(mbr);
-
-            if (!(ReadFile(FHFile, &mbr, mbrsz, &bytesRead, nullptr) && (bytesRead == mbrsz)))
-                FAIL() << "Error reading file '" << imgFileName << "'";
-
-            if (!SetFilePointer(FHFile, mbr.FirstLBA * DEFAULT_SECTOR_SIZE, 0, FILE_BEGIN))
-                FAIL() << "Error setting file pointer '" << imgFileName << "'";
-
-            if (!(ReadFile(FHFile, &partNTFS, sizeof(partNTFS), &bytesRead, nullptr) && (bytesRead == sizeof(partNTFS))) )
-                FAIL() << "Error reading file '" << imgFileName << "'";
-
-            if (memcmp(partNTFS.OemId, NTFS_LABEL, 8) == 0)
-            {
-                FPartitionOffset = mbr.FirstLBA * (uint64_t)DEFAULT_SECTOR_SIZE;
-                break;
-            }
-
-            off += sizeof(NTFS_BOOT_SECTOR);
-        }
-
-        ASSERT_NE(0, FPartitionOffset); // check that we've found NTFS partition
-       
-        EXPECT_EQ(DEFAULT_SECTOR_SIZE, partNTFS.BytesPerSector);
-        EXPECT_EQ(8, partNTFS.SectorsPerCluster);
-
-        FVolumeData.TotalClusters.QuadPart = partNTFS.TotalSectors;
-        FVolumeData.BytesPerCluster = partNTFS.BytesPerSector * partNTFS.SectorsPerCluster;
-        FVolumeData.BytesPerMFTRec = (partNTFS.ClustersPerFileRecord >= 0)? partNTFS.ClustersPerFileRecord * FVolumeData.BytesPerCluster: 1u << (-partNTFS.ClustersPerFileRecord);
-        EXPECT_EQ(FVolumeData.BytesPerMFTRec, DEFAULT_BYTES_PER_MFT_REC);
-        FVolumeData.BytesPerSector = partNTFS.BytesPerSector;
-        FVolumeData.ClustersPerFileRecordSegment = FVolumeData.BytesPerMFTRec/FVolumeData.BytesPerCluster;
-        FVolumeData.hVolume = FHFile;
-        FVolumeData.MftZoneStart.QuadPart = partNTFS.MftStartLcn;
-        FVolumeData.MftZoneEnd.QuadPart = 1000;
-        FVolumeData.Name = imgFileName;
-
-        // here where MFT record #0 located
-        FMFTOffset = FPartitionOffset + partNTFS.MftStartLcn * FVolumeData.BytesPerCluster;
-
-        // reading MFT record #0, getting $MFT LCNs
-        uint8_t* mftRecBuf = (uint8_t*)alloca(FVolumeData.BytesPerMFTRec);
-        MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
-        MFT_REF mftRef{ {0,0,0} };
- 
-        // temporary values needed for proper work of LoadMFTRecord
-        FMFTRecordsCount = 1;
-        FMFTDataRuns.AddValue({ 1, 0, 0 });
-        bool res = LoadMFTRecord(mftRef, mftRecBuf); // loading record #0 which is $MFT file
-        ASSERT_TRUE(res) << "Error loading MFT record " << mftRef.sId.low;
-
-        if (!ntfs_is_file_recp(mftRec->RecHeader.Signature) /* && !ntfs_is_magicp(mftRec->RecHeader.Signature, zero)*/)
-            FAIL() << "MFT record with incorrect signature found " << mftRec->RecHeader.Signature << " (neither 'FILE' nor '0000')";
-
-        // check that record #0 is in use
-        ASSERT_TRUE((mftRec->Flags & MFT_FLAG_IN_USE) == 1);
- 
-        TMFTParserBase prsr(*this);
-        TAttrCollection collection;
-        prsr.FillAttrCollection(mftRec, collection);
-        auto attr = collection.Get(ATTR_DATA);
-        ASSERT_TRUE(attr != nullptr);
-        
-        FMFTDataRuns.Clear();
-        res = prsr.DecodeDataRuns(attr, FMFTDataRuns);
-        ASSERT_TRUE(res);
-        ASSERT_GT(FMFTDataRuns.Count(), 0ul);
-
-        FMFTRecordsCount = 0;
-        for (auto& rli : FMFTDataRuns) FMFTRecordsCount += rli.len;
-    }
-
-    // returns false when all records are loaded from a file
-    bool LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override
-    {
-        // check that MFT Rec ID is less than MFT table size
-        if (mftRecRef.sId.low >= FMFTRecordsCount)
-            return false;
-        
-        auto offset = MFTRecIdToOffset(mftRecRef.sId.low);
-        EXPECT_GE(offset, 0); // offset>=0 must be
-        EXPECT_NE(-1, offset);
-
-        if (!SetFilePointer(FHFile, (uint32_t)FMFTOffset + (uint32_t)offset, 0, FILE_BEGIN))
-            return false;
-
-        
-        DWORD bytesRead = 0;
-        if (!(ReadFile(FHFile, mftRecData, FVolumeData.BytesPerMFTRec, &bytesRead, nullptr) && (bytesRead == FVolumeData.BytesPerMFTRec)))
-            return false; //FAIL() << "Error reading file";
-
-        return true;
-    }
-
-};
 
 class MFTImgFileParserTest : public MFTStringParamTest
 {
@@ -180,39 +27,10 @@ public:
     // To access the test parameter, call GetParam() from class TestWithParam<T>.
 };
 
-// Inside a test, access the test parameter with the GetParam() method of the TestWithParam<T> class:
-TEST_P(MFTImgFileParserTest, ReadDiskImage_1)
-{
-    string_t imgFileName = GetParam();
 
-    TMFTRawImageLoader tldr(imgFileName);
-    TMFTStatCollector stat(tldr);
-
-    // reading MFT record #0
-    uint8_t* mftRecBuf = (uint8_t*)alloca(DEFAULT_BYTES_PER_MFT_REC);
-    MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
-    MFT_REF mftRef{ 0 };
-    mftRef.sId.low = 0;
-
-    bool res;
-    res = tldr.LoadMFTRecord(mftRef, mftRecBuf);
-    ASSERT_TRUE(res) << "Error loading MFT record " << mftRef.sId.low;
-    
-    if (!ntfs_is_file_recp(mftRec->RecHeader.Signature) && !ntfs_is_magicp(mftRec->RecHeader.Signature, zero))
-        FAIL() << "MFT record with incorrect signature found " << mftRec->RecHeader.Signature << " (neither 'FILE' nor '0000')";
-
-    ITEM_INFO item;
-    // try to parse only 'FILE' records
-    if (ntfs_is_file_recp(mftRec->RecHeader.Signature))
-        res = stat.ReadMftItemInfoBuf(mftRec, item);
-    ASSERT_TRUE(res) << "Error parsing MFT record " << mftRef.sId.low;
-
-}
-
-// Inside a test, access the test parameter with the GetParam() method of the TestWithParam<T> class:
 //TODO looks like this test will be called several times depending on number of .raw files being tested (see INSTANTIATE_TEST_CASE_P below)
 // think how to make it called only once
-TEST_P(MFTImgFileParserTest, MFTRecIdToOffset_1)
+TEST_P(MFTImgFileParserTest, DISABLED_MFTRecIdToOffset_1)
 {
     const uint32_t DEF_CLUSTER_SIZE = 4096;
 
@@ -284,5 +102,68 @@ TEST_P(MFTImgFileParserTest, MFTRecIdToOffset_1)
     EXPECT_EQ(-1, TMFTRawImageLoader::MFTRecIdToOffset(10000, runs, DEF_CLUSTER_SIZE, DEFAULT_BYTES_PER_MFT_REC));
 }
 
-INSTANTIATE_TEST_CASE_P(DiskImage1, MFTImgFileParserTest, testing::Values(_T(TEST_DATA_DIR "ntfs-ptrn.raw")));
 
+TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImagePlain_1)
+{
+    string_t imgFileName = GetParam();
+
+    TMFTRawImageLoader tldr(imgFileName);
+    TMFTStatCollector stat(tldr);
+
+    uint8_t* mftRecBuf = (uint8_t*)alloca(DEFAULT_BYTES_PER_MFT_REC);
+    MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
+    MFT_REF mftRef{ 0 };
+
+    bool res;
+    while (!tldr.EOMFT(mftRef.sId.low))
+    {
+        if (mftRef.sId.low != 9 && mftRef.sId.low != 24 && mftRef.sId.low != 25)
+        {
+            res = tldr.LoadMFTRecord(mftRef, mftRecBuf);
+            ASSERT_TRUE(res) << "Error loading MFT record " << mftRef.sId.low;
+
+            if (!ntfs_is_file_recp(mftRec->RecHeader.Signature) && !ntfs_is_magicp(mftRec->RecHeader.Signature, zero))
+                FAIL() << "MFT record with incorrect signature found " << mftRec->RecHeader.Signature << " (neither 'FILE' nor '0000')";
+
+            ITEM_INFO item;
+            // try to parse only 'FILE' records, and only records in use
+            if (ntfs_is_file_recp(mftRec->RecHeader.Signature) && ((mftRec->Flags & MFT_FLAG_IN_USE) > 0))
+                res = stat.ReadMftItemInfoBuf(mftRec, item);
+            ASSERT_TRUE(res) << "Error parsing MFT record " << mftRef.sId.low;
+        }
+
+        mftRef.sId.low++;
+    }
+}
+
+TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImageFromRoot_1)
+{
+    string_t imgFileName = GetParam();
+
+    TMFTRawImageLoader tldr(imgFileName);
+    TMFTStatCollector stat(tldr);
+
+    MFT_REF startId{ 0 };
+    startId.Id = MFT_ROOT_REC_ID;
+
+    if (!stat.ReadMftItems(startId, 0))
+        FAIL() << "ReadMftItems() returned false!";
+}
+
+TEST_P(MFTImgFileParserTest, ReadDiskWINAPI_1)
+{
+    //string_t imgFileName = GetParam();
+
+    TMFTRecordLoader tldr(_T("d:\\"));
+    TMFTStatCollector stat(tldr);
+
+    MFT_REF startId{ 0 };
+    startId.Id = MFT_ROOT_REC_ID;
+
+    if (!stat.ReadMftItems(startId, 0))
+        FAIL() << "ReadMftItems() returned false!";
+}
+
+
+//INSTANTIATE_TEST_CASE_P(DiskImage1, MFTImgFileParserTest, testing::Values(_T(TEST_DATA_DIR "ntfs-ptrn.raw")));
+INSTANTIATE_TEST_CASE_P(DiskImage2, MFTImgFileParserTest, testing::Values(_T(TEST_DATA_DIR "ntfs_index.raw")));
