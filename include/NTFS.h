@@ -163,7 +163,7 @@ struct NTFS_RECORD_HEADER
     uint8_t  Signature[4];   // 0x00: enum NTFS_SIGNATURE signature;
     uint16_t FixupOffset;	 // 0x04: Offset to the Update Sequence Array (usa) from the start of the ntfs record.
     uint16_t FixupCnt;	     // 0x06: Number of 2bytes sized entries in the usa including the Update Sequence Number(usn), 
-                             // thus the number of fixups is the usa_count minus 1.
+                             // thus the number of fixups is the FixupCnt minus 1.
     uint64_t LogFileSeqNum;  // 0x08: Log file sequence number,
 };
 
@@ -510,8 +510,11 @@ struct ATTR_INDEX_ROOT
 {
     enum ATTR_TYPE AttrType;  // 0x00: The type of attribute to index on. 0 if entry does not use an attribute
     enum COLLATION_RULE Rule; // 0x04: The rule.
-    uint32_t IndexBlockSize;  // 0x08: The size of entire index record in bytes (usually 4096 bytes).
-    uint8_t IndexBlockClst;   // 0x0C: The number of clusters or sectors per index record.
+    uint32_t IndexBlockSize;  // 0x08: The size of each index block in bytes (in the index allocation attribute). Usually 4096 bytes. 
+    uint8_t IndexBlockClst;   // 0x0C: The number of clusters or sectors per index record. 
+                              // Number of clusters per index block (in the index allocation attribute) when index_block_size is greater or
+                              // equal to the cluster size and number of sectors per index block when the index_block_size is smaller 
+                              // than the cluster size.
     uint8_t res[3];
     struct INDEX_HDR ihdr;    // 0x10:
 }; // 0x10
@@ -555,7 +558,7 @@ static_assert(sizeof(NTFS_DE) == 0x10);
 // This struct located in clusters as a part of $INDEX_ALLOCATION attribute
 struct INDEX_BUFFER 
 {
-    NTFS_RECORD_HEADER RecHeader; // 'INDX'
+    NTFS_RECORD_HEADER RecHeader; // 'INDX', FixupOffset, FixupCnt, LogFileSeqNum
     uint64_t vcn;   // 0x10: Virtual cluster number of the index buffer. vcn if index >= cluster or vsn id index < cluster
     INDEX_HDR ihdr; // 0x18:
 }; // 0x28
