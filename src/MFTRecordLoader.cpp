@@ -119,3 +119,41 @@ bool TMFTRecordLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
     return true;
 }
 
+/**
+* @brief Reads series of sequential clusters starting from cluster with number lcnStart
+* @details DataBuf should be large enough to fit lcnCnt clusters of data
+* @param lcnStart number (id) of first cluster to be read
+* @param lcnCnt Count of sequential clusters to be read
+* @param dataBuf Buffer where all clusters will be read. Should be at least size lcnCnt*VolumeClusterSize
+**/
+bool TMFTRecordLoader::ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf)
+{
+    LARGE_INTEGER offset{ 0 };
+    DWORD bytesToRead, bytesRead;
+
+    offset.QuadPart = lcnStart * FVolumeData.BytesPerCluster;
+
+    BOOL res = SetFilePointerEx(FVolumeData.hVolume, offset, nullptr, FILE_BEGIN);
+    if (!res)
+    {
+        GET_LOGGER;
+        logger.ErrorFmt("ReadCluster.SetFilePointerEx has failed with error: {}", GetLastError());
+        return false;
+    }
+
+    // read lcnCnt clusters
+    bytesToRead = (DWORD)(lcnCnt * FVolumeData.BytesPerCluster);
+    res = ReadFile(FVolumeData.hVolume, dataBuf, bytesToRead, &bytesRead, nullptr);
+    if (res)
+    {
+        assert(bytesToRead == bytesRead);
+        return true;
+    }
+    else
+    {
+        GET_LOGGER;
+        logger.ErrorFmt("ReadCluster.ReadFile has failed with error: {}", GetLastError());
+        return false;
+    }
+}
+
