@@ -17,6 +17,7 @@ public:
 	virtual const VOLUME_DATA& GetVolumeData() const { return FVolumeData; }
 	virtual void OpenVolume(const string_t& vol) = 0;
 	virtual bool LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) = 0;
+	virtual bool ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf) = 0;
 
 	virtual uint8_t* LoadMFTRecordCache(MFT_REF mftRecRef) // returns NULL if error occurred during loading MFT record
 	{
@@ -60,6 +61,7 @@ public:
 	TMFTRecordLoader(const string_t& vol) { OpenVolume(vol); }
 	void OpenVolume(const string_t& vol) override;
 	//void CloseVolume() override;
+	bool ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf) override;
 	bool LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override;
 	//uint8_t* LoadMFTRecordCache(MFT_REF mftRecRef) override;
 };
@@ -73,7 +75,7 @@ protected:
 public:
 	TMFTParserBase(IRecordLoader& loader) : FLoader(loader) {};
 
-	bool FixupUSA(uint8_t* dataBuf, DATA_RUN_ITEM& rli, uint64_t rlilen);
+	bool FixupUSA(uint8_t* dataBuf, CLST startLCN, uint64_t iblocksCount, uint32_t indexBlockSize);
 	//void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues);
 	void FillAttrCollection(MFT_FILE_RECORD* mftRec, TAttrCollection& collection);
 	void FillAttrCollection(MFT_FILE_RECORD* mftRec, uint32_t attrFilter, TAttrCollection& collection);
@@ -83,7 +85,7 @@ public:
 	void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnames);
 	void GetFileList(INDEX_HDR* ihdr, AddFileAttrPred pred);
 
-	bool ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf);
+	//bool ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf);
 	bool ParseNonresAttrList(MFTRecIndex indexMFTRec, MFT_ATTR_HEADER* attrListAttr, AttrListPred processChildMFTRecPred);
 	bool ParseNonresAttrList(MFTRecIndex indexMFTRec, uint32_t attrFilter, MFT_ATTR_HEADER* attrListAttr, AttrListPred processChildMFTRecPred);
 	//bool GetAttrFromAttrList(ATTR_LIST_ENTRY* startListItem, ATTR_TYPE attrType, uint8_t* attrListEnd1, uint8_t* attrListEnd2, PMFT_ATTR_HEADER* result);
@@ -93,7 +95,7 @@ public:
 	bool ParseAlloc(MFT_ATTR_HEADER* attr, TDataRuns& dataRuns);
 	void ParseAttrList(MFTRecIndex indexMFTRec, uint32_t attrFilter, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, uint64_t& processedAttrSize, AttrListPred processChildMFTRecPred);
 	void ParseAttrList(MFTRecIndex indexMFTRec, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, uint64_t& processedAttrSize, AttrListPred processChildMFTRecPred);
-	bool ProcessDataRuns(DIR_NODE& node, ProcessLCNsPred pred);
+	bool ProcessDataRuns(DIR_NODE& node, ProcessiBlocksPred processIndexBlockPred);
 	bool DecodeDataRuns(MFT_ATTR_HEADER* attr, TDataRuns& runs);
 	
 	ATTR_FILE_NAME* GetFileNameAttr(MFT_FILE_RECORD* mftRec);
