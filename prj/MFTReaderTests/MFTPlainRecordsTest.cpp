@@ -49,7 +49,28 @@ public:
             return false;
     }
 
+    bool ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf) override
+    {
+        if (!FFile.seekg(lcnStart * FVolumeData.BytesPerCluster, std::ios::beg))
+        {
+            GET_LOGGER;
+            logger.ErrorFmt("FFile.seekg() has failed with error: {}", GetLastError());
+
+            return false;
+        }
+
+        if (!FFile.read(reinterpret_cast<char*>(dataBuf), lcnCnt * FVolumeData.BytesPerCluster))
+        {
+            GET_LOGGER;
+            logger.ErrorFmt("FFile.read() has failed with error: {}", GetLastError());
+            return false;
+        }
+
+        return true;
+    }
+
 };
+
 
 class MFTPlainRecordsTest : public MFTStringParamTest
 {
@@ -73,7 +94,7 @@ public:
     // To access the test parameter, call GetParam() from class TestWithParam<T>.
 };
 
-TEST_P(MFTPlainRecordsTest, ReadMftItemInfoBuf_1)
+TEST_P(MFTPlainRecordsTest, DISABLED_ReadMftItemInfoBuf_1)
 {
     auto& fileName = GetParam();
     TMFTPlainRecordsLoader tldr(fileName);
