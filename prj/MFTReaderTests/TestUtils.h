@@ -26,28 +26,34 @@ struct MBR_PARTITION_ENTRY
 
 static_assert(sizeof(MBR_PARTITION_ENTRY) == 16);
 
+
 struct NTFS_BOOT_SECTOR {
 	BYTE     Jump[3];
-	BYTE     OemId[8];
-	WORD     BytesPerSector;
-	BYTE     SectorsPerCluster;
+	BYTE     OemId[8];        // Magic "NTFS    "
+	WORD     BytesPerSector;  //  Size of a sector in bytes. 
+	BYTE     SectorsPerCluster; 
 	BYTE     Reserved[7];
-	BYTE     MediaDescriptor;
+	BYTE     MediaDescriptor; // 0xf8 = hard disk
 	WORD     Reserved2;
-	WORD     SectorsPerTrack;
-	WORD     NumberOfHeads;
+	WORD     SectorsPerTrack; // Required to boot Windows.
+	WORD     NumberOfHeads;   // Required to boot Windows.
 	DWORD    HiddenSectors;
-	DWORD    Unused1;
+	DWORD    Unused1;       // zero, NTFS diskedit.exe states that this is actually :
+	                        // u8 physical_drive;		// 0x80
+	                        // u8 current_head;		// zero
+	                        // u8 extended_boot_signature;	// 0x80
+	                        //u8 unused;			// zero
 	DWORD    Unused2;
-	ULONGLONG TotalSectors;
-	ULONGLONG MftStartLcn;
-	ULONGLONG MftMirrorStartLcn;
-	CHAR     ClustersPerFileRecord;
+	ULONGLONG TotalSectors;  // Number of sectors in volume.Gives maximum volume size of 2 ^ 63 sectors.
+		                     // Assuming standard sector size of 512 bytes, the maximum byte size is approx. 4.7x10 ^ 21 bytes. (-;
+	ULONGLONG MftStartLcn; // Cluster location of mft data
+	ULONGLONG MftMirrorStartLcn; //Cluster location of copy of mft.
+	CHAR     ClustersPerFileRecord; //Mft record size in clusters.
 	BYTE     Reserved3[3];
-	CHAR     ClustersPerIndexBlock;
+	CHAR     ClustersPerIndexBlock; //Index block size in clusters
 	BYTE     Reserved4[3];
 	ULONGLONG VolumeSerialNumber;
-	DWORD     Checksum;
+	DWORD     Checksum;   //Boot sector checksum
 };
 
 static_assert(sizeof(NTFS_BOOT_SECTOR) == 84);
