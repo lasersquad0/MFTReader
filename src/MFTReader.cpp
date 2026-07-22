@@ -51,17 +51,20 @@ static void DefineOptions(COptionsList& options)
     options.AddOption(pp);
 
     options.AddOption(OPT_S, _T("stat"), _T("Show overall volume/disk statistics."), 0, false);
-    options.AddOption(OPT_C, _T("cache"), _T("Build cache for file sreach and show cache statistics."), 0, false);
+    options.AddOption(OPT_C, _T("cache"), _T("Build cache for file search and show some statistics."), 0, false);
 }
+
+#define MFT_LOG_CFG_FILENAME "MFTReader.lfg"
+#define MFT_LOG_FILENAME "LogMFTReader.log"
 
 static void InitLogger()
 {
     LogEngine::Levels::LogLevel llevel = LogEngine::Levels::llInfo;
 
     // if MFTReader.lfg exists load loggers from that file
-    if (std::filesystem::exists("MFTReader.lfg"))
+    if (std::filesystem::exists(MFT_LOG_CFG_FILENAME))
     {
-        LogEngine::InitFromFile("MFTReader.lfg");
+        LogEngine::InitFromFile(MFT_LOG_CFG_FILENAME);
     }
     else // otherwise configure loggers in code 
     {
@@ -69,7 +72,7 @@ static void InitLogger()
         consoleSink->SetPattern("%MSG%");
         consoleSink->SetLogLevel(llevel);
 
-        std::shared_ptr<LogEngine::Sink> fileSink(DBG_NEW LogEngine::FileSinkST("file_sink", "LogMFTReader.log"));
+        std::shared_ptr<LogEngine::Sink> fileSink(DBG_NEW LogEngine::FileSinkST("file_sink", MFT_LOG_FILENAME));
         fileSink->SetLogLevel(llevel);
 
         LogEngine::Logger& logger = LogEngine::GetMultiLogger(MFT_LOGGER_NAME, {fileSink, consoleSink});
@@ -78,8 +81,7 @@ static void InitLogger()
     }
 }
 
-
-//#define TRYCATCH(_,__) try {(_);}catch(...){logger.Warn(__);}
+#define DEFAULT_VOLUME "C:"
 
 int _tmain(int argc, TCHAR* argv[])
 {
@@ -134,7 +136,7 @@ int _tmain(int argc, TCHAR* argv[])
         {
             logger.SetLogLevel(LogEngine::Levels::llDebug);
 
-            string_t volume = cmd.GetOptionValue(OPT_V, 0, _T("C:"));
+            string_t volume = cmd.GetOptionValue(OPT_V, 0, _T(DEFAULT_VOLUME));
             
             TMFTRecordLoader ldr(volume);
             TMFTStatCollector rdr(ldr);
@@ -186,7 +188,7 @@ int _tmain(int argc, TCHAR* argv[])
         else if (cmd.HasOption(OPT_S)) // volume statistics requested.
         {
             Ticks::Start(_T("FSReadingTime"));
-            string_t volume = cmd.GetOptionValue(OPT_V, 0, _T("C:"));
+            string_t volume = cmd.GetOptionValue(OPT_V, 0, _T(DEFAULT_VOLUME));
 
             TMFTRecordLoader ldr(volume);
             TMFTStatCollector srdr(ldr);
@@ -199,7 +201,7 @@ int _tmain(int argc, TCHAR* argv[])
         else if (cmd.HasOption(OPT_C)) // volume statistics requested.
         {
             Ticks::Start(_T("FSReadingTime"));
-            string_t volume = cmd.GetOptionValue(OPT_V, 0, _T("C:"));
+            string_t volume = cmd.GetOptionValue(OPT_V, 0, _T(DEFAULT_VOLUME));
 
             TMFTRecordLoader ldr(volume);
             TMFTSearchReader srchrdr(ldr);
