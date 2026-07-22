@@ -20,7 +20,7 @@
 #include "Caches.h"
 #include "Readers.h"
 
-
+//TODO think of better solution of FUNC logger
 LogEngine::Logger& GetLoggerFunc()
 {
     LogEngine::Logger& logger = LogEngine::GetFileLogger(MFT_LOGGER_NAME_FUNC, "LogMFTReaderFUNC.log");
