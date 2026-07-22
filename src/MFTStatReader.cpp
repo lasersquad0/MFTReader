@@ -66,11 +66,11 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
             }
         };
 
-    ProcessLCNsPred processAllocPred = [this, &addToFileListPred](uint8_t* dataBuf, CLST VCN, CLST LCN)
+    ProcessiBlocksPred processAllocPred = [this, &addToFileListPred](uint8_t* dataBuf, CLST VCN, CLST LCN)
         {
             auto allocIndex = (INDEX_BUFFER*)dataBuf;
 
-            // read items only if cluster starts from correct signature INDX
+            // read items only if Index Block starts from correct signature INDX
             // sometimes fully empty (filled with zero) clusters present in run list without INDX signature
             if (ntfs_is_indx_recp(allocIndex->RecHeader.Signature))
             {
@@ -84,7 +84,7 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
             {
                 GET_LOGGER;
                 uint8_t* sign = allocIndex->RecHeader.Signature;
-                logger.WarnFmt("Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", LCN, sign[0], sign[1], sign[2], sign[3]);
+                logger.WarnFmt("Signature 'INDX' has not been found in Index Block LCN {}. Signature found: {}{}{}{}", LCN, sign[0], sign[1], sign[2], sign[3]);
             }
         };
 
@@ -290,8 +290,9 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                 // $SDH INDEX_ROOT attribute name is related to storing and searching security descriptors (usually in MFT=0x09 $Secure).
 
                 ATTR_INDEX_ROOT* indexR = (ATTR_INDEX_ROOT*)attrValue;
-                assert(indexR->IndexBlockSize == getVolData().BytesPerCluster);
-                assert(indexR->IndexBlockClst == 1);
+                //assert below is not always true. e.g. on some filesystems BytesPerCluster may be=2048 while IndexBlockSize=4096
+                //assert(indexR->IndexBlockSize == getVolData().BytesPerCluster);
+                assert(indexR->IndexBlockClst == indexR->IndexBlockSize/getVolData().BytesPerCluster);
 
                 //$O exists in $Quota, $ObjId special files, $R exists in $Reparse
                 if (nameOfAttrA != "$I30")
@@ -306,12 +307,16 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                     assert(nameOfAttrA == "$I30");
                 }
 
+                itemInfo.Node.IndexBlockSize = indexR->IndexBlockSize; // need this value for further processing ALLOC Data Runs
 
                 logger.DebugFmt("IndexRoot Indexed Attr Type: {} {:#x}", AttrName(indexR->AttrType), (uint32_t)indexR->AttrType);
                 logger.DebugFmt("IndexRoot Collation Rule: {} ({:#x})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
                 logger.DebugFmt("IndexRoot Dir Type: {} ({:#x})", indexR->ihdr.Flags == 0 ? "SMALL DIR" : "BIG DIR", indexR->ihdr.Flags);
-
+                logger.DebugFmt("IndexRoot IndexBlockSize: {}", indexR->IndexBlockSize);
+                logger.DebugFmt("IndexRoot IndexBlockClst: {}", indexR->IndexBlockClst);
+                
                 auto pihdr = &(indexR->ihdr);
+                logger.DebugFmt("IHDR Used Bytes: {}", pihdr->Used);
 
                 GetFileList(pihdr, addToFileListPred);
 
@@ -396,6 +401,8 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                 logger.DebugFmt("ATTR_BITMAP, resident, Size in bytes: {}, Value64: {:#x}", currAttr->res.DataSize, *(uint64_t*)bmp);
 
                 assert((currAttr->res.DataSize & 0x07) == 0); // bitmap data size always multiple of 8
+                assert(itemInfo.Node.Bitmap.Count() == 0);
+                assert((currAttr->res.DataSize >> 3) > 0);
 
                 itemInfo.Node.Bitmap.SetData((uint64_t*)bmp->bitmap, currAttr->res.DataSize >> 3);
 
@@ -491,7 +498,6 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                 // itemInfo.Node.DataRuns will accumulate all data runs from all parts.
                 if (!DecodeDataRuns(currAttr, itemInfo.Node.DataRuns))
                 {
-                    //logger.Error("DataRunsDecode finished with ERROR.");
                     break; //DataRunsDecode writes a message into log file in case of an error
                 }
 
@@ -516,6 +522,8 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                     logger.WarnFmt("Incorrect case has been met: Looks like two or more ATTR_BITMAP ('{}') attributes were met in a one MFT record: {}.", 
                               nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
                 itemInfo.NonResidentBitmap = true;
+
+                assert(itemInfo.Node.Bitmap.Count() == 0);
 
                 logger.InfoFmt("Non-Resident ATTR_BITMAP ('{}') has been met. MFT Rec ID {}", nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
               
@@ -552,10 +560,8 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                         itemInfo.Node.DataRuns.Count(), MFT_REF::toHexString(mftRec->IndexMFTRec), mftRec->ParentFileRec.toHexString());
                 }
 
-                // decode data runs just for testing purposes
                 if (!DecodeDataRuns(currAttr, itemInfo.Node.DataRuns)) // writes a message into log file in case of an error
                 {
-                   // logger.Error("DataRunsDecode finished with error.");
                     break;
                 }
 
@@ -835,40 +841,45 @@ void TMFTStatCollector::ShowVolumeStat()
     std::cout << "DOES NOT have Data attribute: " << DoesNotHaveDataAttribute << std::endl;
     std::cout << "Data streams Count > 2: " << DataStreamsCountGreater2 << std::endl;
     
-    std::cout << std::format("Max Hard Links Count: {}, file name: {} (mft red id: {})", (*maxHardLinks).HardLinksCount, wtos((*maxHardLinks).MainName), MFT_REF::toHexString((*maxHardLinks).RecID.sId.low)) << std::endl;
-    std::cout << std::format("Max Attrs Count: {}, file name: {} (mft rec id: {})", (*maxAttrs).AttrsCount, wtos((*maxAttrs).MainName), MFT_REF::toHexString((*maxAttrs).RecID.sId.low)) << std::endl;
-    std::cout << std::format("Max File Names Count: {}, file name: {} (mft rec id: {})", (*maxFilenames).FileNames.Count(), wtos((*maxFilenames).MainName), MFT_REF::toHexString((*maxFilenames).RecID.sId.low)) << std::endl;
-    std::cout << std::format("Max Data Streams Count: {}, filename: {} (mft rec id: {})", (*maxDataStreams).DataStreamNames.Count(), wtos((*maxDataStreams).MainName), MFT_REF::toHexString((*maxDataStreams).RecID.sId.low)) << std::endl;
-    std::cout << std::format("Max Data Runs Count: {}, filename: {} (mft rec id: {})", (*maxDataLCNsCount).DataLCNsCount, wtos((*maxDataLCNsCount).MainName), (*maxDataLCNsCount).RecID.toHexString()) << std::endl;
-    std::cout << std::format("Max Files Count in Dir: {}, filename: {} (mft rec id: {})", (*maxFilesInDirCount).FilesCount, wtos((*maxFilesInDirCount).MainName), (*maxFilesInDirCount).RecID.toHexString()) << std::endl;
+    std::cout << std::format("Max Hard Links Count: {}, file name: '{}' (mft red id: {})", (*maxHardLinks).HardLinksCount, wtos((*maxHardLinks).MainName), MFT_REF::toHexString((*maxHardLinks).RecID.sId.low)) << std::endl;
+    std::cout << std::format("Max Attrs Count: {}, file name: '{}' (mft rec id: {})", (*maxAttrs).AttrsCount, wtos((*maxAttrs).MainName), MFT_REF::toHexString((*maxAttrs).RecID.sId.low)) << std::endl;
+    std::cout << std::format("Max File Names Count: {}, file name: '{}' (mft rec id: {})", (*maxFilenames).FileNames.Count(), wtos((*maxFilenames).MainName), MFT_REF::toHexString((*maxFilenames).RecID.sId.low)) << std::endl;
+    std::cout << std::format("Max Data Streams Count: {}, filename: '{}' (mft rec id: {})", (*maxDataStreams).DataStreamNames.Count(), wtos((*maxDataStreams).MainName), MFT_REF::toHexString((*maxDataStreams).RecID.sId.low)) << std::endl;
+    std::cout << std::format("Max Data Runs Count: {}, filename: '{}' (mft rec id: {})", (*maxDataLCNsCount).DataLCNsCount, wtos((*maxDataLCNsCount).MainName), (*maxDataLCNsCount).RecID.toHexString()) << std::endl;
+    std::cout << std::format("Max Files Count in Dir: {}, filename: '{}' (mft rec id: {})", (*maxFilesInDirCount).FilesCount, wtos((*maxFilesInDirCount).MainName), (*maxFilesInDirCount).RecID.toHexString()) << std::endl;
 
     std::cout << std::endl << "Filenames Average Length: " << FileNamesAverageSymbols << " symbols (" << FileNamesAverageBytes << " bytes)" << std::endl;
 
-    std::wcout << std::endl << L"Datastream names for "<< (*maxDataStreams).MainName.c_str() << ":" << std::endl;
+    std::wcout << std::endl << L"Datastream names for '"<< (*maxDataStreams).MainName.c_str() << "':" << std::endl;
     for (auto ds : (*maxDataStreams).DataStreamNames)
     {
         if(ds.first.empty())
-            std::wcout << L"<empty> - data runs count " << ds.second.Count() << std::endl;
+            std::wcout << L"'<empty>' - data runs count: " << ds.second.Count() << std::endl;
         else
-            std::wcout << ds.first << L" - data runs count " << ds.second.Count() << std::endl;
+            std::wcout << "'" << ds.first << L"' - data runs count: " << ds.second.Count() << std::endl;
     }
 
-   /* std::wcout << std::endl << "File names for " << (*maxFilenames).MainName.c_str() << ":" << std::endl;
+   /* std::wcout << std::endl << "File names for '" << (*maxFilenames).MainName.c_str() << "':" << std::endl;
     for (auto& fn : (*maxFilenames).FileNames)
     {
         std::wcout << fn << std::endl;
     }*/
 
-    std::wcout << std::endl << "Attribute counts for " << (*maxAttrs).MainName.c_str() << ":" << std::endl;
+    std::wcout << std::endl << "Attribute counts for '" << (*maxAttrs).MainName.c_str() << "':" << std::endl;
     for (int i = 1; i < ATTR_TYPE_CNT; i++) // bypass ATTR_ZERO
     {
         std::wcout << AttrTypeNames[i] << " = " <<(*maxAttrs).AttrCounters[i] << std::endl;
     }
 
     auto hasAttrList = std::find_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.AttrCounters[MATI(ATTR_LIST_ATTR)] > 0; });
-    std::cout << std::format("Dir has ATTR_LIST. Name {}, MFT Rec id: {})", wtos((*hasAttrList).MainName), (*hasAttrList).RecID.toHexString()) << std::endl;
-    auto hasAttrList2 = std::find_if(++hasAttrList, FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.AttrCounters[MATI(ATTR_LIST_ATTR)] > 0; });
-    std::cout << std::format("Dir has ATTR_LIST. Name {}, MFT Rec id: {}", wtos((*hasAttrList2).MainName), (*hasAttrList2).RecID.toHexString()) << std::endl;
+    if (hasAttrList != FItemsList.end())
+    {
+        std::cout << std::format("Dir has ATTR_LIST. Name '{}', MFT Rec id: {})", wtos((*hasAttrList).MainName), (*hasAttrList).RecID.toHexString()) << std::endl;
+        
+        auto hasAttrList2 = std::find_if(++hasAttrList, FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.AttrCounters[MATI(ATTR_LIST_ATTR)] > 0; });
+        if (hasAttrList2 != FItemsList.end())
+            std::cout << std::format("Dir has ATTR_LIST. Name '{}', MFT Rec id: {}", wtos((*hasAttrList2).MainName), (*hasAttrList2).RecID.toHexString()) << std::endl;
+    }
 
     Ticks::Finish(_T("Calc and Print stat time"));
 
