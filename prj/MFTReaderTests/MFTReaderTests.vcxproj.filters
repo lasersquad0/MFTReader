@@ -53,5 +53,8 @@
     <ClInclude Include="TestUtils.h">
       <Filter>Tests</Filter>
     </ClInclude>
+    <ClInclude Include="MFTRawImgLoader.h">
+      <Filter>Tests</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
