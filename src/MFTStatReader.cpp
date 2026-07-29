@@ -28,15 +28,16 @@
 * @param itemInfo results of reading MFT record
 * @return true in case of success, false in case of error
 */ 
-bool TMFTStatCollector::ReadMftItemInfo(MFT_REF mftRecRef, ITEM_INFO& itemInfo)
+TErrorCode TMFTStatCollector::ReadMftItemInfo(MFT_REF mftRecRef, ITEM_INFO& itemInfo)
 {
     uint8_t* mftRecBuf = (uint8_t*)alloca(getVolData().BytesPerMFTRec);
 
-    if (!FLoader.LoadMFTRecord(mftRecRef, mftRecBuf))
+    auto res = FLoader.LoadMFTRecord(mftRecRef, mftRecBuf);
+    if (res != TErrorCode::Success)
     {
         GET_LOGGER;
         logger.Error("LoadMFTRecord finished with error.");
-        return false;
+        return res;
     }
     else
     {
@@ -44,7 +45,7 @@ bool TMFTStatCollector::ReadMftItemInfo(MFT_REF mftRecRef, ITEM_INFO& itemInfo)
     }
 }
 
-bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& itemInfo)
+TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& itemInfo)
 {
     GET_LOGGER;
 
@@ -58,7 +59,7 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
     AttrListPred callReadMftItemInfoPred = [this, &itemInfo](const MFT_REF& ref)
         {
             // ref - is a child MFT rec where attr value is located
-            if (!ReadMftItemInfo(ref, itemInfo)) // ReadMftItemInfo write message to log file in case of an error
+            if (TErrorCode::Success != ReadMftItemInfo(ref, itemInfo)) // ReadMftItemInfo writes message to log file in case of an error
             {
                 //do nothing, continue executing
                 //GET_LOGGER;
@@ -92,7 +93,7 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
     if ((mftRec->Flags & MFT_FLAG_IN_USE) == 0) 
     {
         logger.WarnFmt("Warn! Record is not in use. MFT Rec ID: {}", MFT_REF::toHexString(mftRec->IndexMFTRec));
-        return false;
+        return TErrorCode::MFTRecordNotInUse;
     }
 
     assert(ntfs_is_file_recp(mftRec->RecHeader.Signature));
@@ -140,6 +141,8 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
     default:
         logger.WarnFmt("MFT Rec Type: UNKNOWN {:#x}", (uint16_t)mftRec->Flags);
     }
+
+    TErrorCode result = TErrorCode::Success;
 
     MFT_ATTR_HEADER* currAttr = (MFT_ATTR_HEADER*)Add2Ptr(mftRec, mftRec->FirstAttrOffset);
 
@@ -510,7 +513,7 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                 
                 // for big data runs we can come here several times when one file data runs are split between several MFT records.
                 // itemInfo.Node.DataRuns will accumulate all data runs from all parts.
-                if (!DecodeDataRuns(currAttr, itemInfo.Node.DataRuns)) //DataRunsDecode writes a message into log file in case of an error
+                if (TErrorCode::Success != DecodeDataRuns(currAttr, itemInfo.Node.DataRuns)) // DataRunsDecode writes a message into log file in case of an error
                 {
                     break; // our further processing does not depend on successfull decoding ATTR_DATA Data runs, therefore just do break here.
                 }
@@ -553,10 +556,11 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
 
                 if (FProcessNonResAttr)
                 {
-                    if (!ParseNonresBitmap(currAttr, itemInfo.Node.Bitmap))
+                    result = ParseNonresBitmap(currAttr, itemInfo.Node.Bitmap);
+                    if (result != TErrorCode::Success)
                     {
                         logger.Error("ParseNonresBitmap finished with error.");
-                        return false; //break;
+                        return result; //break;
                     }
                 }
                 else
@@ -565,8 +569,9 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
 
                     // just decode Data Runs without any further processing
                     TDataRuns dataRuns;
-                    if (!DecodeDataRuns(currAttr, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
-                        return false;
+                    result = DecodeDataRuns(currAttr, dataRuns); // DataRunsDecode writes a message into log file in case of an error
+                    if (result != TErrorCode::Success) 
+                        return result;
                 }
 
                 break;
@@ -591,9 +596,10 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                     itemInfo.Node.DataRuns.SetCapacity(DATA_RUNS_DEF_SIZE);
                 }
                     
-                if (!DecodeDataRuns(currAttr, itemInfo.Node.DataRuns)) // writes a message into log file in case of an error
+                result = DecodeDataRuns(currAttr, itemInfo.Node.DataRuns); // writes a message into log file in case of an error
+                if (result != TErrorCode::Success) 
                 {
-                    break;
+                    return result; //break;
                 }
 
                 // ONLY DECODE DATA RUNS HERE.
@@ -614,10 +620,11 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
 
                 if (FProcessNonResAttr)
                 {
-                    if (!ParseNonresAttrList(mftRec->IndexMFTRec, currAttr, callReadMftItemInfoPred))
+                    result = ParseNonresAttrList(mftRec->IndexMFTRec, currAttr, callReadMftItemInfoPred);
+                    if (result != TErrorCode::Success)
                     {
                         logger.Error("ParseNonresAttrList returned error.");
-                        return false;
+                        return result;
                     }
                 }
                 else
@@ -626,8 +633,9 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                     
                     // just decode Data Runs without any further processing
                     TDataRuns dataRuns;
-                    if (!DecodeDataRuns(currAttr, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
-                        return false;
+                    result = DecodeDataRuns(currAttr, dataRuns);
+                    if (result != TErrorCode::Success) // DataRunsDecode writes a message into log file in case of an error
+                        return result;
                 }
 
                 logger.Debug("[NON-Resident ATTR_LIST_ATTR] - FINISHED PARSING");
@@ -673,10 +681,11 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
 
             // calls processAllocPred for every cluster where ALLOC data is located (according to Data Runs) 
             // and where Bitmap contains 1 in appropriate cluster bit
-            if (!ProcessAllocDataRuns(itemInfo.Node, processAllocPred))
+            result = ProcessAllocDataRuns(itemInfo.Node, processAllocPred);
+            if (result != TErrorCode::Success)
             {
                 logger.Error("ProcessAllocDataRuns finished with error.");
-                return false; //return is not needed here because node.FileList may contain items from INDEX_ROOT and partially from ALLOCATION
+                return result; //return is not needed here because node.FileList may contain items from INDEX_ROOT and partially from ALLOCATION
             }
         }
 
@@ -691,23 +700,24 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
         logger.DebugFmt("---------- FINISHED Reading CHILD MFT Record ({}) ---------", MFT_REF::toHexString(mftRec->IndexMFTRec));
     }
 
-    return true;
+    return TErrorCode::Success;
 }
 
 
 // reads all MFT items recursivelly starting from startMftRecRef.
 // if startMftRecRef is FILE then only info about this file is read and added to FItemsList (TItemInfoList)
 // if startMftRecRef is DIRECTORY the function will navigate all child items and child items of child items, read all info and add those items into FItemsList
-bool TMFTStatCollector::ReadMftItems(MFT_REF startMftRecRef, uint32_t dirLevel)
+TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF startMftRecRef, uint32_t dirLevel)
 {
     GET_LOGGER;
 
     ITEM_INFO itemInfo;
 
-    if (!ReadMftItemInfo(startMftRecRef, itemInfo))
+    auto res = ReadMftItemInfo(startMftRecRef, itemInfo);
+    if (res != TErrorCode::Success)
     {
         logger.ErrorFmt("ReadMftItemInfo() finished with error for MFT rec: {:#x}", startMftRecRef.sId.low);
-        return false;
+        return res;
     }
 
     assert(itemInfo.Node.Bitmap.Count() == 0);
@@ -728,16 +738,15 @@ bool TMFTStatCollector::ReadMftItems(MFT_REF startMftRecRef, uint32_t dirLevel)
             //if (dirLevel == 1) cout_t << _T("\t") << item.ciName.c_str() << std::endl;
 
             // reading detailed info about each item (files, directories and reparse points)
-            if (!ReadMftItems(item.MFTRef, dirLevel + 1))
+            res = ReadMftItems(item.MFTRef, dirLevel + 1);
+            if (res != TErrorCode::Success)
             {
                 logger.ErrorFmt("ReadMftItems() finished with error for MFT Rec ID: {:#x}", item.MFTRef.sId.low);
             }
         }
     }
 
-    itemInfo.Node.Clear(); // list of subitems is not needed any more. save memory.
-
-   return true;
+    return TErrorCode::Success;
 }
 
 
@@ -756,9 +765,9 @@ void TMFTStatCollector::ShowVolumeStat()
     startId.Id = MFT_ROOT_REC_ID;
     
     Ticks::Start(_T("Loading time"));
-    if (!ReadMftItems(startId, 0))
+    if (TErrorCode::Success != ReadMftItems(startId, 0))
     {
-        logger.Error("ReadMftItems() returned false!");
+        logger.Error("ReadMftItems() returned error!");
     }
     Ticks::Finish(_T("Loading time"));
 
