@@ -22,4 +22,4 @@ struct TError
 	char Important;
 };
 
-MFTREADERDLL_API TError ReadVolume(wchar_t* volume, wchar_t* exclFolders, uint32_t* count, uint32_t** data, ProgressCallbackPtr callback);
+MFTREADERDLL_API TError ReadVolume(const wchar_t* volume, wchar_t* exclFolders, uint32_t* count, uint32_t** data, ProgressCallbackPtr callback);
