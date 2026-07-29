@@ -31,7 +31,7 @@ protected:
     }*/
 };
 
-TEST_F(MFTParserBaseTests, ParseVolume_Empty)
+TEST_F(MFTParserBaseTests, ParseVolume_1)
 {
     EXPECT_EQ(_T(""), IRecordLoader::ParseVolume(_T(""))); // no default value here, empty string indicates an error.
     EXPECT_EQ(_T("\\\\.\\C:"), IRecordLoader::ParseVolume(_T("C")));
@@ -84,6 +84,25 @@ TEST_F(MFTParserBaseTests, OpenVolume_2)
     EXPECT_THROW(ldr.OpenVolume(_T("\\\\.\\")), std::system_error);
     EXPECT_THROW(ldr.OpenVolume(_T("\\\\.\\\\")), std::system_error);
 
+}
+
+TEST_F(MFTParserBaseTests, OpenVolumeCloseVolume_1)
+{
+    TMFTRecordLoader ldr;
+
+    ldr.CloseVolume();
+
+    ldr.OpenVolume(_T("c:")); // generates an exception if not run as Admin
+    ldr.CloseVolume();
+    ldr.CloseVolume();
+
+    ldr.OpenVolume(_T("c"));
+    ldr.OpenVolume(_T("c:\testfile"));
+    ldr.CloseVolume();
+
+    ldr.OpenVolume(_T("c"));
+    EXPECT_THROW(ldr.OpenVolume(_T("//")), std::system_error);
+    ldr.CloseVolume();
 }
 
 // MFT IDs will be different for different disks, this test linked to one disk only
