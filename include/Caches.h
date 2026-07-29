@@ -40,7 +40,8 @@ public:
     TLCNRecs(uint32_t recSize, uint32_t capacity) : FRecs(recSize) { SetCapacity(capacity); }
 
     void SetCapacity(uint32_t capacity)  { FRecs.SetCapacity(capacity); FHash.SetCapacity(capacity); }
-    void SetRecordSize(uint32_t recSize) { FRecs.SetItemSize(recSize); }
+    void SetRecordSize(uint32_t recSize) { FRecs.SetItemSize(recSize); FHash.Clear(); }
+    uint Count() { assert(FRecs.Count() == FHash.Count()); return FRecs.Count(); }
 
     // copies to the hash LCN record pointed by lcnRecData 
     // returns pointer to the LCN record from FRecs storage, it differs from lcnRecData pointer
