@@ -59,7 +59,7 @@ void TMFTRecordLoader::OpenVolume(const string_t& vol)
 
 
 // mftRec should be a buffer with volData.BytesPerMFTRec size
-bool TMFTRecordLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
+TErrorCode TMFTRecordLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
 {
     assert(GetVolumeData().hVolume != INVALID_HANDLE_VALUE);
 
@@ -76,7 +76,7 @@ bool TMFTRecordLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
     {
         GET_LOGGER;
         logger.ErrorFmt("DeviceIoControl failed with error. Error code: {}", GetLastError());
-        return false;
+        return TErrorCode::IOError;
     }
 
     // DeviceIoControl may return other MFT record than we requested.
@@ -87,7 +87,7 @@ bool TMFTRecordLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
         GET_LOGGER;
         logger.WarnFmt("Requested MFT Rec ID differs from returned. Looks like requested MFT record is deleted. Requested: {}, returned: {}",
                 nfrib.FileReferenceNumber.LowPart, pnfrob->FileReferenceNumber.LowPart);
-        return false;
+        return TErrorCode::MFTRecordNotInUse;
     }
 
     MFT_FILE_RECORD* mftRecord = (MFT_FILE_RECORD*)(pnfrob->FileRecordBuffer);
@@ -116,7 +116,7 @@ bool TMFTRecordLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
     UNREFERENCED_PARAMETER(res);
     assert(!res);
 
-    return true;
+    return TErrorCode::Success;
 }
 
 /**
@@ -126,7 +126,7 @@ bool TMFTRecordLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
 * @param lcnCnt Count of sequential clusters to be read
 * @param dataBuf Buffer where all clusters will be read. Should be at least size lcnCnt*VolumeClusterSize
 **/
-bool TMFTRecordLoader::ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf)
+TErrorCode TMFTRecordLoader::ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf)
 {
     LARGE_INTEGER offset{ 0 };
     DWORD bytesToRead, bytesRead;
@@ -138,7 +138,7 @@ bool TMFTRecordLoader::ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf
     {
         GET_LOGGER;
         logger.ErrorFmt("ReadCluster.SetFilePointerEx has failed with error: {}", GetLastError());
-        return false;
+        return TErrorCode::IOError;
     }
 
     // read lcnCnt clusters
@@ -147,13 +147,16 @@ bool TMFTRecordLoader::ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf
     if (res)
     {
         assert(bytesToRead == bytesRead);
-        return true;
+        return TErrorCode::Success;
     }
     else
     {
         GET_LOGGER;
         logger.ErrorFmt("ReadCluster.ReadFile has failed with error: {}", GetLastError());
-        return false;
+        return TErrorCode::IOError;
     }
 }
+
+
+
 
