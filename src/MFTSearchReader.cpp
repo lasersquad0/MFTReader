@@ -154,7 +154,7 @@ bool TMFTReaderBase::ProcessAllocDataRuns(DIR_NODE& node, AddFileAttrPred pred)
 * @param level Pointer to level where new items will be added (current level)
 * @return true if success, false in case of error
 */ 
-bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint32_t parentIdx, TFileCache::TLevel* level)
+TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint32_t parentIdx, TFileCache::TLevel* level)
 {
     GET_LOGGER;
 
@@ -169,6 +169,13 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
 
     assert(mftRec->FileRecSize > mftRec->FirstAttrOffset);
     assert(ntfs_is_file_recp(mftRec->RecHeader.Signature));
+
+    // This record is NOT in use. Does not contain info about any file. Do not parse it because it can contain any garbage.
+    if ((mftRec->Flags & MFT_FLAG_IN_USE) == 0)
+    {
+        logger.WarnFmt("Warn! Record is not in use. MFT Rec ID: {}", MFT_REF::toHexString(mftRec->IndexMFTRec));
+        return TErrorCode::MFTRecordNotInUse;
+    }
 
     logger.Debug("---------- PARSING MFT RECORD ---------");
 
@@ -303,9 +310,9 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
 
                         if (visitedMFTRec.IndexOf(attrListItem->ref.sId.low) == -1) // make sure we parse each record only once
                         {
-                            if (FLoader.LoadMFTRecord(attrListItem->ref, mftRecBuf))
+                            if (TErrorCode::Success == FLoader.LoadMFTRecord(attrListItem->ref, mftRecBuf))
                             {
-                                if (ParseMFTRecord(mftRecBuf, node, parentIdx, level)) //TODO shall we break in case of an error in LoadMFTRecord or ParseMFTRecord 
+                                if (TErrorCode::Success == ParseMFTRecord(mftRecBuf, node, parentIdx, level)) //TODO shall we break in case of an error in LoadMFTRecord or ParseMFTRecord 
                                     visitedMFTRec.AddValue(attrListItem->ref.sId.low);
                                 else
                                     logger.Error("ParseMFTRecord finished with error.");
@@ -396,9 +403,9 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
             {
                 logger.InfoFmt("Non-Resident ATTR_BITMAP ('{}') has been met. MFT Rec ID {}", nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
             
-                if (!ParseNonresBitmap(currAttr, node.Bitmap))
+                if (TErrorCode::Success != ParseNonresBitmap(currAttr, node.Bitmap)) 
                 {
-                    logger.Error("ParseNonresBitmap finished with error.");
+                    logger.Error("ParseNonresBitmap finished with error."); //TODO shall we break and return error here?
                 }
 
                 break;
@@ -414,9 +421,9 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
                             node.DataRuns.Count(), MFT_REF::toHexString(mftRec->IndexMFTRec), mftRec->ParentFileRec.toHexString());
                 }
 
-                if (!DecodeDataRuns(currAttr, node.DataRuns))
+                if (TErrorCode::Success != DecodeDataRuns(currAttr, node.DataRuns))
                 {
-                    logger.Error("DataRunsDecode finished with error.");
+                    logger.Error("DataRunsDecode finished with error."); //TODO shall we stop and return error here?
                 }
 
                 // we do not process ALLOC data runs here because in this place we do not know all required info, for example Bitmap attribute.
@@ -432,9 +439,9 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
                 assert(node.FileList.Count() == 0);
 
                 TDataRuns dataRuns;
-                if (!DecodeDataRuns(currAttr, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
+                if (TErrorCode::Success != DecodeDataRuns(currAttr, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
                 {
-                    break;
+                    break; //TODO shall we stop and return error here?
                 }
 
                 assert(dataRuns.Count() == 1); //assuming that one data run is always enough for directory attr list
@@ -447,10 +454,10 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
                 auto dataBufSize = rli.len * getVolData().BytesPerCluster;
                 uint8_t* dataBuf = (uint8_t*)alloca(dataBufSize);
 
-                if (!FLoader.ReadClusters(rli.lcn, rli.len, dataBuf)) // ReadClusters writes a message into log file in case of an error
+                if (TErrorCode::Success != FLoader.ReadClusters(rli.lcn, rli.len, dataBuf)) // ReadClusters writes a message into log file in case of an error
                 {
-                    logger.Error("ReadClusters finished with error."); 
-                    break;
+                    logger.Error("ReadClusters finished with error.");  
+                    break; //TODO shall we stop and return error here?
                 }
 
                 ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)dataBuf;
@@ -497,13 +504,13 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
 
                         if (visitedMFTRec.IndexOf(attrListItem->ref.sId.low) == -1) // make sure we parse each record only once
                         {
-                            uint8_t* mftRecBuf = FLoader.LoadMFTRecordCache(attrListItem->ref);
-                            assert(mftRecBuf != nullptr);
+                            auto mftRecBuf = FLoader.LoadMFTRecordCache(attrListItem->ref);
+                            assert(mftRecBuf);
                             if (mftRecBuf)
                             {
                                 //TODO There may be a case when 2 attributes located in a one child MFT record. 
                                 // They will be parsed twice now. Think of solution for it. 
-                                if (!ParseMFTRecord(mftRecBuf, node, parentIdx, level))
+                                if (TErrorCode::Success != ParseMFTRecord(mftRecBuf.value(), node, parentIdx, level))
                                     logger.Error("ParseMFTRecord finished with error.");
                             }
                             else
@@ -551,7 +558,7 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
 
     logger.Debug("---------- END OF PARSING MFT RECORD ---------");
 
-    return true;
+    return TErrorCode::Success;
 }
 
 /**
@@ -567,7 +574,7 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
  * @param dirSize Passed by ref because we return dir size to upper directory 
  * @param callback Since reading may take a time function tells its progress to caller via callback of ProgressCallbackPtr type.
 */
-bool TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentItem, uint64_t& dirSize, ProgressCallbackPtr callback)
+TErrorCode TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentItem, uint64_t& dirSize, ProgressCallbackPtr callback)
 {
     static int32_t ProgressCounter = 0;
 
@@ -583,10 +590,11 @@ bool TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentIte
     else
         MFTRec = parentItem->FMFTRecID;
 
-    if (!FLoader.LoadMFTRecord(MFTRec, mftRecBuf))
+    auto res = FLoader.LoadMFTRecord(MFTRec, mftRecBuf);
+    if (res != TErrorCode::Success)
     {
         logger.Error("LoadMFTRecord finished with error.");
-        return false;
+        return res;
     }
 
 
@@ -619,9 +627,9 @@ bool TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentIte
         // many articles about NTFS tell us that STD attr does not contain DIR flag while FILENAME does 
         fattr->dup.FileAttrib = stdinfo->FileAttrib | (uint32_t)FILE_ATTR_FLAGS::DIRECTORY; 
 
-        auto res = wmemcpy_s((wchar_t*)Add2Ptr(fattr, sizeof(ATTR_FILE_NAME)), fattr->FileNameLen, getVolData().Name.c_str(), fattr->FileNameLen);
-        UNREFERENCED_PARAMETER(res);
-        assert(!res);
+        auto res2 = wmemcpy_s((wchar_t*)Add2Ptr(fattr, sizeof(ATTR_FILE_NAME)), fattr->FileNameLen, getVolData().Name.c_str(), fattr->FileNameLen);
+        UNREFERENCED_PARAMETER(res2);
+        assert(!res2);
 
         level0->AddValue(0, MFTRec, fattr);
 
@@ -637,10 +645,11 @@ bool TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentIte
     CACHE_ITEM* startItem = level->Last(); // NOTE! Last() returns pointer to item that WILL BE added next. Also startItem may become invalid if realloc happened in the level duing adding new items
 
     DIR_NODE node; //TODO replace two last parameters with predicate FileListPred similar to passed into ProcessAllocDataRuns below.
-    if (!ParseMFTRecord(mftRecBuf, node, parentIdx, level))
+    res = ParseMFTRecord(mftRecBuf, node, parentIdx, level);
+    if (res != TErrorCode::Success)
     {
         logger.Error("ParseMFTRecord finished with error.");
-        return false;
+        return res;
     }
 
     AddFileAttrPred addToFileListPred = [parentIdx, &level](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
@@ -675,7 +684,7 @@ bool TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentIte
 
     if (node.DataRuns.Count() > 0)
     {
-        if (!ProcessAllocDataRuns(node, processAllocPred) )
+        if (TErrorCode::Success != ProcessAllocDataRuns(node, processAllocPred) )
         {
             logger.Error("ProcessAllocDataRuns finished with error.");
             //return is not needed here because node.FileList may contain items from INDEX_ROOT and partially from ALLOCATION
@@ -720,7 +729,7 @@ bool TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentIte
                 if (!item->IsReparse()) //bypass reparse items
                 {
                     uint64_t childDirSize{ 0 };
-                    if (!ReadDirectoryV1(i, item, childDirSize, callback))
+                    if (TErrorCode::Success != ReadDirectoryV1(i, item, childDirSize, callback))
                         logger.ErrorFmt("ReadDirectoryV1 finished with error for MFT Rec ID: {}", item->FMFTRecID.toHexString());
                     dirSize += childDirSize;
                 }
@@ -747,7 +756,7 @@ bool TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentIte
 
     parentItem->FileAttr.dup.FileSize = dirSize;
 
-    return true;
+    return TErrorCode::Success;
 }
 
 void TMFTSearchReader::ReadDirsV1()
@@ -758,7 +767,7 @@ void TMFTSearchReader::ReadDirsV1()
     std::wcout << _T("Reading volume: ") << getVolData().Name << std::endl;
 
     Ticks::Start(_T("Loading time"));
-    if (!ReadDirectoryV1(0, nullptr, rootDirSize, nullptr))
+    if (TErrorCode::Success != ReadDirectoryV1(0, nullptr, rootDirSize, nullptr))
     {
         throw std::runtime_error("ReadDirectoryV1 finished with error.");
     }
