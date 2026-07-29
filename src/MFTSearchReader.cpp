@@ -195,7 +195,7 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
     // usually we call ParseMFTRecord ONLY for directories (for base MFT records).
     // somethimes ParseMFTRecord can be called for special kinds of records e.g. when attributes do not fit into base record and moved into a another "child" record.
     // such special MFT records may be either IN_USE or IN_USE|IS_DIRECTORY type
-    // therefore I added if before assert
+    // therefore 'if' added before assert
     if (IsBASERec)
     {
         if (mftRec->Flags != (MFT_FLAG_IN_USE | MFT_FLAG_IS_DIRECTORY))
@@ -239,8 +239,8 @@ bool TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint3
 
                 ATTR_INDEX_ROOT* indexR = (ATTR_INDEX_ROOT*)attrValue;
                 assert(indexR->AttrType == ATTR_FILENAME);
-                //assert below is not always true. e.g. on some filesystems BytesPerCluster may be=2048 while IndexBlockSize=4096
-                //assert(indexR->IndexBlockSize == getVolData().BytesPerCluster);
+                assert(indexR->IndexBlockSize >= getVolData().BytesPerCluster);
+                assert((indexR->IndexBlockSize % getVolData().BytesPerCluster) == 0);
                 assert(indexR->IndexBlockClst == indexR->IndexBlockSize / getVolData().BytesPerCluster);
                 assert(indexR->Rule == COLLATION_RULE::FILENAME);
 
@@ -675,7 +675,7 @@ bool TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentIte
 
     if (node.DataRuns.Count() > 0)
     {
-        if (!ProcessDataRuns(node, processAllocPred) )
+        if (!ProcessAllocDataRuns(node, processAllocPred) )
         {
             logger.Error("ProcessAllocDataRuns finished with error.");
             //return is not needed here because node.FileList may contain items from INDEX_ROOT and partially from ALLOCATION
