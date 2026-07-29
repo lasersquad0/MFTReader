@@ -17,7 +17,7 @@ public:
     TMFTRawImageLoader(const string_t& imgFileName) { OpenVolume(imgFileName); }
     ~TMFTRawImageLoader() { CloseVolume(); }
 
-    bool EOMFT(MFTRecIndex id) const { return id >= FMFTRecordsCount; }
+    bool Eof(MFTRecIndex id) const { return id >= FMFTRecordsCount; }
 
     int64_t MFTRecIdToOffset(MFTRecIndex MFTRecID)
     {
@@ -134,26 +134,26 @@ public:
         // these two temporary values needed for proper work of LoadMFTRecord
         FMFTRecordsCount = 1;
         FMFTDataRuns.AddValue({ 1, 0, partNTFS.MftStartLcn });
-        bool res = LoadMFTRecord(mftRef, mftRecBuf); // loading MFT record #0 which is $MFT file
-        ASSERT_TRUE(res) << "Error loading MFT record " << mftRef.sId.low;
+        TErrorCode res = LoadMFTRecord(mftRef, mftRecBuf); // loading MFT record #0 which is $MFT file
+        ASSERT_EQ(TErrorCode::Success, res) << "Error loading MFT record " << mftRef.sId.low;
 
         if (!ntfs_is_file_recp(mftRec->RecHeader.Signature))
             FAIL() << "MFT record with incorrect signature found " << mftRec->RecHeader.Signature << " (expected 'FILE')";
 
         // check that record #0 is in use
-        ASSERT_TRUE((mftRec->Flags & MFT_FLAG_IN_USE) == 1);
+        ASSERT_TRUE((mftRec->Flags & MFT_FLAG_IN_USE) == MFT_FLAG_IN_USE);
 
         TMFTParserBase prsr(*this);
         TAttrCollection collection;
         res = prsr.FillAttrCollection(mftRec, collection);
-        ASSERT_TRUE(res) << "Error parsing attributes in MFT record buffer " << mftRef.sId.low;
+        ASSERT_EQ(TErrorCode::Success, res) << "Error parsing attributes in MFT record buffer " << mftRef.sId.low;
 
         auto attr = collection.Get(ATTR_DATA);
         ASSERT_NE(nullptr, attr);
 
         FMFTDataRuns.Clear();
         res = prsr.DecodeDataRuns(attr, FMFTDataRuns);
-        ASSERT_TRUE(res);
+        ASSERT_EQ(TErrorCode::Success, res);
         ASSERT_GT(FMFTDataRuns.Count(), 0ul);
 
         FMFTRecordsCount = 0;
@@ -181,23 +181,23 @@ public:
     //   - attemt to position outside of a file
     //   - cannot read needed BytesPerMFTRec bytes from a file
     //   - record does not contain FILE signature
-    bool LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override
+    TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override
     {
         // check that MFT Rec ID is less than MFT table size
         if (mftRecRef.sId.low >= FMFTRecordsCount)
-            return false;
+            return TErrorCode::WrongMFTRecID;
 
         auto offset = MFTRecIdToOffset(mftRecRef.sId.low);
-        if (offset == -1) return false; // MFT rec ID is out of MFT bounds
+        if (offset == -1) return TErrorCode::WrongMFTRecID; // MFT rec ID is out of MFT bounds
 
         EXPECT_GE(offset, 0); // offset>=0 must be
 
         if (!SetFilePointer(FHFile, (uint32_t)FPartitionOffset + (uint32_t)offset, 0, FILE_BEGIN))
-            return false;
+            return TErrorCode::IOError;
 
         DWORD bytesRead = 0;
         if (!(ReadFile(FHFile, mftRecData, FVolumeData.BytesPerMFTRec, &bytesRead, nullptr) && (bytesRead == FVolumeData.BytesPerMFTRec)))
-            return false;
+            return TErrorCode::IOError;
 
         // check that we've read record with proper signature
         NTFS_RECORD_HEADER* mftRec = (NTFS_RECORD_HEADER*)mftRecData;
@@ -208,18 +208,18 @@ public:
             logger.WarnFmt("[LoadMFTRecord] Signature 'FILE' has not been found in MFT record {}. Signature found: {}{}{}{}", 
                         mftRecRef.sId.low, sign[0], sign[1], sign[2], sign[3]);
 
-            return false;
+            return TErrorCode::WrongMFTRecID;
         }
 
         // because we read MFT records directly from a file, we need to fixup USA in them.
         // when we read via DeviceIoControl WINAPI call then we do NOT need to fixup USA.
-        if (!FixupUsaMFTRec(mftRec))
-            return false;
+        auto res = FixupUsaMFTRec(mftRec);
+        if (res != TErrorCode::Success) return res;
 
-        return true;
+        return TErrorCode::Success;
     }
 
-    bool ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf)
+    TErrorCode ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf)
     {
         LARGE_INTEGER offset{ 0 };
         DWORD bytesToRead, bytesRead;
@@ -231,7 +231,7 @@ public:
         {
             GET_LOGGER;
             logger.ErrorFmt("ReadClusters.SetFilePointerEx() has failed with error: {}", GetLastError());
-            return false;
+            return TErrorCode::IOError;
         }
 
         // read lcnCnt clusters
@@ -240,18 +240,18 @@ public:
         if (res)
         {
             assert(bytesToRead == bytesRead);
-            return true;
+            return TErrorCode::Success;
         }
         else
         {
             GET_LOGGER;
             logger.ErrorFmt("ReadClusters.ReadFile() has failed with error: {}", GetLastError());
-            return false;
+            return TErrorCode::IOError;
         }
     }
 
     // Applies Update Sequence Array (USA) to MFT record refered by dataBuf
-    bool FixupUsaMFTRec(NTFS_RECORD_HEADER* mftRec)
+    TErrorCode FixupUsaMFTRec(NTFS_RECORD_HEADER* mftRec)
     {
         return FixupUSA1(mftRec, FVolumeData.BytesPerMFTRec, FVolumeData.BytesPerSector);
     }
