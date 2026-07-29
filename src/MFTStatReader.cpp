@@ -121,13 +121,16 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
         assert(mftRec->ParentFileRec.Id != 0);
     }
 
-    logger.DebugFmt("MFT Rec Signature: '{}'", std::string((char*)mftRec->RecHeader.Signature, 4));
-    logger.DebugFmt("MFT Rec ID: {}", MFT_REF::toHexString(mftRec->IndexMFTRec));
-    logger.DebugFmt("MFT Rec Num re-used: {}", mftRec->SeqNum);
-    logger.DebugFmt("MFT Parent Rec ID: {} {}", mftRec->ParentFileRec.toHexString(), mftRec->ParentFileRec.Id > 0 ? " CHILD" : "BASE");
-    logger.DebugFmt("MFT Hard Links Count: {}{}", mftRec->HardLinksCnt, mftRec->ParentFileRec.Id > 0? " (may be inaccurate for child records)": "");
-    logger.DebugFmt("MFT Rec Size: {}", mftRec->FileRecSize);
-    logger.DebugFmt("MFT Allocated Rec Size: {} ", mftRec->AllocFileRecSize);
+    if (logger.ShouldLog(LogEngine::Levels::llDebug))
+    {
+        logger.DebugFmt("MFT Rec Signature: '{}'", std::string((char*)mftRec->RecHeader.Signature, 4));
+        logger.DebugFmt("MFT Rec ID: {}", MFT_REF::toHexString(mftRec->IndexMFTRec));
+        logger.DebugFmt("MFT Rec Num re-used: {}", mftRec->SeqNum);
+        logger.DebugFmt("MFT Parent Rec ID: {} {}", mftRec->ParentFileRec.toHexString(), mftRec->ParentFileRec.Id > 0 ? " CHILD" : "BASE");
+        logger.DebugFmt("MFT Hard Links Count: {}{}", mftRec->HardLinksCnt, mftRec->ParentFileRec.Id > 0 ? " (may be inaccurate for child records)" : "");
+        logger.DebugFmt("MFT Rec Size: {}", mftRec->FileRecSize);
+        logger.DebugFmt("MFT Allocated Rec Size: {} ", mftRec->AllocFileRecSize);
+    }
 
     switch (mftRec->Flags)
     {
@@ -163,17 +166,17 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
         }
         
         // all attributes except for ATTR_FILENAME, ATTR_DATA and ATTR_LOGGED_UTILITY_STREAM must have only single instance in one MFT record.
-        // also there can be more than one ALLOCATION attribute because folders may have huge number of files and Data Runs in ALLOCATION attribute can be long
+        // also there can be more than one ATTR_ALLOC attribute because folders may have huge number of files and Data Runs in ATTR_ALLOC attribute can be long
         if ((currAttr->AttrType != ATTR_FILENAME) && (currAttr->AttrType != ATTR_DATA) &&
             (currAttr->AttrType != ATTR_LOGGED_UTILITY_STREAM) && (currAttr->AttrType != ATTR_ALLOC) &&
-            (itemInfo.AttrCounters[MakeAttrTypeIndex(currAttr->AttrType)] > 0))
+            (itemInfo.AttrCounters[MATI(currAttr->AttrType)] > 0))
             logger.InfoFmt("Looks like two and more {} ({}) attributes have found in MFT Rec: {}", 
                       AttrName(currAttr->AttrType), nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
 
         
         if (currAttr->NonResidentFlag == 0) // attribute is RESident
         {
-            itemInfo.AttrCounters[MakeAttrTypeIndex(currAttr->AttrType)]++;
+            itemInfo.AttrCounters[MATI(currAttr->AttrType)]++;
             itemInfo.AttrsCount++;
 
             logger.DebugFmt("Attr Indexed: {}", currAttr->res.IndexedFlag);
@@ -189,23 +192,21 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
 
                 assert((stdinfo->FileAttrib & FILE_ATTRIBUTE_NORMAL) == 0);// check that NORMAL bit is always zero
 
-                //if (logger.ShouldLog(LogEngine::Levels::llDebug))
-                //{
-
+                if (logger.ShouldLog(LogEngine::Levels::llDebug))
+                {
                     /*logger.Debug(FileDateToString("Created: ", stdinfo->CreateTime));
-                    logger.Debug(FileDateToString("Modified: ", stdinfo->ModifyTime));
-                    logger.Debug(FileDateToString("LastAccess: ", stdinfo->LastAccessTime));
-                    */
-               // }
-
-                logger.DebugFmt("File Attrib: {:#x} {}", stdinfo->FileAttrib, FormatFileAttributes(stdinfo->FileAttrib));
-                logger.DebugFmt("Version number: {}", stdinfo->VersionNum);
-                logger.DebugFmt("Max Version num: {}", stdinfo->max_ver_num);
-                logger.DebugFmt("Class Id: {}", stdinfo->class_id);
-                logger.DebugFmt("Owner Id: {}", stdinfo->owner_id);
-                logger.DebugFmt("USN: {:#x}", stdinfo->usn);
-                logger.DebugFmt("Security ID: {}", stdinfo->security_id);
-                logger.DebugFmt("Quota Charged: {}", stdinfo->quota_charged);
+                      logger.Debug(FileDateToString("Modified: ", stdinfo->ModifyTime));
+                      logger.Debug(FileDateToString("LastAccess: ", stdinfo->LastAccessTime));
+                    */    
+                    logger.DebugFmt("File Attrib: {:#x} {}", stdinfo->FileAttrib, FormatFileAttributes(stdinfo->FileAttrib));
+                    logger.DebugFmt("Version number: {}", stdinfo->VersionNum);
+                    logger.DebugFmt("Max Version num: {}", stdinfo->max_ver_num);
+                    logger.DebugFmt("Class Id: {}", stdinfo->class_id);
+                    logger.DebugFmt("Owner Id: {}", stdinfo->owner_id);
+                    logger.DebugFmt("USN: {:#x}", stdinfo->usn);
+                    logger.DebugFmt("Security ID: {}", stdinfo->security_id);
+                    logger.DebugFmt("Quota Charged: {}", stdinfo->quota_charged);
+                }
 
                 break;
             }
@@ -224,29 +225,31 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
 
                 assert((fname->dup.FileAttrib & FILE_ATTRIBUTE_NORMAL) == 0);// check that NORMAL bit is always zero
 
-                logger.DebugFmt("File Parent Rec ID: {}", fname->ParentDir.toHexString());
-                logger.DebugFmt("File Name Type: '{}' ({:#x})", FileNameTypes[fname->NameType], fname->NameType);
-                logger.DebugFmt("File DOS Attrib: {:#x} {}", fname->dup.FileAttrib, FormatFileAttributes(fname->dup.FileAttrib));
-                logger.DebugFmt("File Name: '{}'", wtos(name));
-                logger.DebugFmt("File Size: {}", fname->dup.FileSize);
+                if (logger.ShouldLog(LogEngine::Levels::llDebug))
+                {
+                    logger.DebugFmt("File Parent Rec ID: {}", fname->ParentDir.toHexString());
+                    logger.DebugFmt("File Name Type: '{}' ({:#x})", FileNameTypes[fname->NameType], fname->NameType);
+                    logger.DebugFmt("File DOS Attrib: {:#x} {}", fname->dup.FileAttrib, FormatFileAttributes(fname->dup.FileAttrib));
+                    logger.DebugFmt("File Name: '{}'", wtos(name));
+                    logger.DebugFmt("File Size: {}", fname->dup.FileSize);
 
+                    /*logger.Debug(FileDateToString("Created: ", fname->dup.CreateTime));
+                    logger.Debug(FileDateToString("Modified: ", fname->dup.ModifyTime));
+                    logger.Debug(FileDateToString("LastAccess: ", fname->dup.LastAccessTime));
+                    */
+
+                }
                 /*if (stdinfo && (stdinfo->CreateTime != fname->dup.CreateTime))
                 {
                     logger.WarnFmt("CreateTime: STDINFO {} != FNAME {} ", FileDateToString("", stdinfo->CreateTime), FileDateToString("", fname->dup.CreateTime));
                     //assert(stdinfo->CreateTime == fname->dup.CreateTime);
                 }*/
-                
+
                 /*if (stdinfo->ModifyTime != fname->dup.ModifyTime)
                 {
                     //logger.WarnFmt("ModifyTime: STDINFO {} != FNAME {} ", FileDateToString("", stdinfo->ModifyTime), FileDateToString("", fname->dup.ModifyTime));
                     //assert(stdinfo->ModifyTime == fname->dup.ModifyTime);
                 }*/
-
-                /*logger.Debug(FileDateToString("Created: ", fname->dup.CreateTime));
-                logger.Debug(FileDateToString("Modified: ", fname->dup.ModifyTime));
-                logger.Debug(FileDateToString("LastAccess: ", fname->dup.LastAccessTime));
-                */
-                //assert(fname->dup.FileSize == 0);
 
                 break;
             }
@@ -282,7 +285,6 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                     }
                 }
                 
-                //logger.DebugFmt("We do not process this attribute. Attr: '{}', AttrName: '{}'.", AttrName(currAttr->AttrType), nameOfAttrA);
                 break;
             }
             case ATTR_ROOT: // Resident. ATTR_ROOT is resident only.
@@ -290,9 +292,10 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                 // $SDH INDEX_ROOT attribute name is related to storing and searching security descriptors (usually in MFT=0x09 $Secure).
 
                 ATTR_INDEX_ROOT* indexR = (ATTR_INDEX_ROOT*)attrValue;
-                //assert below is not always true. e.g. on some filesystems BytesPerCluster may be=2048 while IndexBlockSize=4096
-                //assert(indexR->IndexBlockSize == getVolData().BytesPerCluster);
-                assert(indexR->IndexBlockClst == indexR->IndexBlockSize/getVolData().BytesPerCluster);
+                assert(indexR->IndexBlockSize >= getVolData().BytesPerCluster); // AI told that this rule should always be true
+                assert((indexR->IndexBlockSize % getVolData().BytesPerCluster) == 0); // AI told that this rule should always be true
+                assert(indexR->IndexBlockClst == indexR->IndexBlockSize/getVolData().BytesPerCluster); 
+                assert(indexR->ihdr.Flags < 2); // 0 - Small Dir, 1- Big Dir
 
                 //$O exists in $Quota, $ObjId special files, $R exists in $Reparse
                 if (nameOfAttrA != "$I30")
@@ -309,14 +312,22 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
 
                 itemInfo.Node.IndexBlockSize = indexR->IndexBlockSize; // need this value for further processing ALLOC Data Runs
 
-                logger.DebugFmt("IndexRoot Indexed Attr Type: {} {:#x}", AttrName(indexR->AttrType), (uint32_t)indexR->AttrType);
-                logger.DebugFmt("IndexRoot Collation Rule: {} ({:#x})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
-                logger.DebugFmt("IndexRoot Dir Type: {} ({:#x})", indexR->ihdr.Flags == 0 ? "SMALL DIR" : "BIG DIR", indexR->ihdr.Flags);
-                logger.DebugFmt("IndexRoot IndexBlockSize: {}", indexR->IndexBlockSize);
-                logger.DebugFmt("IndexRoot IndexBlockClst: {}", indexR->IndexBlockClst);
-                
                 auto pihdr = &(indexR->ihdr);
-                logger.DebugFmt("IHDR Used Bytes: {}", pihdr->Used);
+                if (logger.ShouldLog(LogEngine::Levels::llDebug))
+                {
+                    logger.DebugFmt("IndexRoot Indexed Attr Type: {} {:#x}", AttrName(indexR->AttrType), (uint32_t)indexR->AttrType);
+                    logger.DebugFmt("IndexRoot Collation Rule: {} ({:#x})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
+                    logger.DebugFmt("IndexRoot Dir Type: {} ({:#x})", indexR->ihdr.Flags == 0 ? "SMALL DIR" : "BIG DIR", indexR->ihdr.Flags);
+                    logger.DebugFmt("IndexRoot IndexBlockSize: {}", indexR->IndexBlockSize);
+                    logger.DebugFmt("IndexRoot IndexBlockClst: {}", indexR->IndexBlockClst);
+                    logger.DebugFmt("IHDR Used Bytes: {}", pihdr->Used);
+                }
+
+                assert(itemInfo.Node.FileList.Count() == 0);
+
+                // optimization: preparing for adding many files into FileList for BIG DIRs, to reduce number of memory re-allocations
+                if(indexR->ihdr.Flags != 0)
+                    itemInfo.Node.FileList.SetCapacity(FILE_LIST_DEF_SIZE);
 
                 GetFileList(pihdr, addToFileListPred);
 
@@ -464,24 +475,27 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                 itemInfo.AttrsCount++;
             }
 
-            logger.DebugFmt("Attr StartVCN: {}",     currAttr->nonres.StartVCN);
-            logger.DebugFmt("Attr LastVCN: {}",      currAttr->nonres.LastVCN);
-            logger.DebugFmt("Attr RealSize: {}",     currAttr->nonres.RealSize);
-            logger.DebugFmt("Attr StreamSize: {}",   currAttr->nonres.StreamSize);
-            logger.DebugFmt("Attr AllocatedSize: {}",currAttr->nonres.AllocatedSize);
-
-            if (currAttr->nonres.CompressionUnitSize > 0) // for compressed files
+            if (logger.ShouldLog(LogEngine::Levels::llDebug))
             {
-                logger.DebugFmt("Attr CompressionUnitSize: {}", currAttr->nonres.CompressionUnitSize);
-                logger.DebugFmt("Attr CompressedSize: {}", currAttr->nonres.CompressedSize);
+                logger.DebugFmt("Attr StartVCN: {}", currAttr->nonres.StartVCN);
+                logger.DebugFmt("Attr LastVCN: {}", currAttr->nonres.LastVCN);
+                logger.DebugFmt("Attr RealSize: {}", currAttr->nonres.RealSize);
+                logger.DebugFmt("Attr StreamSize: {}", currAttr->nonres.StreamSize);
+                logger.DebugFmt("Attr AllocatedSize: {}", currAttr->nonres.AllocatedSize);
+
+                if (currAttr->nonres.CompressionUnitSize > 0) // for compressed files
+                {
+                    logger.DebugFmt("Attr CompressionUnitSize: {}", currAttr->nonres.CompressionUnitSize);
+                    logger.DebugFmt("Attr CompressedSize: {}", currAttr->nonres.CompressedSize);
+                }
+
+                // this is rare case when file contains non-initialised portion of data
+                // in this case RealSize contains total file size while StreamSize contains size of initialised data (StreamSize<RealSize) 
+                if (currAttr->nonres.RealSize != currAttr->nonres.StreamSize)
+                    logger.DebugFmt("'currAttr.RealSize != currAttr.StreamSize'. ReadlSize: {}, StreamSize: {}, MFT Rec ID: {}",
+                        currAttr->nonres.RealSize, currAttr->nonres.StreamSize, MFT_REF::toHexString(mftRec->IndexMFTRec));
             }
 
-            // this is rare case when file contains non-initialised portion of data
-            // in this case RealSize contains total file size while StreamSize contains size of initialised data (StreamSize<RealSize) 
-            if (currAttr->nonres.RealSize != currAttr->nonres.StreamSize)
-                logger.DebugFmt("'currAttr.RealSize != currAttr.StreamSize'. ReadlSize: {}, StreamSize: {}, MFT Rec ID: {}", 
-                    currAttr->nonres.RealSize, currAttr->nonres.StreamSize, MFT_REF::toHexString(mftRec->IndexMFTRec));
-            
             if (currAttr->nonres.RealSize < currAttr->nonres.StreamSize)
                 logger.WarnFmt("'currAttr.RealSize < currAttr.StreamSize'. ReadlSize: {}, StreamSize: {}, MFT Rec ID: {}",
                     currAttr->nonres.RealSize, currAttr->nonres.StreamSize, MFT_REF::toHexString(mftRec->IndexMFTRec));
@@ -492,13 +506,13 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
             {
                 itemInfo.HasNonResidentDataAttr = true;
 
-                logger.DebugFmt("We do not process this attribute except for Data Runs decode. Attr: ATTR_DATA. Name: '{}'. ", nameOfAttrA);
+                logger.DebugFmt("ATTR_DATA. We do not process this attribute except for Data Runs decode. Attr Name: '{}'. ", nameOfAttrA);
                 
                 // for big data runs we can come here several times when one file data runs are split between several MFT records.
                 // itemInfo.Node.DataRuns will accumulate all data runs from all parts.
-                if (!DecodeDataRuns(currAttr, itemInfo.Node.DataRuns))
+                if (!DecodeDataRuns(currAttr, itemInfo.Node.DataRuns)) //DataRunsDecode writes a message into log file in case of an error
                 {
-                    break; //DataRunsDecode writes a message into log file in case of an error
+                    break; // our further processing does not depend on successfull decoding ATTR_DATA Data runs, therefore just do break here.
                 }
 
                 logger.DebugFmt("NON-Resident ATTR_DATA Data Runs Count: {}, Stream Name: '{}'.", itemInfo.Node.DataRuns.Count(), nameOfAttrA);
@@ -518,6 +532,8 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
 
             case ATTR_BITMAP: // NON-resident. ATTR_BITMAP can be either resident and non-resident
             {
+                logger.InfoFmt("Non-Resident ATTR_BITMAP ('{}') has been met. MFT Rec ID {}", nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
+
                 if (itemInfo.NonResidentBitmap.has_value())
                     logger.WarnFmt("Incorrect case has been met: Looks like two or more ATTR_BITMAP ('{}') attributes were met in a one MFT record: {}.", 
                               nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
@@ -525,8 +541,6 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
 
                 assert(itemInfo.Node.Bitmap.Count() == 0);
 
-                logger.InfoFmt("Non-Resident ATTR_BITMAP ('{}') has been met. MFT Rec ID {}", nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
-              
                 // most MFT record have BITMAP attribute with '$I30' name
                 // however special MFT records (#0...#33) have BITMAP attribute with other names
                 // special records have the following attr names: $O, $R, <empty> (for $MFT file record)
@@ -537,12 +551,24 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                 // all non-Internal BITMAP attrs have name '$I30'
                 if (!IsMFTRecInternal(mftRec->IndexMFTRec)) assert(nameOfAttrA == "$I30");
 
-                if (!ParseNonresBitmap(currAttr, itemInfo.Node.Bitmap))
+                if (FProcessNonResAttr)
                 {
-                    logger.Error("ParseNonresBitmap finished with error.");
-                    break;
+                    if (!ParseNonresBitmap(currAttr, itemInfo.Node.Bitmap))
+                    {
+                        logger.Error("ParseNonresBitmap finished with error.");
+                        return false; //break;
+                    }
                 }
-                
+                else
+                {
+                    logger.Info("[NON-Resident ATTR_BITMAP] - We have been told to DO NOT process non-resident attributes.");
+
+                    // just decode Data Runs without any further processing
+                    TDataRuns dataRuns;
+                    if (!DecodeDataRuns(currAttr, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
+                        return false;
+                }
+
                 break;
             }
             case ATTR_ALLOC: // NON-resident. Only.
@@ -559,14 +585,19 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                     logger.InfoFmt("Multiple ATTR_ALLOC attributes have met. node.DataRuns.Count(): {}, Child MFT Rec ID: {}, Base MFT Rec ID: {}",
                         itemInfo.Node.DataRuns.Count(), MFT_REF::toHexString(mftRec->IndexMFTRec), mftRec->ParentFileRec.toHexString());
                 }
-
+                else // Dataruns.Count() == 0
+                {
+                    // optimization: processing first ALLOC -> call SetCapacity
+                    itemInfo.Node.DataRuns.SetCapacity(DATA_RUNS_DEF_SIZE);
+                }
+                    
                 if (!DecodeDataRuns(currAttr, itemInfo.Node.DataRuns)) // writes a message into log file in case of an error
                 {
                     break;
                 }
 
                 // ONLY DECODE DATA RUNS HERE.
-                // Processing of data runs is moved below after all atrributes are read from MFT base and child records
+                // Processing of data runs is done below after all atrributes are read from MFT base and child records
 
                 break;
             }
@@ -581,64 +612,23 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
                               nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
                 itemInfo.NonResidentAttrList = true;
 
-                if(!ParseNonresAttrList(mftRec->IndexMFTRec, currAttr, callReadMftItemInfoPred))
+                if (FProcessNonResAttr)
                 {
-                    logger.Error("ParseNonresAttrList returned error.");
-                    //return;
-                }
-
-                /*TDataRuns dataRuns;
-                if (!DecodeDataRuns(currAttr, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
-                {
-                    break;
-                }
-
-                //if (dataRuns.Count() > 1)
-                //    logger.InfoFmt("UNUSUAL case. Non-resident ATTR_LIST_ATTR occupies {} data runs instead one.", dataRuns.Count());
-
-                THArray<uint32_t> visitedMFTRec;
-                uint32_t currRun = 0;
-
-                // "global" (outside of outer loop) counter of processed attributes in ATTR_LIST
-                // sometimes data run list contains 2 data runs, but number of attributes is limited by RealSize value 
-                // and may be limited by first data run only
-                // second data run is "officially" present, but is not parsed because of RealSize
-                uint64_t processedAttrSize = 0;
-
-                while (currRun < dataRuns.Count())
-                {
-                    DATA_RUN_ITEM& rli = dataRuns[currRun];
-                    logger.DebugFmt("Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
-
-                    //if (rli.len > 1)
-                    //    logger.InfoFmt("UNUSUAL case. Non-resident ATTR_LIST_ATTR datarun item occupies {} LCNs instead of one.", rli.len);
-
-                    auto dataBufSize = rli.len * getVolData().BytesPerCluster;
-                    uint8_t* dataBuf = (uint8_t*)alloca(dataBufSize);//TODO it is not good to allocate memory in a loop each time
-
-                    if (!ReadClusters(rli.lcn, rli.len, dataBuf)) // ReadClusters writes a message into log file in case of an error
+                    if (!ParseNonresAttrList(mftRec->IndexMFTRec, currAttr, callReadMftItemInfoPred))
                     {
-                        break;
+                        logger.Error("ParseNonresAttrList returned error.");
+                        return false;
                     }
-
-                    ATTR_LIST_ENTRY* attrEntry = (ATTR_LIST_ENTRY*)dataBuf;
+                }
+                else
+                {
+                    logger.Info("[NON-Resident ATTR_LIST_ATTR] - We have been told to DO NOT process non-resident attributes.");
                     
-                    //TODO probably we need to parse each cluster separately because end of last attrEntry in cluster#1 does not mean start of first attrEntry in cluster#2
-                   
-                    uint8_t* attrEntryEnd = dataBuf + dataBufSize;
-                    
-                    //assert(currAttr->nonres.RealSize < getVolData().BytesPerCluster);
-                    ParseAttrList(mftRec->IndexMFTRec, attrEntry, attrEntryEnd, currAttr->nonres.RealSize, processedAttrSize, callReadMftItemInfoPred);
-
-                    if (processedAttrSize >= currAttr->nonres.RealSize)
-                    {
-                        logger.DebugFmt("Outer loop is finished by this condition: 'processedAttrSize >= realSize'. Last Attr: {}, realSize: {}", 
-                                AttrName(attrEntry->AttrType), currAttr->nonres.RealSize);
-                        break;
-                    }
-
-                    currRun++;
-                }*/
+                    // just decode Data Runs without any further processing
+                    TDataRuns dataRuns;
+                    if (!DecodeDataRuns(currAttr, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
+                        return false;
+                }
 
                 logger.Debug("[NON-Resident ATTR_LIST_ATTR] - FINISHED PARSING");
 
@@ -674,21 +664,24 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
     {
         // once we read all attributes we are ready to process ALLOC data runs which exist for Dir type only
         // when DataRuns.Count()==0 it means that all files (small number of files) are fit into INDEX_ROOT attribute
-        if (itemInfo.IsDir() && (itemInfo.Node.DataRuns.Count() > 0))
+        // or directory does not contain any files
+        if (itemInfo.IsDir() && (itemInfo.Node.DataRuns.Count() > 0) && FProcessNonResAttr)
         {
-            assert(itemInfo.AttrCounters[MakeAttrTypeIndex(ATTR_ALLOC)] > 0);
+            assert(itemInfo.AttrCounters[MATI(ATTR_ALLOC)] > 0);
+            assert(itemInfo.AttrCounters[MATI(ATTR_ROOT)] == 1);
+            assert(itemInfo.AttrCounters[MATI(ATTR_BITMAP)] == 1);
 
-            // single function but different behaviour of adding files/dirs into lists
-            // in other place where ProcessDataRuns called lambda adds found dirs into another list
-            if (!ProcessDataRuns(itemInfo.Node, processAllocPred))
+            // calls processAllocPred for every cluster where ALLOC data is located (according to Data Runs) 
+            // and where Bitmap contains 1 in appropriate cluster bit
+            if (!ProcessAllocDataRuns(itemInfo.Node, processAllocPred))
             {
                 logger.Error("ProcessAllocDataRuns finished with error.");
-                //return is not needed here because node.FileList may contain items from INDEX_ROOT and partially from ALLOCATION
+                return false; //return is not needed here because node.FileList may contain items from INDEX_ROOT and partially from ALLOCATION
             }
         }
 
         // just to free some memory
-        itemInfo.Node.DataRuns.Clear();
+        itemInfo.Node.DataRuns.ClearMem();
         itemInfo.Node.Bitmap.Clear();
 
         logger.DebugFmt("---------- FINISHED Reading BASE MFT Record ({}) ---------", MFT_REF::toHexString(mftRec->IndexMFTRec));
@@ -702,9 +695,9 @@ bool TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& i
 }
 
 
-// reads all MFT items recursivelly starting from startMftRec.
-// if startMftRec is FILE then only info about this file will be read and added to the parameter 'list' (TItemInfoList)
-// if startMftRec is DIRECTORY the function will navigate all child items and child items of child items, read all info and add all those items into param 'list'
+// reads all MFT items recursivelly starting from startMftRecRef.
+// if startMftRecRef is FILE then only info about this file is read and added to FItemsList (TItemInfoList)
+// if startMftRecRef is DIRECTORY the function will navigate all child items and child items of child items, read all info and add those items into FItemsList
 bool TMFTStatCollector::ReadMftItems(MFT_REF startMftRecRef, uint32_t dirLevel)
 {
     GET_LOGGER;
