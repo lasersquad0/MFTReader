@@ -1,5 +1,6 @@
 #pragma once
 
+#include "gtest/gtest.h"
 #include "Readers.h"
 #include "TestUtils.h"
 
@@ -7,19 +8,25 @@ class TMFTRawImageLoader : public IRecordLoader
 {
 private:
     HANDLE FHFile = INVALID_HANDLE_VALUE;
-    uint64_t FPartitionOffset{ 0 };
-    //uint64_t FMFTOffset{};
-    TDataRuns FMFTDataRuns;
-    uint64_t FMFTRecordsCount{ 0 };
+    uint64_t FPartitionOffset{ 0 }; // offset from beginning of the file where NTFS partition starts 
+    uint64_t FMFTRecordsCount{ 0 }; // total number of MFT records in $MFT file
+    TDataRuns FMFTDataRuns; // Data Runs of $MFT file, used to properly calc offsets for MFT records
 
 public:
-    bool EOMFT(MFTRecIndex id) { return id >= FMFTRecordsCount; }
+    TMFTRawImageLoader() {}
+    TMFTRawImageLoader(const string_t& imgFileName) { OpenVolume(imgFileName); }
+    ~TMFTRawImageLoader() { CloseVolume(); }
+
+    bool EOMFT(MFTRecIndex id) const { return id >= FMFTRecordsCount; }
 
     int64_t MFTRecIdToOffset(MFTRecIndex MFTRecID)
     {
         return MFTRecIdToOffset(MFTRecID, FMFTDataRuns, FVolumeData.BytesPerCluster, FVolumeData.BytesPerMFTRec);
     }
 
+    // MFT table may be fragmented. Fragments can be found in Data Runs in the first MFT record (file with name '$MFT', MFT rec #0)
+    // This function calculates offset of MFT record MFTRecID taking into account MFT table fragmentation. 
+    // This offset starts from first byte of NTFS partition. 
     static int64_t MFTRecIdToOffset(MFTRecIndex MFTRecID, TDataRuns& runs, uint32_t BytesPerCluster, uint32_t BytesPerMFTRec)
     {
         if (runs.Count() == 0) return -1;
@@ -44,88 +51,105 @@ public:
         return (rli.lcn + rli.len) * BytesPerCluster - (sum - MFTRecID) * BytesPerMFTRec;
     }
 
-    TMFTRawImageLoader() {}
-    TMFTRawImageLoader(const string_t& imgFileName) { OpenVolume(imgFileName); }
-    ~TMFTRawImageLoader() { CloseVolume(); }
-
-    //finds first MFT record and fills FMFTOffset with byte offset to this record from beginning of the image file 
+    // finds first NTFS partition in the file, then finds first MFT record in this partition.
+    // results are stored in FPartitionOffset, FMFTDataRuns, FMFTRecordsCount fields 
     void OpenVolume(const string_t& imgFileName) override
     {
+        ASSERT_EQ(INVALID_HANDLE_VALUE, FHFile);
+
         FHFile = CreateFile(imgFileName.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        
         ASSERT_NE(INVALID_HANDLE_VALUE, FHFile) << "Error opening file '" << imgFileName << "'";;
 
-        MBR_PARTITION_ENTRY mbr;
-        NTFS_BOOT_SECTOR partNTFS;
-        //uint64_t ntfsOff = 0; // partition not found
-        DWORD off = 0x1BE;
+        // try to find "NTFS   " in the beginning of the file (offset 3).
+        // if found - file contain only NTFS partition without MBR
+        DWORD bytesRead = 0;
+        NTFS_BOOT_SECTOR partNTFS{ 0 };
 
-        // look list of partitions for NTFS partition
-        for (size_t i = 0; i < 4; i++)
+        //if (SetFilePointer(FHFile, 0, 0, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+        //    FAIL() << std::format(L"Error setting file pointer for file '{}', Error code: {}", imgFileName, GetLastError());
+
+        if (!(ReadFile(FHFile, &partNTFS, sizeof(partNTFS), &bytesRead, nullptr) && (bytesRead == sizeof(partNTFS))))
+            FAIL() << std::format(L"Error reading file '{}', Error code: {}", imgFileName, GetLastError());
+
+        FPartitionOffset = 0;
+
+        if (memcmp(partNTFS.OemId, NTFS_LABEL, 8) != 0)
         {
-            if (!SetFilePointer(FHFile, off, 0, FILE_BEGIN))
-                FAIL() << "Error setting file pointer '" << imgFileName << "'";
+            // looks like this file contains MBR and list of partitions
+            // go through partitions unless find NTFS partition
+            //TODO extended partitions are not supported yet, need to add support.
 
-            DWORD bytesRead = 0, mbrsz = sizeof(mbr);
+            MBR_PARTITION_ENTRY mbr{ 0 };
+            DWORD off = 0x1BE; // fixed offset to first partition entry
 
-            if (!(ReadFile(FHFile, &mbr, mbrsz, &bytesRead, nullptr) && (bytesRead == mbrsz)))
-                FAIL() << "Error reading file '" << imgFileName << "'";
-
-            if (!SetFilePointer(FHFile, mbr.FirstLBA * DEFAULT_SECTOR_SIZE, 0, FILE_BEGIN))
-                FAIL() << "Error setting file pointer '" << imgFileName << "'";
-
-            if (!(ReadFile(FHFile, &partNTFS, sizeof(partNTFS), &bytesRead, nullptr) && (bytesRead == sizeof(partNTFS))))
-                FAIL() << "Error reading file '" << imgFileName << "'";
-
-            if (memcmp(partNTFS.OemId, NTFS_LABEL, 8) == 0)
+            // look at list of partitions and find NTFS partition. 4 is max number of standard partitions.
+            for (size_t i = 0; i < 4; i++)
             {
-                FPartitionOffset = mbr.FirstLBA * (uint64_t)DEFAULT_SECTOR_SIZE;
-                break;
+                if (SetFilePointer(FHFile, off, 0, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+                    FAIL() << std::format(L"Error setting file pointer for file '{}', Error code: {}", imgFileName, GetLastError());
+
+                bytesRead = 0;
+
+                if (!(ReadFile(FHFile, &mbr, sizeof(mbr), &bytesRead, nullptr) && (bytesRead == sizeof(mbr))))
+                    FAIL() << std::format(L"Error reading file '{}', Error code: {}", imgFileName, GetLastError());
+
+                if (SetFilePointer(FHFile, mbr.FirstLBA * DEFAULT_SECTOR_SIZE, 0, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+                    FAIL() << std::format(L"Error setting file pointer for file '{}', Error code: {}", imgFileName, GetLastError());
+
+                if (!(ReadFile(FHFile, &partNTFS, sizeof(partNTFS), &bytesRead, nullptr) && (bytesRead == sizeof(partNTFS))))
+                    FAIL() << std::format(L"Error reading file '{}', Error code: {}", imgFileName, GetLastError());
+
+                if (memcmp(partNTFS.OemId, NTFS_LABEL, 8) == 0)
+                {
+                    FPartitionOffset = mbr.FirstLBA * (uint64_t)DEFAULT_SECTOR_SIZE;
+                    break;
+                }
+
+                off += sizeof(NTFS_BOOT_SECTOR);
             }
 
-            off += sizeof(NTFS_BOOT_SECTOR);
+            ASSERT_NE(0, FPartitionOffset); // check that we've found NTFS partition
         }
-
-        ASSERT_NE(0, FPartitionOffset); // check that we've found NTFS partition
-
+        
         FVolumeData.BytesPerSector = partNTFS.BytesPerSector;
         FVolumeData.TotalClusters.QuadPart = partNTFS.TotalSectors;
         FVolumeData.BytesPerCluster = partNTFS.BytesPerSector * partNTFS.SectorsPerCluster;
         FVolumeData.BytesPerMFTRec = (partNTFS.ClustersPerFileRecord >= 0) ? partNTFS.ClustersPerFileRecord * FVolumeData.BytesPerCluster : 1u << (-partNTFS.ClustersPerFileRecord);
         FVolumeData.ClustersPerFileRecordSegment = FVolumeData.BytesPerMFTRec / FVolumeData.BytesPerCluster;
-        FVolumeData.hVolume = FHFile;
-        FVolumeData.MftStartLcn.QuadPart = partNTFS.MftStartLcn;
+        FVolumeData.MftStartLcn.QuadPart  = partNTFS.MftStartLcn;
         FVolumeData.MftZoneStart.QuadPart = partNTFS.MftStartLcn;
         FVolumeData.Mft2StartLcn.QuadPart = partNTFS.MftMirrorStartLcn;
+        FVolumeData.hVolume = FHFile;
         FVolumeData.Name = imgFileName;
 
         EXPECT_EQ(DEFAULT_SECTOR_SIZE, FVolumeData.BytesPerSector);
         EXPECT_EQ(DEFAULT_BYTES_PER_MFT_REC, FVolumeData.BytesPerMFTRec);
 
-        // here where MFT record #0 located
-        //FMFTOffset = FPartitionOffset + partNTFS.MftStartLcn * FVolumeData.BytesPerCluster;
-
         // reading MFT record #0, getting $MFT LCNs
         uint8_t* mftRecBuf = (uint8_t*)alloca(FVolumeData.BytesPerMFTRec);
         MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
-        MFT_REF mftRef{ {0,0,0} };
+        MFT_REF mftRef{ 0 };
 
-        // temporary values needed for proper work of LoadMFTRecord
+        // these two temporary values needed for proper work of LoadMFTRecord
         FMFTRecordsCount = 1;
         FMFTDataRuns.AddValue({ 1, 0, partNTFS.MftStartLcn });
-        bool res = LoadMFTRecord(mftRef, mftRecBuf); // loading record #0 which is $MFT file
+        bool res = LoadMFTRecord(mftRef, mftRecBuf); // loading MFT record #0 which is $MFT file
         ASSERT_TRUE(res) << "Error loading MFT record " << mftRef.sId.low;
 
-        if (!ntfs_is_file_recp(mftRec->RecHeader.Signature) /* && !ntfs_is_magicp(mftRec->RecHeader.Signature, zero)*/)
-            FAIL() << "MFT record with incorrect signature found " << mftRec->RecHeader.Signature << " (neither 'FILE' nor '0000')";
+        if (!ntfs_is_file_recp(mftRec->RecHeader.Signature))
+            FAIL() << "MFT record with incorrect signature found " << mftRec->RecHeader.Signature << " (expected 'FILE')";
 
         // check that record #0 is in use
         ASSERT_TRUE((mftRec->Flags & MFT_FLAG_IN_USE) == 1);
 
         TMFTParserBase prsr(*this);
         TAttrCollection collection;
-        prsr.FillAttrCollection(mftRec, collection);
+        res = prsr.FillAttrCollection(mftRec, collection);
+        ASSERT_TRUE(res) << "Error parsing attributes in MFT record buffer " << mftRef.sId.low;
+
         auto attr = collection.Get(ATTR_DATA);
-        ASSERT_TRUE(attr != nullptr);
+        ASSERT_NE(nullptr, attr);
 
         FMFTDataRuns.Clear();
         res = prsr.DecodeDataRuns(attr, FMFTDataRuns);
@@ -143,7 +167,20 @@ public:
         FMFTRecordsCount *= FVolumeData.BytesPerCluster / FVolumeData.BytesPerMFTRec;
     }
 
-    // returns false when all records are loaded from a file
+    void CloseVolume() override
+    {
+        IRecordLoader::CloseVolume();
+
+        FMFTDataRuns.Clear();
+        FPartitionOffset = 0;
+        FMFTRecordsCount = 0;
+    }
+
+    // returns false when: 
+    //   - incorrect record ID specified 
+    //   - attemt to position outside of a file
+    //   - cannot read needed BytesPerMFTRec bytes from a file
+    //   - record does not contain FILE signature
     bool LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override
     {
         // check that MFT Rec ID is less than MFT table size
@@ -160,6 +197,23 @@ public:
 
         DWORD bytesRead = 0;
         if (!(ReadFile(FHFile, mftRecData, FVolumeData.BytesPerMFTRec, &bytesRead, nullptr) && (bytesRead == FVolumeData.BytesPerMFTRec)))
+            return false;
+
+        // check that we've read record with proper signature
+        NTFS_RECORD_HEADER* mftRec = (NTFS_RECORD_HEADER*)mftRecData;
+        if (!ntfs_is_file_recp(mftRec->Signature)) // MFT rec must contain 'FILE' signature
+        {
+            GET_LOGGER;
+            uint8_t* sign = mftRec->Signature;
+            logger.WarnFmt("[LoadMFTRecord] Signature 'FILE' has not been found in MFT record {}. Signature found: {}{}{}{}", 
+                        mftRecRef.sId.low, sign[0], sign[1], sign[2], sign[3]);
+
+            return false;
+        }
+
+        // because we read MFT records directly from a file, we need to fixup USA in them.
+        // when we read via DeviceIoControl WINAPI call then we do NOT need to fixup USA.
+        if (!FixupUsaMFTRec(mftRec))
             return false;
 
         return true;
@@ -194,6 +248,12 @@ public:
             logger.ErrorFmt("ReadClusters.ReadFile() has failed with error: {}", GetLastError());
             return false;
         }
+    }
+
+    // Applies Update Sequence Array (USA) to MFT record refered by dataBuf
+    bool FixupUsaMFTRec(NTFS_RECORD_HEADER* mftRec)
+    {
+        return FixupUSA1(mftRec, FVolumeData.BytesPerMFTRec, FVolumeData.BytesPerSector);
     }
 
 };
