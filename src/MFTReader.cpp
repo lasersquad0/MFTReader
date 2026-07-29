@@ -166,14 +166,14 @@ int _tmain(int argc, TCHAR* argv[])
             TMFTRecordLoader ldr(path);
             TMFTStatCollector rdr(ldr);
             
-            MFTRecIndex MFTRecID = rdr.GetMFTRecIdByPath(path.c_str());
-            if (MFTRecID > 0)
+            auto MFTRecID = rdr.GetMFTRecIdByPath(path.c_str());
+            if (MFTRecID)
             {
                 logger.SetLogLevel(LogEngine::Levels::llDebug);
 
                 cout_t << "Path: " << path << std::endl;
 
-                MFT_REF MFTRef{ MFTRecID };
+                MFT_REF MFTRef{ MFTRecID.value()};
                 //MFTRef.sId.low = MFTRecID;
 
                 ITEM_INFO info{ 0 };
