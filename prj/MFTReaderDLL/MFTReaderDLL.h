@@ -15,11 +15,6 @@
 
 //extern MFTREADERDLL_API int nMFTReaderDLL;
 
-//#define LOGGER_NAME "mftlogdll"
-
-//#define LOG_INFO(_)  LogEngine::GetLogger(LOGGER_NAME).Info(_)
-//#define LOG_WARN(_)  LogEngine::GetLogger(LOGGER_NAME).Warn(_)
-
 struct TError
 {
 	int32_t ErrCode;
