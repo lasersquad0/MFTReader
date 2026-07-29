@@ -115,13 +115,13 @@ TEST_P(MFTImgFileParserTest, ReadDiskImageMFTRecordsOneByOne_1)
     MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
     MFT_REF mftRef{ 0 };
 
-    bool res;
-    while (!tldr.EOMFT(mftRef.sId.low))
+    TErrorCode res;
+    while (!tldr.Eof(mftRef.sId.low))
     {
         if (mftRef.sId.low != 9 && mftRef.sId.low != 24 && mftRef.sId.low != 25)
         {
             res = tldr.LoadMFTRecord(mftRef, mftRecBuf);
-            ASSERT_TRUE(res) << "Error loading MFT record " << mftRef.sId.low;
+            ASSERT_EQ(TErrorCode::Success, res) << "Error loading MFT record " << mftRef.sId.low;
 
             if (!ntfs_is_file_recp(mftRec->RecHeader.Signature) && !ntfs_is_magicp(mftRec->RecHeader.Signature, zero))
                 FAIL() << "MFT record with incorrect signature found " << mftRec->RecHeader.Signature << " (neither 'FILE' nor '0000')";
@@ -130,7 +130,7 @@ TEST_P(MFTImgFileParserTest, ReadDiskImageMFTRecordsOneByOne_1)
             // try to parse only 'FILE' records, and only records in use
             if (ntfs_is_file_recp(mftRec->RecHeader.Signature) && ((mftRec->Flags & MFT_FLAG_IN_USE) > 0))
                 res = stat.ReadMftItemInfoBuf(mftRec, item);
-            ASSERT_TRUE(res) << "Error parsing MFT record " << mftRef.sId.low;
+            ASSERT_EQ(TErrorCode::Success, res) << "Error parsing MFT record " << mftRef.sId.low;
         }
 
         mftRef.sId.low++;
@@ -147,8 +147,8 @@ TEST_P(MFTImgFileParserTest, ReadDiskImageRootAndGoSubDirs_1)
     MFT_REF startId{ 0 };
     startId.Id = MFT_ROOT_REC_ID;
 
-    if (!stat.ReadMftItems(startId, 0))
-        FAIL() << "ReadMftItems() returned false!";
+    if (TErrorCode::Success != stat.ReadMftItems(startId, 0))
+        FAIL() << "ReadMftItems() returned error!";
 }
 
 TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImageRootAndGoSubDirs_WINAPI)
@@ -161,11 +161,13 @@ TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImageRootAndGoSubDirs_WINAPI)
     MFT_REF startId{ 0 };
     startId.Id = MFT_ROOT_REC_ID;
 
-    if (!stat.ReadMftItems(startId, 0))
-        FAIL() << "ReadMftItems() returned false!";
+    if (TErrorCode::Success != stat.ReadMftItems(startId, 0))
+        FAIL() << "ReadMftItems() returned error!";
 }
 
 
 //INSTANTIATE_TEST_CASE_P(DiskImage1, MFTImgFileParserTest, testing::Values(_T(TEST_DATA_DIR "ntfs-ptrn.raw")));
 //INSTANTIATE_TEST_CASE_P(DiskImage2, MFTImgFileParserTest, testing::Values(_T(TEST_DATA_DIR "ntfs_index.raw")));
-INSTANTIATE_TEST_CASE_P(DiskImage2, MFTImgFileParserTest, testing::Values(_T(TEST_DATA_DIR "ntfs3.raw")));
+INSTANTIATE_TEST_CASE_P(DiskImage3, MFTImgFileParserTest, testing::Values(_T(TEST_DATA_DIR "dfr-16-ntfs.dd")));
+INSTANTIATE_TEST_CASE_P(DiskImage4, MFTImgFileParserTest, testing::Values(_T(TEST_DATA_DIR "ntfs-img-kw-1.dd")));
+INSTANTIATE_TEST_CASE_P(DiskImage5, MFTImgFileParserTest, testing::Values(_T(TEST_DATA_DIR "ntfs3.raw")));
