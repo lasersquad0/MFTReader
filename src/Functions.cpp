@@ -25,7 +25,7 @@ LogEngine::Logger& GetLoggerFunc()
 {
     LogEngine::Logger& logger = LogEngine::GetFileLogger(MFT_LOGGER_NAME_FUNC, "LogMFTReaderFUNC.log");
     //logger.SetAsyncMode(true);
-    logger.SetLogLevel(LogEngine::Levels::llDebug);
+    logger.SetLogLevel(LogEngine::Levels::llInfo);
     return logger;
 }
 
@@ -79,7 +79,7 @@ std::string FormatFileAttributes(uint32_t a)
 
 
 // reads list of files in already sorted order
-bool TMFTSearchReaderV2::ReadDirectoryV2(MFT_REF parentMftRecID, uint32_t dirLevel)
+TErrorCode TMFTSearchReaderV2::ReadDirectoryV2(MFT_REF parentMftRecID, uint32_t dirLevel)
 {
     if (dirLevel > 30) throw std::runtime_error("dirLevel > 30 !!!!!!!");
 
@@ -88,15 +88,16 @@ bool TMFTSearchReaderV2::ReadDirectoryV2(MFT_REF parentMftRecID, uint32_t dirLev
     uint8_t* mftRecBuf = (uint8_t*)alloca(getVolData().BytesPerMFTRec);
     MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
 
-    if (!FLoader.LoadMFTRecord(parentMftRecID, mftRecBuf))
+    auto res = FLoader.LoadMFTRecord(parentMftRecID, mftRecBuf);
+    if (res != TErrorCode::Success)
     {
         logger.Error("LoadMFTRecord finished with error.");
-        return false;
+        return res;
     }
 
     DIR_NODE node;
-    int32_t cnt = GetFileListFromMFTRec(mftRec, node); // writes error to log file in case of error
-    if (cnt == -1) return false;
+    auto expctValue = GetFileListFromMFTRec(mftRec, node); // writes error to log file in case of error
+    if (!expctValue) return expctValue.error();
 
     for (auto& item : node.FileList)
     {
@@ -111,14 +112,14 @@ bool TMFTSearchReaderV2::ReadDirectoryV2(MFT_REF parentMftRecID, uint32_t dirLev
             {
                 if (!item.IsReparse())
                 {
-                    if (!ReadDirectoryV2(item.MFTRef, dirLevel + 1))
+                    if (TErrorCode::Success != ReadDirectoryV2(item.MFTRef, dirLevel + 1))
                         logger.ErrorFmt("ReadDirectoryV2 finished with error for MFT rec: {}", item.MFTRef.sId.low);
                 }
             }
         }
     }
 
-    return true;
+    return TErrorCode::Success;
 }
 
 /*static bool compare(const FILE_NAME& a, const FILE_NAME& b)
@@ -136,7 +137,8 @@ void TMFTSearchReaderV2::ReadDirsV2()
 
     MFT_REF startId{0};
     startId.Id = MFT_ROOT_REC_ID;
-    ReadDirectoryV2(startId, 0);
+    auto res = ReadDirectoryV2(startId, 0);
+    assert(res == TErrorCode::Success);
 
     auto dirCount = std::count_if(FDirList.begin(), FDirList.end(), [](FILE_NAME& a) { return a.IsDir(); });
 
