@@ -14,10 +14,10 @@
 * @param node Contains Data Runs to be processed, and Bitmap that tells us what LCNs are valid.
 * @param processLCNPred Predicate used for processing each LCN.
 */
-bool TMFTParserBase::ProcessDataRuns(DIR_NODE& node, ProcessiBlocksPred processIndexBlockPred)
+bool TMFTParserBase::ProcessAllocDataRuns(DIR_NODE& node, ProcessiBlocksPred processIndexBlockPred)
 {
     GET_LOGGER;
-    logger.Debug("---------- START PROCESSING ALLOC Attr Data Runs ---------");
+    logger.Debug("---------- START PROCESSING ATTR_ALLOC Data Runs ---------");
 
     assert(node.IndexBlockSize > 0);
     assert(node.IndexBlockSize >= getVolData().BytesPerCluster); // AI told that this rule should always be true
@@ -32,7 +32,7 @@ bool TMFTParserBase::ProcessDataRuns(DIR_NODE& node, ProcessiBlocksPred processI
         else
             logger.DebugFmt("[ProcessAllocDataRuns] BITMAP attribute present, but all bits set zero. Bits count: {}", node.Bitmap.Count() * 64ull);
 
-        logger.Debug("---------- END OF PROCESSING ALLOC Attr Data Runs ---------");
+        logger.Debug("---------- END OF PROCESSING ATTR_ALLOC Data Runs ---------");
 
         return true;
     }
@@ -57,11 +57,6 @@ bool TMFTParserBase::ProcessDataRuns(DIR_NODE& node, ProcessiBlocksPred processI
         // check correctness of decoded LCNs
         assert(rli.len < (uint64_t)getVolData().TotalClusters.QuadPart);
         assert(rli.lcn < (uint64_t)getVolData().TotalClusters.QuadPart);
-       // assert((rli.lcn < (uint64_t)getVolData().MftZoneStart.QuadPart) || (rli.lcn > (uint64_t)getVolData().MftZoneEnd.QuadPart));
-
-        //TODO MFT may be fragmented, it might be good idea to read list of MFT fragments in advance and check that rli.lcn does not inside any MFT fragment
-        //assert((rli.lcn < (uint64_t)volData.MftStartLcn.QuadPart) || (rli.lcn > (uint64_t)(volData.MftStartLcn.QuadPart + volData.MftValidDataLength.QuadPart / volData.BytesPerCluster)));
-
 
         uint32_t k = node.IndexBlockSize / getVolData().BytesPerCluster;
 
@@ -86,17 +81,29 @@ bool TMFTParserBase::ProcessDataRuns(DIR_NODE& node, ProcessiBlocksPred processI
 
         CLST iblocksCount = rlilen / k;
 
-        if (!FixupUSA(dataBuf, rli.lcn, iblocksCount /*rlilen*/, node.IndexBlockSize))  // FixupUSA wrties error message to log file in case of an error
-        {
-            result = false;
-            break;
-        }
+        NTFS_RECORD_HEADER* indexRec = (NTFS_RECORD_HEADER*)dataBuf;
 
-        //iblocksCount = valuemin((CLST)(lastBit + 1 - iblockCounter), iblocksCount);
-        for (size_t i = 0; i < iblocksCount /*rlilen*/; i++)
+        for (size_t i = 0; i < iblocksCount; i++)
         {
             if (node.Bitmap.Test(iblockCounter++)) // add only Index Blocks (not LCNs) which are marked in bitmap bitfield
             {
+                if (!ntfs_is_indx_recp(indexRec->Signature)) // bypass non 'INDX' clusters (usually filled by zero)
+                {
+                    // Not sure if this is correct situation when list of LCNs in one data run has "holes" for which Bitmap attribute has 1 in appropriate cluster.
+                   
+                    uint8_t* sign = indexRec->Signature;
+                    logger.WarnFmt("[ProcessAllocDataRuns] Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", rli.lcn + i*k, sign[0], sign[1], sign[2], sign[3]);
+
+                    continue;
+                }
+
+                // do fixups only for valid blocks
+                if (!FLoader.FixupUSA1((NTFS_RECORD_HEADER*)(dataBuf + i * node.IndexBlockSize), node.IndexBlockSize, getVolData().BytesPerSector))
+                {
+                    result = false;
+                    break;
+                }
+
                 //process particular Index Block, either add to list of blocks in cache or get list of files from this record, depending on predicate
                 processIndexBlockPred(dataBuf + i * node.IndexBlockSize/*getVolData().BytesPerCluster*/, rli.vcn + i*k, rli.lcn + i*k);
             }
@@ -113,7 +120,7 @@ bool TMFTParserBase::ProcessDataRuns(DIR_NODE& node, ProcessiBlocksPred processI
 
     delete[] dataBuf;
 
-    logger.Debug("---------- END OF PROCESSING ALLOC Attr Data Runs ---------");
+    logger.Debug("---------- END OF PROCESSING ATTR_ALLOC Data Runs ---------");
 
     return result;
 }
@@ -198,66 +205,6 @@ bool TMFTParserBase::DecodeDataRuns(MFT_ATTR_HEADER* attr, TDataRuns& runs)
 }
 
 
-// FixupUSA is used for processing ALLOC Data Runs only. All other MFT records are loadded via WINAPI call already have fixed up USA.
-// That is why FixupUSA has to work with indexBlockSize that differs from ClusterSize.
-// This is main goal of indexBlockSize parameter - support non-standard Index Blocks size that differ from ClusterSize. 
-// iblocksCount - number of Index Blocks that dataBuf buffer contains (each block is indexBlockSize size)
-// startCLN - needed only for warning message about missing 'INDX' to identify which LCN is missing this signature
-// dataBuf must contain data at least for iblocksCount Index Blocks of indexBlockSize size each.
-bool TMFTParserBase::FixupUSA(uint8_t* dataBuf, CLST startLCN, uint64_t iblocksCount, uint32_t indexBlockSize)
-{
-    NTFS_RECORD_HEADER* indexRec = (NTFS_RECORD_HEADER*)dataBuf;
-    uint32_t wordsPerSector = getVolData().BytesPerSector >> 1;
-    uint32_t k = indexBlockSize / getVolData().BytesPerCluster;
-
-    // loop by LCNs loaded into dataBuf
-    for (uint64_t i = 0; i < iblocksCount; i++)
-    {
-        if (!ntfs_is_indx_recp(indexRec->Signature)) // bypass non 'INDX' clusters (usually filled by zero)
-        {
-            /* This is correct situation when list of LCNs in one data run has "holes" according to Bitmap attribute.
-            *  We read all LCNs from current data run as a single operation. Some of these LCNs are "not used" and do not contain INDX signature
-            *  Such LCNs have appropriate bit=0 in Bitmap attribute.
-            */
-
-            GET_LOGGER;
-            uint8_t* sign = indexRec->Signature;
-            logger.WarnFmt("[FixupUSA] Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", startLCN + i*k, sign[0], sign[1], sign[2], sign[3]);
-
-            continue;
-        }
-
-        uint16_t sectorsCnt = indexRec->FixupCnt - 1;
-        assert(sectorsCnt == /*getVolData().BytesPerCluster*/ indexBlockSize / getVolData().BytesPerSector);
-
-        uint16_t* fixupArr = (uint16_t*)(Add2Ptr(indexRec, indexRec->FixupOffset));
-        uint16_t checkValue = *fixupArr;
-        fixupArr++; // now it refers to first array item
-
-        uint16_t* sectorEnd = (uint16_t*)(indexRec)+wordsPerSector - 1;
-
-        uint32_t s = 0;
-        while (s < sectorsCnt)
-        {
-            assert(checkValue == *sectorEnd);
-            if (checkValue != *sectorEnd)
-            {
-                GET_LOGGER;
-                logger.Error("[FixupUSA] Error: looks like data is corrupted in the sector");
-                return false; // looks like data is corrupted in this sector
-            }
-
-            *sectorEnd = fixupArr[s]; // restore data
-
-            sectorEnd += wordsPerSector;
-            s++;
-        }
-
-        indexRec = (NTFS_RECORD_HEADER*)Add2Ptr(indexRec, indexBlockSize /*getVolData().BytesPerCluster*/);
-    }
-
-    return true;
-}
 
 
 /// calls predicate pred for all files got from ihdr
@@ -273,11 +220,14 @@ void TMFTParserBase::GetFileList(INDEX_HDR* ihdr, AddFileAttrPred pred)
         assert(off < ihdr->Used);
 
         NTFS_DE* de = (NTFS_DE*)Add2Ptr(ihdr, off); // NTFS_DE it is a "header" above File Name attribute, covers each file name attribute item
-
-        logger.DebugFmt("DE Ref to MFT Rec: {}", de->ref.toHexString()); // reference to MFT Rec for this file name
-        logger.DebugFmt("DE Flags: {} ({:#x})", de->flags == NTFS_IE_HAS_SUBNODES ? "HAS SUBNODES" : de->flags == NTFS_IE_LAST ? "LAST" : de->flags == 0 ? "OTHER" : "UNKNOWN", de->flags);
-        logger.DebugFmt("DE Size: {}", de->size);
-        logger.DebugFmt("DE Key_size: {} {}", de->key_size, de->key_size == 0 ? "(last DE usually empty, does not contain any FILE_ATTR attribute)" : "");
+        
+        if (logger.ShouldLog(LogEngine::Levels::llDebug))
+        {
+            logger.DebugFmt("DE Ref to MFT Rec: {}", de->ref.toHexString()); // reference to MFT Rec for this file name
+            logger.DebugFmt("DE Flags: {} ({:#x})", de->flags == NTFS_IE_HAS_SUBNODES ? "HAS SUBNODES" : de->flags == NTFS_IE_LAST ? "LAST" : de->flags == 0 ? "OTHER" : "UNKNOWN", de->flags);
+            logger.DebugFmt("DE Size: {}", de->size);
+            logger.DebugFmt("DE Key_size: {} {}", de->key_size, de->key_size == 0 ? "(last DE usually empty, does not contain any FILE_ATTR attribute)" : "");
+        }
 
         assert(de->size >= de->key_size + sizeof(NTFS_DE));
 
@@ -294,17 +244,20 @@ void TMFTParserBase::GetFileList(INDEX_HDR* ihdr, AddFileAttrPred pred)
                 pred(fattr, de->ref);
             }
 
-            std::wstring wnm(GetFName(fattr), fattr->FileNameLen);
-            logger.DebugFmt("DE ATTR Parent Rec ID: {}", fattr->ParentDir.toHexString()); //TODO check that parent of each file refers to MFT Rec we are currently parsing
-            logger.DebugFmt("DE ATTR File Name Type: '{}' ({:#x})", FileNameTypes[fattr->NameType], fattr->NameType);
-            logger.DebugFmt("DE ATTR DOS Attrib: {:#x} {}", fattr->dup.FileAttrib, FormatFileAttributes(fattr->dup.FileAttrib));
-            logger.DebugFmt("DE ATTR Name: '{}'", wtos(wnm));
-            logger.DebugFmt("DE ATTR File Size: {}", fattr->dup.FileSize);
+            if (logger.ShouldLog(LogEngine::Levels::llDebug))
+            {
+                std::wstring wnm(GetFName(fattr), fattr->FileNameLen);
+                logger.DebugFmt("DE ATTR Parent Rec ID: {}", fattr->ParentDir.toHexString()); //TODO check that parent of each file refers to MFT Rec we are currently parsing
+                logger.DebugFmt("DE ATTR File Name Type: '{}' ({:#x})", FileNameTypes[fattr->NameType], fattr->NameType);
+                logger.DebugFmt("DE ATTR DOS Attrib: {:#x} {}", fattr->dup.FileAttrib, FormatFileAttributes(fattr->dup.FileAttrib));
+                logger.DebugFmt("DE ATTR Name: '{}'", wtos(wnm));
+                logger.DebugFmt("DE ATTR File Size: {}", fattr->dup.FileSize);
 
-            /*logger.Debug(FileDateToString("DE ATTR Created: ", fattr->dup.CreateTime));
-            logger.Debug(FileDateToString("DE ATTR Modified: ",  fattr->dup.ModifyTime));
-            logger.Debug(FileDateToString("DE ATTR LastAccess: ",fattr->dup.LastAccessTime));
-            */
+                /*logger.Debug(FileDateToString("DE ATTR Created: ", fattr->dup.CreateTime));
+                logger.Debug(FileDateToString("DE ATTR Modified: ",  fattr->dup.ModifyTime));
+                logger.Debug(FileDateToString("DE ATTR LastAccess: ",fattr->dup.LastAccessTime));
+                */
+            }
         }
 
         off += de->size; // moving to the next DE
@@ -408,7 +361,8 @@ ATTR_FILE_NAME* TMFTParserBase::GetFileNameAttr(MFT_FILE_RECORD* mftRec)
     assert(mftRec->Flags == (MFT_FLAG_IN_USE | MFT_FLAG_IS_DIRECTORY));
 
     TAttrCollection collection;
-    FillAttrCollection(mftRec, MakeAttrBitmask(ATTR_FILENAME), collection);// fill collection only with ATTR_FILENAME attributes
+    bool res = FillAttrCollection(mftRec, MakeAttrBitmask(ATTR_FILENAME), collection);// fill collection only with ATTR_FILENAME attributes
+    assert(res);
 
     auto& fileNames = collection.Get2(ATTR_FILENAME);
 
@@ -500,7 +454,8 @@ void TMFTParserBase::GetFileNameAttrPointers(MFT_FILE_RECORD* mftRec, THArray<AT
     attrFileNames.Clear();
 
     TAttrCollection collection;
-    FillAttrCollection(mftRec, MakeAttrBitmask(ATTR_FILENAME), collection);// fill collection only with ATTR_FILENAME attributes
+    bool res = FillAttrCollection(mftRec, MakeAttrBitmask(ATTR_FILENAME), collection);// fill collection only with ATTR_FILENAME attributes
+    assert(res);
 
     ATTR_FILE_NAME* attrFName;
     THash<uint32_t, std::wstring> parents;
@@ -634,9 +589,9 @@ bool TMFTParserBase::GetPathByMFTRecID(MFT_REF mftRecRef, THArray<std::wstring>&
     return true;
 }
 
-void TMFTParserBase::FillAttrCollection(MFT_FILE_RECORD* mftRec, TAttrCollection& collection)
+bool TMFTParserBase::FillAttrCollection(MFT_FILE_RECORD* mftRec, TAttrCollection& collection)
 {
-    FillAttrCollection(mftRec, ALL_ATTRS_FILTER, collection);
+    return FillAttrCollection(mftRec, ALL_ATTRS_FILTER, collection);
 }
 
 /**
@@ -647,7 +602,7 @@ void TMFTParserBase::FillAttrCollection(MFT_FILE_RECORD* mftRec, TAttrCollection
 * @param mftRec record to be parsed for attributes
 * @param attrFilter bitwise mask that tells which attrbutes will be added to collection. This is bitwise mask of 
 */
-void TMFTParserBase::FillAttrCollection(MFT_FILE_RECORD* mftRec, uint32_t attrFilter, TAttrCollection& collection)
+bool TMFTParserBase::FillAttrCollection(MFT_FILE_RECORD* mftRec, uint32_t attrFilter, TAttrCollection& collection)
 {
     AttrListPred callProcessChildMFTRecsPred = [this, &attrFilter, &collection](const MFT_REF& ref)
         {
@@ -657,7 +612,7 @@ void TMFTParserBase::FillAttrCollection(MFT_FILE_RECORD* mftRec, uint32_t attrFi
             uint8_t* mftRecBuf = FLoader.LoadMFTRecordCache(ref);
             if (mftRecBuf)
             {
-                FillAttrCollection((MFT_FILE_RECORD*)mftRecBuf, attrFilter, collection);
+                return FillAttrCollection((MFT_FILE_RECORD*)mftRecBuf, attrFilter, collection);
             }
             else
             {
@@ -665,7 +620,7 @@ void TMFTParserBase::FillAttrCollection(MFT_FILE_RECORD* mftRec, uint32_t attrFi
                 // error loading MFT record
                 // do not break loop and trying to load more records
                 logger.Error("[callAddItemToCollectionPred] LoadMFTRecordCache returned NULL!");
-                //return;
+                return false;
             }
         };
 
@@ -679,7 +634,7 @@ void TMFTParserBase::FillAttrCollection(MFT_FILE_RECORD* mftRec, uint32_t attrFi
         //attr ATTR_LIST_ATTR cannot be filtered, it always processed
         if (currAttr->AttrType != ATTR_LIST_ATTR)
         {
-            if(MakeAttrBitmask(currAttr->AttrType) & attrFilter)
+            if (MakeAttrBitmask(currAttr->AttrType) & attrFilter)
                 collection.Set(currAttr);
         }
         else
@@ -693,7 +648,7 @@ void TMFTParserBase::FillAttrCollection(MFT_FILE_RECORD* mftRec, uint32_t attrFi
                 if (!ParseNonresAttrList(mftRec->IndexMFTRec, attrFilter, currAttr, callProcessChildMFTRecsPred))
                 {
                     logger.Error("ParseNonresAttrList returned error.");
-                    //return;
+                    return false;
                 }
 
                 logger.Debug("[FillAttrCollection] ATTR_LIST_ATTR NON-Resident - FINISHED PARSING");
@@ -710,15 +665,17 @@ void TMFTParserBase::FillAttrCollection(MFT_FILE_RECORD* mftRec, uint32_t attrFi
                 uint64_t processedAttrSize = 0;
 
                 ParseAttrList(mftRec->IndexMFTRec, attrFilter, attrListItem, currAttrEnd, currAttr->res.DataSize, processedAttrSize, callProcessChildMFTRecsPred);
-                //FillCollectionFromAttrList(mftRec->IndexMFTRec, attrFilter, attrListItem, currAttrEnd, currAttrEnd, collection); //TODO add error check
-
+                
                 logger.Debug("[FillAttrCollection] ATTR_LIST_ATTR Resident - FINISHED PARING");
             }
         }
 
         assert(currAttr->AttrSize > 0);
         currAttr = (MFT_ATTR_HEADER*)Add2Ptr(currAttr, currAttr->AttrSize);
+
     } while (*((uint32_t*)currAttr) != ATTR_END);
+
+    return true;
 }
 
 
@@ -967,6 +924,7 @@ bool TMFTParserBase::ParseNonresAttrList(MFTRecIndex indexMFTRec, uint32_t attrF
 {
     GET_LOGGER_FUNC;
 
+    assert(attrListAttr);
     assert(attrListAttr->AttrType == ATTR_LIST_ATTR);
     assert(attrListAttr->NonResidentFlag == 1);
 
@@ -1126,6 +1084,8 @@ bool TMFTParserBase::ParseNonresAttrList(MFTRecIndex indexMFTRec, uint32_t attrF
 bool TMFTParserBase::ParseNonresBitmap(MFT_ATTR_HEADER* attr, TBitField& bitmap)
 {
     assert(attr->NonResidentFlag == 1);
+    assert((attr->nonres.RealSize & 0x07) == 0);
+    assert((attr->nonres.RealSize >> 3) > 0);
     assert(bitmap.Count() == 0);
 
     TDataRuns dataRuns;
@@ -1136,7 +1096,7 @@ bool TMFTParserBase::ParseNonresBitmap(MFT_ATTR_HEADER* attr, TBitField& bitmap)
 
     uint8_t* dataBuf = nullptr;
     uint64_t dataBufLen = 0;  // dataBuf buffer size in clusters, how many clusters is allocated in dataBuf
-    uint64_t dataBufSize = 0; // dataBuf buffer size in bytes
+    uint64_t rliSize = 0; // size in bytes of the current Data Run
     uint32_t currRun = 0;
 
     if (dataRuns.Count() > 1)
@@ -1145,36 +1105,66 @@ bool TMFTParserBase::ParseNonresBitmap(MFT_ATTR_HEADER* attr, TBitField& bitmap)
         logger.InfoFmt("[ParseNonresBitmap] Bitmap occupies more than one data run. Bitmap Data Runs Count: {}", dataRuns.Count());
     }
 
+    uint64_t processedSize = 0;
+
     while (currRun < dataRuns.Count())
     {
         DATA_RUN_ITEM& rli = dataRuns[currRun];
         assert(rli.len > 0);
 
+        rliSize = rli.len * getVolData().BytesPerCluster;
+        assert(rliSize > 0);
+        assert((rliSize & 0x07) == 0); // bitmap data size always multiple of 8
+        assert((rliSize >> 3) > 0);
+
         if (rli.len > dataBufLen)
         {
             delete[] dataBuf;
-            dataBufSize = rli.len * getVolData().BytesPerCluster;
-            dataBuf = DBG_NEW uint8_t[dataBufSize];
+            dataBuf = DBG_NEW uint8_t[rliSize];
             dataBufLen = rli.len;
-            assert(dataBufSize > 0);
         }
 
         assert(dataBuf);
-
+        
         if (!FLoader.ReadClusters(rli.lcn, rli.len, dataBuf)) // ReadCluster writes error meesage to log file in case of an error
         {
             delete[] dataBuf;
             return false;
         }
 
-        assert((dataBufSize & 0x07) == 0); // bitmap data size always multiple of 8
-        assert((dataBufSize >> 3) > 0);
-        bitmap.AddData((uint64_t*)dataBuf, (uint32_t)(dataBufSize >> 3));
+        processedSize += rliSize;
+        if (processedSize >= attr->nonres.RealSize)
+        {
+            auto delta = attr->nonres.RealSize - (processedSize - rliSize);
+            
+            assert(delta > 0);
+            assert((delta >> 3) > 0);
+            assert((delta & 0x07) == 0);
+
+            bitmap.AddData((uint64_t*)dataBuf, (uint32_t)(delta >> 3));
+            break; // last piece of bitmap added
+        }
+        else
+        {
+            bitmap.AddData((uint64_t*)dataBuf, (uint32_t)(rliSize >> 3));
+        }
 
         currRun++;
     }
 
+    if (dataRuns.Count() - currRun > 1)
+    {
+        GET_LOGGER;
+        logger.InfoFmt("[ParseNonresBitmap] Stopped processing by reaching RealSize, but {} unprocessed Data Runs left.", dataRuns.Count() - currRun);
+    }
+    else if (dataRuns.Count() - currRun == 0)
+    {
+        GET_LOGGER;
+        logger.WarnFmt("[ParseNonresBitmap] AllData Runs are processed, but RealSize has not beed reached. Data Runs Count: ", dataRuns.Count());
+    }
+
     delete[] dataBuf;
+
     return true;
 }
 
@@ -1209,23 +1199,27 @@ void TMFTParserBase::ParseIndexRoot(MFT_ATTR_HEADER* attr, TLCNRecs& lcns, TFile
     ATTR_INDEX_ROOT* indexR = (ATTR_INDEX_ROOT*)Add2Ptr(attr, attr->res.DataOffset);
     auto pihdr = &(indexR->ihdr);
 
-    assert(indexR->IndexBlockSize == getVolData().BytesPerCluster);
+    assert(indexR->IndexBlockSize >= getVolData().BytesPerCluster); // AI told that this rule should always be true
+    assert((indexR->IndexBlockSize % getVolData().BytesPerCluster) == 0); // AI told that this rule should always be true
     assert(indexR->IndexBlockClst == 1);
     assert(indexR->AttrType == ATTR_FILENAME);
     assert(indexR->Rule == COLLATION_RULE::FILENAME);
 
-    logger.DebugFmt("IndexRoot Indexed Attr Type: {} {:#x}", AttrName(indexR->AttrType), (uint32_t)indexR->AttrType);
-    logger.DebugFmt("IndexRoot Collation Rule: {} ({:#x})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
-    logger.DebugFmt("IndexRoot Dir Type: {} ({:#x})", indexR->ihdr.Flags == 0 ? "SMALL DIR" : "BIG DIR", indexR->ihdr.Flags);
-    logger.DebugFmt("IndexRoot IndexBlockSize: {}", indexR->IndexBlockSize);
-    logger.DebugFmt("IndexRoot IndexBlockClst: {}", indexR->IndexBlockClst);
-    logger.DebugFmt("IHDR Used Bytes: {}", pihdr->Used);
+    if (logger.ShouldLog(LogEngine::Levels::llDebug))
+    {
+        logger.DebugFmt("IndexRoot Indexed Attr Type: {} {:#x}", AttrName(indexR->AttrType), (uint32_t)indexR->AttrType);
+        logger.DebugFmt("IndexRoot Collation Rule: {} ({:#x})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
+        logger.DebugFmt("IndexRoot Dir Type: {} ({:#x})", indexR->ihdr.Flags == 0 ? "SMALL DIR" : "BIG DIR", indexR->ihdr.Flags);
+        logger.DebugFmt("IndexRoot IndexBlockSize: {}", indexR->IndexBlockSize);
+        logger.DebugFmt("IndexRoot IndexBlockClst: {}", indexR->IndexBlockClst);
+        logger.DebugFmt("IHDR Used Bytes: {}", pihdr->Used);
+    }
 
     GetFileListFromNode(pihdr, lcns, fileList);
 }
 
 //TOOD very short function. May be we do not need it?
-bool TMFTParserBase::ParseAlloc(MFT_ATTR_HEADER* attr, TDataRuns& dataRuns)
+/*bool TMFTParserBase::ParseAlloc(MFT_ATTR_HEADER* attr, TDataRuns& dataRuns)
 {
     // sometimes one ATTR_LIST list may contain two ATTR_ALLOC attributes for some reason
     // it means we come here two times during parsing one MFT record with such ATTR_LIST 
@@ -1237,7 +1231,7 @@ bool TMFTParserBase::ParseAlloc(MFT_ATTR_HEADER* attr, TDataRuns& dataRuns)
     assert(attr->NonResidentFlag == 1);
 
     return DecodeDataRuns(attr, dataRuns); // DataRunDecode writes message to log in case of an error
-}
+}*/
 
 
 // reads three required attributes from mftRec (INDEX_ROOT, ALLOC and BITMAP) 
@@ -1266,7 +1260,8 @@ int32_t TMFTParserBase::GetFileListFromMFTRec(MFT_FILE_RECORD* mftRec, DIR_NODE&
     //FillAttrValues(mftRec, attrValues); // does NOT go to inside ATTR_LIST or to other MFT/LCN records
 
     TAttrCollection collection;
-    FillAttrCollection(mftRec, collection);
+    bool res = FillAttrCollection(mftRec, collection);
+    assert(res);
 
     //PMFT_ATTR_HEADER multValues[SAME_ATTR_CNT];
 
@@ -1285,9 +1280,7 @@ int32_t TMFTParserBase::GetFileListFromMFTRec(MFT_FILE_RECORD* mftRec, DIR_NODE&
     if (bitmap)
     {
         if (!ParseBitmap(bitmap, node.Bitmap)) // copy bitmap into TBitField class for easier access
-        {
             logger.Error("[GetFileListFromMFTRec] ParseBitmap finished with error.");
-        }
     }
 
     //TODO looks like we will parse ATTR_LIST_ATTR several times here if BITMAP, ALLOC or INDEX_ROOT are in ATTR_LIST_ATTR attribute
@@ -1302,9 +1295,24 @@ int32_t TMFTParserBase::GetFileListFromMFTRec(MFT_FILE_RECORD* mftRec, DIR_NODE&
     //}
 
     auto alloc = collection.Get(ATTR_ALLOC);
-    ParseAlloc(alloc, node.DataRuns);
+    if (alloc)
+    {
+        assert(alloc->NonResidentFlag == 1);
+
+        if(!DecodeDataRuns(alloc, node.DataRuns))
+        {
+            logger.Error("[GetFileListFromMFTRec] DecodeDataRuns for ATTR_ALLOC finished with error.");
+            return -1; // fail to decode data runs is a critical error, return immediately with error
+        }
+
+        //ParseAlloc(alloc, node.DataRuns);
+        assert(node.DataRuns.Count() > 0);
+    }
 
     auto root = collection.Get(ATTR_ROOT);
+    assert(root->NonResidentFlag == 0);
+    assert(root);
+
     ATTR_INDEX_ROOT* indexR = (ATTR_INDEX_ROOT*)Add2Ptr(root, root->res.DataOffset);
     node.IndexBlockSize = indexR->IndexBlockSize; // need IndexBlockSize for proper parsing ALLOC data runs.
     assert(node.IndexBlockSize >= getVolData().BytesPerCluster);
@@ -1320,17 +1328,19 @@ int32_t TMFTParserBase::GetFileListFromMFTRec(MFT_FILE_RECORD* mftRec, DIR_NODE&
     }
     TLCNRecs lcns(node.IndexBlockSize /*getVolData().BytesPerCluster*/, (uint32_t)iblocksTotalCount);
 
-    ProcessiBlocksPred addToiBlocksCachePred = [&lcns](uint8_t* dataBuf, CLST VCN, CLST LCN)
-        {
-            lcns.AddRec(dataBuf, VCN, LCN);
-        };
+    //ProcessiBlocksPred addToiBlocksCachePred = [&lcns](uint8_t* dataBuf, CLST VCN, CLST LCN)
+    //    {
+    //        lcns.AddRec(dataBuf, VCN, LCN);
+    //    };
 
-
-    if (!ProcessDataRuns(node, addToiBlocksCachePred))
+    assert(lcns.Count() == 0);
+    if ( !ProcessAllocDataRuns(node, [&lcns](uint8_t* dataBuf, CLST VCN, CLST LCN) { lcns.AddRec(dataBuf, VCN, LCN); }) )
     {
-        logger.Error("[GetFileListFromMFTRec] ProcessDataRuns finished with error.");
-        return -1; // fail to load data runs this is critical error, return immediately with error
+        logger.Error("[GetFileListFromMFTRec] ProcessAllocDataRuns finished with error.");
+        return -1; // fail to process data runs this is critical error, return immediately with error
     }
+
+    if(node.DataRuns.Count() > 0) assert(lcns.Count() > 0); 
 
     //GetAttr(ATTR_ROOT, attrValues, multValues);
     //auto root = multValues[0];
@@ -1442,12 +1452,10 @@ void TMFTParserBase::ParseAttrList(MFTRecIndex indexMFTRec, uint32_t attrFilter,
 * Returns MFT Record ID (low part of it). If path is incorrect function returns 0 (zero).
 * Uses ci_string intentionally to proper case insensitive folders compare.
 * @param VolData Volume data. Needed for reading file system.
-* @param path Fully qualified path to file or folder that starts from disk name.
+* @param path Fully qualified and ABSOLUTE path to file or folder that starts from disk name.
 */
 MFTRecIndex TMFTParserBase::GetMFTRecIdByPath(const ci_string& path) // ci_string is for case INsensitive search here
 {
-    //TODO what is path is relative (does not start from c:\)?
-
     if (path.size() == 0) return 0;
 
     // make sure that volData.hVolume and volume in path parameter are the same (both C: or both D:, etc)
