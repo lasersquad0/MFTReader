@@ -72,8 +72,8 @@ TEST_P(MFTDataRunDecodeTest, DecodeDataRuns_1)
         attr->nonres.AllocatedSize = 1024 * 1024;
 
         TDataRuns runs;
-        bool res = parser.DecodeDataRuns(attr, runs);
-        ASSERT_TRUE(res);
+        auto res = parser.DecodeDataRuns(attr, runs);
+        ASSERT_EQ(TErrorCode::Success, res);
 
         free(buf);
 
