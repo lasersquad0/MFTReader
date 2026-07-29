@@ -7,9 +7,8 @@
 // This is an example of an exported variable
 //MFTREADERDLL_API int nMFTReaderDLL=0;
 
-// this cache variable needs to be global because cache needs to exist after ReadVolume call
+// this cache variable needs to be global because cache needs to exist after ReadVolume call has finished
 // because cache is returned to outer function. 
-//TFileCache gFileCache;
 TMFTRecordLoader ldr;
 TMFTSearchReader srdr(ldr);
 
