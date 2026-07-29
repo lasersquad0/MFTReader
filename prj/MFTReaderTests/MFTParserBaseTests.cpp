@@ -135,25 +135,15 @@ TEST_F(MFTParserBaseTests, GetMFTRecIdByPath_1)
 
     for (auto p : testData)
     {
-        EXPECT_EQ(p.first, ps.GetMFTRecIdByPath(p.second));
+        auto expctValue = ps.GetMFTRecIdByPath(p.second);
+        if (expctValue)
+            EXPECT_EQ(p.first, expctValue.value());
+        else
+            EXPECT_EQ(p.first, 0ul);
+            //EXPECT_TRUE(false) << "GetMFTRecIdByPath failed with error: " << ErrorCodeNames[(uint8_t)expctValue.error()];
     }
-
 }
 
-template<typename STRING, typename ARRAY>
-bool EXPECT_ONE_OF(STRING expected, ARRAY arr)
-{
-    // make sure that STRING is one of instantiations of strings
-    static_assert(std::is_base_of<std::basic_string<typename STRING::value_type, typename STRING::traits_type>, STRING>::value);
-    // make sure that wstr is either std::string (no conversion required) or std::wstring
-    static_assert(std::is_same_v<typename STRING::value_type, wchar_t> || std::is_same_v<typename STRING::value_type, char>);
-    static_assert(std::is_same_v<typename STRING::value_type, typename ARRAY::item_type::value_type>);
-    //static_assert(std::is_convertible_v<typename ARRAY::item_type, STRING>);
-
-    for (auto& item : arr)
-        if (expected == STRING(item.c_str())) return true;
-    return false;
-}
 
 // MFT IDs will be different for different disks, this test linked to disk C: only
 TEST_F(MFTParserBaseTests, GetPathByMFTRecId_1)
@@ -161,7 +151,8 @@ TEST_F(MFTParserBaseTests, GetPathByMFTRecId_1)
     TMFTRecordLoader ldr(_T("c:")); // assume that all path are on C:
     TMFTParserBase ps(ldr);
 
-    THArray<std::pair<uint32_t, ci_string>> testData{
+    THArray<std::pair<uint32_t, ci_string>> testData
+    {
         {MFT_ROOT_REC_ID, _T("C:")},
         {0, _T("c:\\$MFT")}, 
         {1, _T("C:\\$MFTMirr")}, {2, _T("C:\\$LogFile")},
@@ -196,7 +187,7 @@ TEST_F(MFTParserBaseTests, GetPathByMFTRecId_1)
         THArray<std::wstring> paths;
         MFT_REF id{ p.first };
         paths.Clear();
-        ps.GetPathByMFTRecID(id, paths);
+        EXPECT_EQ(TErrorCode::Success, ps.GetPathByMFTRecID(id, paths));
         EXPECT_TRUE(EXPECT_ONE_OF(p.second, paths));
     }
 }
