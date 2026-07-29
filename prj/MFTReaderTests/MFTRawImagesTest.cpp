@@ -11,13 +11,14 @@ class MFTImgFileParserTest : public MFTStringParamTest
 public:
     static void SetUpTestCase()
     {
-        FName = "MFTImgFileParserParamTest";
-        MFTStringParamTest::SetUpTestCase();
+        FName = "MFTImgFileParserTest";
+        MFTStringParamTest::SetUpTestCase(); // need for proper initialization of my logging system
     }
 
     void SetUp() override
     {
         // it is important to call SetUp of the parent class here 
+        // need it for proper logging param name (instantiation name) 
         MFTStringParamTest::SetUp();
 
         // add here your test initialization code
@@ -29,8 +30,8 @@ public:
 
 
 //TODO looks like this test will be called several times depending on number of .raw files being tested (see INSTANTIATE_TEST_CASE_P below)
-// think how to make it called only once
-TEST_P(MFTImgFileParserTest, DISABLED_MFTRecIdToOffset_1)
+// Test is lightweight, it should not be a problem to call it several times.
+TEST_P(MFTImgFileParserTest, MFTRecIdToOffset_1)
 {
     const uint32_t DEF_CLUSTER_SIZE = 4096;
 
@@ -103,7 +104,7 @@ TEST_P(MFTImgFileParserTest, DISABLED_MFTRecIdToOffset_1)
 }
 
 
-TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImagePlain_1)
+TEST_P(MFTImgFileParserTest, ReadDiskImageMFTRecordsOneByOne_1)
 {
     string_t imgFileName = GetParam();
 
@@ -136,7 +137,7 @@ TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImagePlain_1)
     }
 }
 
-TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImageFromRoot_1)
+TEST_P(MFTImgFileParserTest, ReadDiskImageRootAndGoSubDirs_1)
 {
     string_t imgFileName = GetParam();
 
@@ -150,7 +151,7 @@ TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImageFromRoot_1)
         FAIL() << "ReadMftItems() returned false!";
 }
 
-TEST_P(MFTImgFileParserTest, ReadDiskWINAPI_1)
+TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImageRootAndGoSubDirs_WINAPI)
 {
     //string_t imgFileName = GetParam();
 
@@ -166,4 +167,5 @@ TEST_P(MFTImgFileParserTest, ReadDiskWINAPI_1)
 
 
 //INSTANTIATE_TEST_CASE_P(DiskImage1, MFTImgFileParserTest, testing::Values(_T(TEST_DATA_DIR "ntfs-ptrn.raw")));
-INSTANTIATE_TEST_CASE_P(DiskImage2, MFTImgFileParserTest, testing::Values(_T(TEST_DATA_DIR "ntfs_index.raw")));
+//INSTANTIATE_TEST_CASE_P(DiskImage2, MFTImgFileParserTest, testing::Values(_T(TEST_DATA_DIR "ntfs_index.raw")));
+INSTANTIATE_TEST_CASE_P(DiskImage2, MFTImgFileParserTest, testing::Values(_T(TEST_DATA_DIR "ntfs3.raw")));
