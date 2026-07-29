@@ -13,7 +13,6 @@
 #include "BitField.h"
 
 
-//#define SAME_ATTR_CNT 5
 #define MFT_LOGGER_NAME "mftlog"
 #define MFT_LOGGER_NAME_FUNC "mftlogfunc"
 //#define MFT_LOGGER_NAME_LIST "mftlist"
@@ -69,9 +68,17 @@ struct FILE_NAME
     bool NtfsInternal() const { return IsMetaFile() || IsDotDir(); }
 };
 
+#if _DEBUG
+static_assert(sizeof(FILE_NAME) == 120); 
+#else
+static_assert(sizeof(FILE_NAME) == 112);
+#endif
 
 typedef THArray<FILE_NAME> TFileList;
 typedef THArray<DATA_RUN_ITEM> TDataRuns;
+
+#define FILE_LIST_DEF_SIZE 100
+#define DATA_RUNS_DEF_SIZE 100
 
 struct DIR_NODE
 {
@@ -93,8 +100,9 @@ struct DIR_NODE
 
     void Clear() 
     {
-        FileList.ClearMem();
-        DataRuns.ClearMem();
+        // leave memory allocated for the next iterations
+        FileList.Clear(); 
+        DataRuns.Clear();
         Bitmap.Clear();
         DirSize = 0;
     }
@@ -114,7 +122,7 @@ struct ITEM_INFO
     uint16_t AttrsCount{ 0 };
     uint64_t DataLCNsCount{ 0 }; // how many LCNs the file uses. filled for non-resident data attributes only
     uint32_t FilesCount{ 0 }; // valid for directoriy records only. number of dirs/files in a directory.
-    /*ci_string*/std::wstring MainName; // here is ci_string for quicker sorting array of ITEM_INFO
+    std::wstring MainName; 
     THArray<std::wstring> FileNames; // contains filenames of all types - DOS, WIN and POSIX
     THash<std::wstring, TDataRuns> DataStreamNames; // data stream name counts groupped by stream name
   
@@ -137,6 +145,12 @@ struct ITEM_INFO
     //ITEM_INFO& operator=(const ITEM_INFO&) = delete;
 
 };
+
+#if _DEBUG
+static_assert(sizeof(ITEM_INFO) == 344);
+#else
+static_assert(sizeof(ITEM_INFO) == 336);
+#endif
 
 // assert below fails and this is the reason why sorting of array of ITEM_INFO takes too much time
 // sort function swaps items and for such big structure as ITEM_INFO this is costly operation
