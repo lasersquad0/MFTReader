@@ -14,7 +14,7 @@ TMFTSearchReader srdr(ldr);
 
 // volume parameter can be any of these: C, C:, c:\, c:\folder
 // only first two symbols from volume will be used as volume name. if volume contains single symbol ("C") one symbol will be used.
-MFTREADERDLL_API TError ReadVolume(wchar_t* volume, wchar_t* exclFolders, uint32_t* count, uint32_t** data, ProgressCallbackPtr callback)
+MFTREADERDLL_API TError ReadVolume(const wchar_t* volume, wchar_t* exclFolders, uint32_t* count, uint32_t** data, ProgressCallbackPtr callback)
 {
     GET_LOGGER;
 
@@ -35,8 +35,9 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, wchar_t* exclFolders, uint32
         while (true)
         {
             if (*currFolder == '\0') break;
-            MFTRecIndex mftId = srdr.GetMFTRecIdByPath(convert_string<ci_string::value_type>(currFolder).c_str());
-            if(mftId != 0) exclIDs.AddValue(mftId); //0 means "path not found", ignore it
+            auto mftId = srdr.GetMFTRecIdByPath(convert_string<ci_string::value_type>(currFolder).c_str());
+            if(mftId) 
+                exclIDs.AddValue(mftId.value()); //if (mftid)=false it means "path not found", ignore it
             currFolder += wcslen(currFolder) + 1;
         }
 ;
@@ -45,7 +46,7 @@ MFTREADERDLL_API TError ReadVolume(wchar_t* volume, wchar_t* exclFolders, uint32
         logger.InfoFmt("Reading file system: {}", wtos(ldr.GetVolumeData().Name));
 
         uint64_t rootDirSize{0};
-        if (srdr.ReadDirectoryV1(0, nullptr, rootDirSize, callback))
+        if (TErrorCode::Success != srdr.ReadDirectoryV1(0, nullptr, rootDirSize, callback))
             throw std::runtime_error("ReadDirectoryV1 finished with error.");
 
         // pcache - array of pointers to levels
