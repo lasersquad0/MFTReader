@@ -11,13 +11,14 @@ class MFTDataRunDecodeTest : public MFTStringParamTest
 public:
     static void SetUpTestCase()
     {
-        FName = "MFTDataRunDecodeParamTest";
-        MFTStringParamTest::SetUpTestCase();
+        FName = "MFTDataRunDecodeTest";
+        MFTStringParamTest::SetUpTestCase(); // need for proper initialization of my logging system
     }
 
     void SetUp() override
     {
         // it is important to call SetUp of the parent class here 
+        // need it for proper logging param name (instantiation name)
         MFTStringParamTest::SetUp();
 
         // add here your test initialization code
@@ -102,6 +103,6 @@ TEST_P(MFTDataRunDecodeTest, DecodeDataRuns_1)
     file.close();
 };
 
-INSTANTIATE_TEST_CASE_P(DecodeDataRuns1, MFTDataRunDecodeTest, testing::Values(_T(TEST_DATA_DIR "DataRuns1.txt")));
-INSTANTIATE_TEST_CASE_P(DecodeDataRuns2, MFTDataRunDecodeTest, testing::Values(_T(TEST_DATA_DIR "DataRuns2.txt")));
+INSTANTIATE_TEST_CASE_P(DecodeDataRuns1, MFTDataRunDecodeTest, testing::Values(_T(TEST_DATA_DIR "DataRuns1.txt"), _T(TEST_DATA_DIR "DataRuns2.txt")));
+//INSTANTIATE_TEST_CASE_P(DecodeDataRuns2, MFTDataRunDecodeTest, testing::Values(_T(TEST_DATA_DIR "DataRuns2.txt")));
 
