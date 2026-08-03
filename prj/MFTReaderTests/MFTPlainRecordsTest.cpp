@@ -20,19 +20,6 @@ public:
 
     void OpenVolume(const string_t& fileName) override
     {
-        string_t volName;
-        volName.resize(MAX_PATH);
-        
-        BOOL r = GetVolumePathName(fileName.c_str(), volName.data(), MAX_PATH);
-        ASSERT_NE(0, r);
-
-        volName.resize(volName.find(_T('\0')));
-        if (volName[volName.size() - 1] == '\\')
-        {
-            volName[volName.size() - 1] = _T('\0');
-            volName.resize(volName.size() - 1);
-        }
-
         FFile.open(fileName, std::ios::binary);
         if (!FFile) FAIL() << "Error opening file '" << fileName << "'";
         
@@ -46,7 +33,7 @@ public:
         FVolumeData.hVolume = INVALID_HANDLE_VALUE;
         FVolumeData.MftZoneStart.QuadPart = 0;
         FVolumeData.MftZoneEnd.QuadPart = 1000;
-        FVolumeData.Name = volName; //std::filesystem::absolute(fileName); // make path absolute (fully qualified and without . and .. )
+        FVolumeData.Name = GetVolumeName(fileName);
 
         // reading MFT record #0, getting $MFT LCNs
         uint8_t* mftRecBuf = (uint8_t*)alloca(FVolumeData.BytesPerMFTRec);
@@ -65,11 +52,13 @@ public:
 
         TMFTParserBase prsr(*this);
         TAttrCollection collection;
-        res = prsr.FillAttrCollection(mftRec, collection);
+        res = prsr.FillAttrCollection(mftRec, MakeAttrBitmask(ATTR_DATA), collection);
         ASSERT_EQ(TErrorCode::Success, res) << "Error parsing attributes in MFT record buffer " << mftRef.sId.low;
-        auto attr = collection.Get(ATTR_DATA);
-        ASSERT_NE(nullptr, attr);
+        
+        auto& adata = collection.Get(ATTR_DATA);
+        ASSERT_EQ(1ul, adata.Count()); // $MFT file contain only one ATR_DATA attribute
 
+        auto attr = adata[0];
         TDataRuns dataRuns;
         res = prsr.DecodeDataRuns(attr, dataRuns);
         ASSERT_EQ(TErrorCode::Success, res);
@@ -84,7 +73,8 @@ public:
         IRecordLoader::CloseVolume();
     }
 
-    // returns error NotFound error when all records are loaded from a file
+    //TODO think of logic described below. possibly need to change this logic.
+    // returns error NotFound error when out of bounds record id is requested
     // also it sets eofbit bit in the FFile
     TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override
     {
@@ -296,32 +286,17 @@ TEST_P(MFTPlainRecordsTest, GetMFTRecIdByPath_1)
         {0, _T("")}, {0, _T("\\")}, {MFT_ROOT_REC_ID, _T("C:\"")}, {0, _T("\"")},
         {0, _T("\\\\\\")}, {0, _T("users")}, { 0, _T("users\\default")},
         {0, _T("d:")}, {0, _T("d:\\windows")}, { 0, _T("C:\\win")},
-       /* {0, _T("C:\\windows\\4444\\5555\\5.txt")}, {0, _T("C:\\windows\\windows")},
-        {0, _T("C:\\ProgramFiles")},{0, _T("C:\\Program  Files")},
-        {58663, _T("C:\\windows")}, {58663, _T("c:\\WINDOWS")}, {58663, _T("C:\\WindowS")},
-        {MFT_ROOT_REC_ID, _T("C:WindowS")}, {0, _T("D:WindowS")},
-        {104227, _T("c:\\hiberfil.sys")}, {64, _T("c:\\pagefile.sys")},
-        {57651, _T("c:\\program files")}, {57651, _T("c:\\Program Files")},
-        {406846, _T("c:\\Program Files\\Git\\mingw64\\libexec\\git-core\\")},
-        {406846, _T("c:\\Program Files\\Git\\mingw64\\libexec\\git-core")},
-        {405697, _T("c:\\Program Files\\Git\\mingw64\\libexec\\git-core\\git-bisect--helper.exe")},
-        {405697, _T("c:\\Program Files\\Git\\mingw64\\libexec\\git-core\\git-branch.exe")},
-        {405697, _T("c:\\Program Files\\Git\\mingw64\\libexec\\git-core\\git-column.exe")},
-        {793004, _T("c:\\Windows\\WinSxS\\amd64_amdgpio2.inf.resources_31bf3856ad364e35_10.0.26100.1_ru-ru_973ad9b5977fab1e\\")},
-        {98425, _T("c:\\Program Files\\Google\\Chrome\\Application")},
-        {98426, _T("c:\\Program Files\\Google\\Chrome\\Application\\SetupMetrics")},*/
     };
 
     for (auto p : testData)
     {
-        auto expctValue = ps.GetMFTRecIdByPath(p.second);
+        auto expctValue = ps.MFTRecIdByPath(p.second);
         if (expctValue)
             EXPECT_EQ(p.first, expctValue.value());
         else
             EXPECT_EQ(p.first, 0ul);
             //EXPECT_TRUE(false) << "GetMFTRecIdByPath failed with error: " << ErrorCodeNames[(uint8_t)expctValue.error()];
     }
-
 }
 
 // MFT IDs will be different for different disks, this test linked to disk C: only
@@ -340,11 +315,6 @@ TEST_P(MFTPlainRecordsTest, GetPathByMFTRecId_1)
         {4, _T("c:\\$AttrDef")}, {6, _T("c:\\$Bitmap")},
         {57651, _T("NOT_FOUND")},
         {406846, _T("NOT_FOUND")},
-        /*{405697, _T("c:\\Program Files\\Git\\mingw64\\bin\\git.exe")},
-        {793004, _T("c:\\Windows\\WinSxS\\amd64_amdgpio2.inf.resources_31bf3856ad364e35_10.0.26100.1_ru-ru_973ad9b5977fab1e")},
-        {98425, _T("c:\\Program Files\\Google\\Chrome\\Application")},
-        {98426, _T("c:\\Program Files\\Google\\Chrome\\Application\\SetupMetrics")},*/
-
     };
 
     for (auto p : testData)
@@ -352,13 +322,13 @@ TEST_P(MFTPlainRecordsTest, GetPathByMFTRecId_1)
         THArray<std::wstring> paths;
         MFT_REF id{ p.first };
         paths.Clear();
-        auto res = ps.GetPathByMFTRecID(id, paths);
+        auto res = ps.PathByMFTRecID(id, paths);
         if (res == TErrorCode::Success)
             EXPECT_TRUE(EXPECT_ONE_OF(p.second, paths));
         else if (res == TErrorCode::NotFound)
             EXPECT_EQ(ci_string(_T("NOT_FOUND")), p.second);
         else
-            FAIL() << "GetPathByMFTRecID returned error: " << ErrorCodeNames[(uint8_t)res];
+            FAIL() << "PathByMFTRecID returned error: " << ErrorCodeNames[(uint8_t)res];
     }
 }
 
