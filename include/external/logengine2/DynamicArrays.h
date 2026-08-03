@@ -219,7 +219,7 @@ public:
 	virtual uint ItemSize() const = 0;
 	virtual void Hold() = 0;
 	virtual void SetCapacity(const uint Value) = 0;
-	virtual void Zero() = 0;
+	//virtual void Zero() = 0;
 	virtual void Swap(const uint Index1, const uint Index2) = 0;
 	/*	void	Reverse ();
 		void	Reverse (int endIndex);*/
@@ -249,7 +249,7 @@ public:
 	inline uint	Count() const override { return data.Count(); }
 	void	Clear()    override { data.Clear(); }
 	void	ClearMem() override { data.ClearMem(); }
-	void	Zero()     override { data.Zero(); }
+	void	Zero()     /*override*/ { data.Zero(); }
 	void	Hold()     override { data.Hold(); }
 	void	DeleteValue(const uint Index) override { data.Delete(Index); }
 	uint	Add(const void* pValue) override       { return data.Add(pValue); }
@@ -384,7 +384,9 @@ public:
 	void		ClearMem() override;
 	
 	// Zeroes all data in the array
-	void		Zero() override;
+	//template<typename U = T>
+	//typename std::enable_if<std::is_default_constructible<U>::value, void>::type
+	void	Zero();// override;
 
 	// Increase capacity to the max(ToCount, increase_after_Grow()_call) elements.
     // if ToCount < Capacity then nothing is done 
@@ -448,6 +450,8 @@ public:
 	virtual int IndexOfFrom(const T& Value, const uint Start) const;
 	
 	// Adds Count elements to the array. Elements are initialised by default constructor like T()
+	//template<typename U>
+    //typename std::enable_if<std::is_default_constructible<U>::value, void>::type  
 	void		AddFillValues(const uint Count) override;
 
 	// the same as AddValue call. Usefull when array is used as stack
@@ -684,13 +688,19 @@ class THash2
 public:
 	using KeyType = I1;
 	using KeysArray = THArraySorted<I1, Cmp>;
-	using ValuesHash = THash<I2, V, Cmp>;
+	using ValuesHash = THash<I2, V>; //THash<I2, V, Cmp>;
 	using ValuesArray = THArray<ValuesHash>;
 protected:
 	THash<I1, ValuesHash, Cmp> FHash;
 	uint FCount = 0;
 	uint InternalGetCount();
 public:
+	THash2() {}
+
+	// allows to initialize hash from initialiser list in code, e.g. 
+	//     THash2<int, std::string, double> hash2 = { {1, "s1", 4.4}, {30, "s2", 5.5}, {1001, "s3", 6656.0} };
+	THash2(std::initializer_list<std::tuple<I1, I2, V>> list);
+
 	void Clear() { FHash.Clear(); FCount = 0; }
 
 	// special method when Key2 and Value are empty or do not exist
@@ -932,6 +942,8 @@ bool THArray<T>::operator>(const THArray<T>& a) const
 }
 
 template<class T>
+//template<typename U>
+//typename std::enable_if<std::is_default_constructible<U>::value, void>::type
 void THArray<T>::Zero() //TODO what to do if T is NOT default_constructible ?
 {
 	if constexpr (std::is_default_constructible<T>::value)
@@ -1048,6 +1060,8 @@ int THArray<T>::IndexOfFrom(const T& Value, const uint Start) const
 }
 
 template<class T>
+//template<typename U>
+//typename std::enable_if<std::is_default_constructible<U>::value, void>::type
 void THArray<T>::AddFillValues(const uint Count)
 {
 	EnsureCapacity(FCount + Count);
@@ -1102,7 +1116,7 @@ void THArray<T>::SaveToStream(TStream& stre)
 
 
 //////////////////////////////////////////////////////////////////////
-//  THArraySorted Class Interface
+//  THArraySorted Class Implementation
 //////////////////////////////////////////////////////////////////////
 
 template <class T, class Cmp>
@@ -1120,7 +1134,7 @@ int THArraySorted<T, Cmp>::IndexOfFrom(const T& Value, uint Start) const
 {
 	int index = this->InternalIndexOfFrom(Value, Start);
 
-	return index < 0 ? THArray<T>::NPOS : index;
+	return index < 0 ? this->NPOS : index;
 }
 
 template <class T, class Cmp>
@@ -1128,23 +1142,14 @@ int THArraySorted<T, Cmp>::InternalIndexOfFrom(const T& Value, const uint Start)
 {
 	if (Start >= this->FCount && this->FCount != 0)
 	{
-/*
-#ifdef WIN32
-		sprintf_s(str, 100, "Error in THArraySorted: Start index %i is out of bounds!", Start);
-#else
-		sprintf(str, "Error in THArraySorted: Start index %i is out of bounds!", Start);
-#endif*/
-
 #if __cplusplus >= 202002L
 		throw THArrayException(std::format("[THArraySorted] Start index {} is out of bounds!", Start));
 #else
-		//char str[100];
-		//sprintf(str, "Error in THArraySorted: Start index %i is out of bounds!", Start);
 		throw THArrayException(std::string("Error in THArraySorted: Start index ") + std::to_string(Start) + " is out of bounds!");
 #endif
 	}
 
-	if (this->FCount == 0) return THArray<T>::NPOS;
+	if (this->FCount == 0) return this->NPOS; //THArray<T>::NPOS;
 
 	uint left = Start, count = this->FCount - Start;
 	uint step, middle;
@@ -1201,12 +1206,6 @@ inline void THArrayRaw::Error(const uint Value, /*const uint vmin,*/ const uint 
 {
 	if (/*(vmin > Value) ||*/ (vmax <= Value))
 	{
-/*		char str[512];
-#ifdef WIN32 //__STDC_SECURE_LIB__ //_MSC_VER < 1400
-		sprintf_s(str, 512, "Error in HArray: Element with index %i not found!", Value);
-#else
-		sprintf(str, "Error in HArray: Element with index %i not found!", Value);
-#endif*/
 		throw THArrayException(std::string("Error in THArray: Element with index ") + std::to_string(Value) +" not found!");
 	}
 }
@@ -1250,12 +1249,6 @@ inline void THArrayRaw::AddMany(const void* pValue, const uint Count)
 {
 	if (Count == 0)
 	{
-/*		char str[512];
-#ifdef WIN32 //__STDC_SECURE_LIB__//_MSC_VER < 1400
-		sprintf_s(str, 512, "AddMany(): invalid parameter 'Count'=%i !", Count);
-#else
-		sprintf(str, "AddMany(): invalid parameter 'Count'=%i !", Count);
-#endif  */
 		throw THArrayException(std::string("[AddMany] Invalid parameter 'Count'= ") + std::to_string(Count));
 	}
 
@@ -1699,6 +1692,13 @@ void THash<I,V>::Minus(THash<I, V> in)
 //////////////////////////////////////////////////////////////////////
 //  THash2 Class Implementation
 //////////////////////////////////////////////////////////////////////
+
+template <class I1, class I2, class V, class Cmp>
+THash2<I1, I2, V, Cmp>::THash2(std::initializer_list<std::tuple<I1, I2, V> > list)
+{
+	for (const auto& triple : list)
+		SetValue(std::get<0>(triple), std::get<1>(triple), std::get<2>(triple));
+}
 
 template <class I1, class I2, class V, class Cmp>
 uint THash2<I1, I2, V, Cmp>::InternalGetCount()
