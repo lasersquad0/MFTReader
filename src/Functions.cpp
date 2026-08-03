@@ -138,6 +138,7 @@ void TMFTSearchReaderV2::ReadDirsV2()
     MFT_REF startId{0};
     startId.Id = MFT_ROOT_REC_ID;
     auto res = ReadDirectoryV2(startId, 0);
+    UNREFERENCED_PARAMETER(res);
     assert(res == TErrorCode::Success);
 
     auto dirCount = std::count_if(FDirList.begin(), FDirList.end(), [](FILE_NAME& a) { return a.IsDir(); });
