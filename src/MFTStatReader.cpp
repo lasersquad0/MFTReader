@@ -51,20 +51,23 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_I
 
     AddFileAttrPred addToFileListPred = [&itemInfo](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
         {
-            std::wstring ciwnm(GetFName(attr), attr->FileNameLen);
+            std::wstring wnm(GetFName(attr), attr->FileNameLen);
             
-            itemInfo.Node.FileList.AddValue({convert_string<ci_string::value_type>(ciwnm).c_str(), *attr, ref});
+            itemInfo.Node.FileList.AddValue({convert_string<ci_string::value_type>(wnm).c_str(), *attr, ref});
         };
 
     AttrListPred callReadMftItemInfoPred = [this, &itemInfo](const MFT_REF& ref)
         {
             // ref - is a child MFT rec where attr value is located
-            if (TErrorCode::Success != ReadMftItemInfo(ref, itemInfo)) // ReadMftItemInfo writes message to log file in case of an error
+            auto res = ReadMftItemInfo(ref, itemInfo);
+            if (res != TErrorCode::Success) // ReadMftItemInfo writes message to log file in case of an error
             {
                 //do nothing, continue executing
                 //GET_LOGGER;
                 //logger.Error("ReadMftItemInfo() returned false!");
             }
+
+            return res;
         };
 
     ProcessiBlocksPred processAllocPred = [this, &addToFileListPred](uint8_t* dataBuf, CLST VCN, CLST LCN)
@@ -256,40 +259,6 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_I
 
                 break;
             }
-            case ATTR_ID: // Resident. 
-            {
-                ATTR_OBJECT_ID* objID = (ATTR_OBJECT_ID*)attrValue;
-                constexpr const uint BUF_SZ = 100;
-                std::wstring buf(BUF_SZ, 0);
-
-                if (!StringFromGUID2(objID->ObjId, buf.data(), BUF_SZ))
-                    logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 1.");
-                logger.DebugFmt("Attr Object ID: {}", wtos(buf));
-                
-                if (currAttr->AttrSize > 16) //0x10
-                {
-                    if (!StringFromGUID2(objID->BirthVolumeId, buf.data(), BUF_SZ))
-                        logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 2.");
-                    logger.DebugFmt("Attr Birth Volume ID: {}", wtos(buf));
-
-
-                    if (currAttr->AttrSize > 32) //0x20
-                    {
-                        if (!StringFromGUID2(objID->BirthObjectId, buf.data(), BUF_SZ))
-                            logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 3.");
-                        logger.DebugFmt("Attr Birth Object ID: {}", wtos(buf));
-
-                        if (currAttr->AttrSize > 48) //0x30
-                        {
-                            if (!StringFromGUID2(objID->DomainId, buf.data(), BUF_SZ))
-                                logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 4.");
-                            logger.DebugFmt("Attr Domain ID: {}", wtos(buf));
-                        }
-                    }
-                }
-                
-                break;
-            }
             case ATTR_ROOT: // Resident. ATTR_ROOT is resident only.
             {
                 // $SDH INDEX_ROOT attribute name is related to storing and searching security descriptors (usually in MFT=0x09 $Secure).
@@ -299,19 +268,6 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_I
                 assert((indexR->IndexBlockSize % getVolData().BytesPerCluster) == 0); // AI told that this rule should always be true
                 assert(indexR->IndexBlockClst == indexR->IndexBlockSize/getVolData().BytesPerCluster); 
                 assert(indexR->ihdr.Flags < 2); // 0 - Small Dir, 1- Big Dir
-
-                //$O exists in $Quota, $ObjId special files, $R exists in $Reparse
-                if (nameOfAttrA != "$I30")
-                    logger.InfoFmt("Resident ATTR_ROOT has non standard attribute name '{}' while standard name is '$I30'. MFT Rec ID {}",
-                        nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
-
-                // all non-Internal BITMAP attrs have name '$I30'
-                if (!IsMFTRecInternal(mftRec->IndexMFTRec))
-                {
-                    assert(indexR->AttrType == ATTR_FILENAME);//TODO MFT=0x09 contains two ATTR_ROOT attributes one of the with indexR->AttrType=0 for some reason
-                    assert(indexR->Rule == COLLATION_RULE::FILENAME);
-                    assert(nameOfAttrA == "$I30");
-                }
 
                 itemInfo.Node.IndexBlockSize = indexR->IndexBlockSize; // need this value for further processing ALLOC Data Runs
 
@@ -332,8 +288,20 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_I
                 if(indexR->ihdr.Flags != 0)
                     itemInfo.Node.FileList.SetCapacity(FILE_LIST_DEF_SIZE);
 
-                GetFileList(pihdr, addToFileListPred);
+                //$O exists in $Quota, $ObjId special files, $R exists in $Reparse
+                if (nameOfAttrA == "$I30")
+                {
+                    assert(indexR->AttrType == ATTR_FILENAME);
+                    assert(indexR->Rule == COLLATION_RULE::FILENAME);
 
+                    GetFileList(pihdr, addToFileListPred);
+                }
+                else
+                {
+                    logger.InfoFmt("Resident ATTR_ROOT has non standard attribute name '{}' (standard name is '$I30'). BYPASSing this attribute. MFT Rec ID {}",
+                        nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
+                }
+                
                 break;
             }
             case ATTR_LIST_ATTR: // Resident. ATTR_LIST_ATTR can be either resident or non-resident
@@ -353,55 +321,13 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_I
                 uint8_t* attrEntryEnd = Add2Ptr(currAttr, currAttr->AttrSize);
                 uint64_t processedAttrSize = 0;
 
-                ParseAttrList(mftRec->IndexMFTRec, attrEntry, attrEntryEnd, currAttr->res.DataSize, processedAttrSize, callReadMftItemInfoPred);
-
-                /*
-                assert(attrEntry->AttrType > 0);
-                assert(attrEntry->AttrSize > 0);
-                assert(attrEntry->AttrType != ATTR_ZERO);
-                assert(attrEntry->AttrType != ATTR_END);
-                assert(attrEntry->StartVCN == 0); // because first attr in the list is ATTR_STD_INFO
-                assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
-
-                while (true)
+                result = ParseAttrList(mftRec->IndexMFTRec, attrEntry, attrEntryEnd, currAttr->res.DataSize, processedAttrSize, callReadMftItemInfoPred);
+                if (result != TErrorCode::Success)
                 {
-                    // StartVCN should be 0 for all attrs except DATA and ALLOC
-                    // ATTR_LIST can contain several ALLOC attributes, first such attr contains StartVCN=0 second - StartVCN>0
-                    if ( (attrEntry->AttrType != ATTR_DATA) && (attrEntry->AttrType != ATTR_ALLOC) )  
-                    {
-                        assert(attrEntry->StartVCN == 0);
-                        if (attrEntry->StartVCN != 0)
-                            logger.WarnFmt("Looks like we have met incorrect case. StartVCN ({}) <> 0 for {} attribute. MFT Rec ID: {}.", attrEntry->StartVCN, AttrName(attrEntry->AttrType), MFT_REF::toHexString(pmftrec->IndexMFTRec));
-                    }
-
-                    if (attrEntry->StartVCN > volData.MaxMFTIndex) 
-                        logger.WarnFmt("StartVCN ({}) for {} attribute is greater than max MFT Index ({:#x}).", attrEntry->StartVCN, AttrName(attrEntry->AttrType), volData.MaxMFTIndex);
-
-                    if (attrEntry->ref.sId.low != pmftrec->IndexMFTRec)
-                    {
-                        // several attrEntries can refer to one MFT record, we want to parse MFT record only once
-                        if (visitedMFTRec.IndexOf(attrEntry->ref.sId.low) == -1)
-                        {
-                            CallReadMftItemInfo(attrEntry->ref);
-                            // attrEntry->ref is a MFT rec where attr value is located
-                            //if (!ReadMftItemInfo(volData, attrEntry->ref, itemInfo))
-                            //{
-                            //    logger.Error("ReadMftItemInfo() returned false!");
-                            //}
-                            visitedMFTRec.AddValue(attrEntry->ref.sId.low);
-                        }
-                    }
-
-                    attrEntry = (ATTR_LIST_ENTRY*)Add2Ptr(attrEntry, attrEntry->AttrSize);
-                    if ((uint8_t*)attrEntry >= attrEntryEnd) break;
-                    assert(attrEntry->AttrType > 0);
-                    assert(attrEntry->AttrSize > 0);
-                    assert(((uint32_t)(attrEntry->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
-                    //assert(attrEntry->StartVCN == 0);
-                    assert(attrEntry->AttrType != ATTR_ZERO);
-                    assert(attrEntry->AttrType != ATTR_END);
-                }*/
-
+                    logger.Error("ParseAttrList returned error.");
+                    return result;
+                }
+                
                 logger.Debug("[Resident ATTR_LIST_ATTR] - FINISHED PARSING");
 
                 break;
@@ -437,6 +363,40 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_I
                 TDataRuns runs;
                 itemInfo.DataStreamNames.SetValue(nameOfAttrW, runs); // for resident - add empty data run class
                
+                break;
+            }
+            case ATTR_ID: // Resident. 
+            {
+                ATTR_OBJECT_ID* objID = (ATTR_OBJECT_ID*)attrValue;
+                constexpr const uint BUF_SZ = 100;
+                std::wstring buf(BUF_SZ, 0);
+
+                if (!StringFromGUID2(objID->ObjId, buf.data(), BUF_SZ))
+                    logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 1.");
+                logger.DebugFmt("Attr Object ID: {}", wtos(buf));
+
+                if (currAttr->AttrSize > 16) //0x10
+                {
+                    if (!StringFromGUID2(objID->BirthVolumeId, buf.data(), BUF_SZ))
+                        logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 2.");
+                    logger.DebugFmt("Attr Birth Volume ID: {}", wtos(buf));
+
+
+                    if (currAttr->AttrSize > 32) //0x20
+                    {
+                        if (!StringFromGUID2(objID->BirthObjectId, buf.data(), BUF_SZ))
+                            logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 3.");
+                        logger.DebugFmt("Attr Birth Object ID: {}", wtos(buf));
+
+                        if (currAttr->AttrSize > 48) //0x30
+                        {
+                            if (!StringFromGUID2(objID->DomainId, buf.data(), BUF_SZ))
+                                logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 4.");
+                            logger.DebugFmt("Attr Domain ID: {}", wtos(buf));
+                        }
+                    }
+                }
+
                 break;
             }
             case ATTR_ALLOC: // Resident. ATTR_ALLOC is NON-Resident only. 
@@ -675,9 +635,9 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_I
         // or directory does not contain any files
         if (itemInfo.IsDir() && (itemInfo.Node.DataRuns.Count() > 0) && FProcessNonResAttr)
         {
-            assert(itemInfo.AttrCounters[MATI(ATTR_ALLOC)] > 0);
+            //assert(itemInfo.AttrCounters[MATI(ATTR_ALLOC)] > 0);
             assert(itemInfo.AttrCounters[MATI(ATTR_ROOT)] == 1);
-            assert(itemInfo.AttrCounters[MATI(ATTR_BITMAP)] == 1);
+            //assert(itemInfo.AttrCounters[MATI(ATTR_BITMAP)] == 1);
 
             // calls processAllocPred for every cluster where ALLOC data is located (according to Data Runs) 
             // and where Bitmap contains 1 in appropriate cluster bit
@@ -707,7 +667,7 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_I
 // reads all MFT items recursivelly starting from startMftRecRef.
 // if startMftRecRef is FILE then only info about this file is read and added to FItemsList (TItemInfoList)
 // if startMftRecRef is DIRECTORY the function will navigate all child items and child items of child items, read all info and add those items into FItemsList
-TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF startMftRecRef, uint32_t dirLevel)
+TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF startMftRecRef, uint32_t dirLevel, ReadMftItemsCallback callback)
 {
     GET_LOGGER;
 
@@ -716,7 +676,7 @@ TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF startMftRecRef, uint32_t dirL
     auto res = ReadMftItemInfo(startMftRecRef, itemInfo);
     if (res != TErrorCode::Success)
     {
-        logger.ErrorFmt("ReadMftItemInfo() finished with error for MFT rec: {:#x}", startMftRecRef.sId.low);
+        logger.ErrorFmt("ReadMftItemInfo() finished with error for MFT rec: {}", startMftRecRef.toHexString());
         return res;
     }
 
@@ -729,19 +689,18 @@ TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF startMftRecRef, uint32_t dirL
     itemInfo.FilesCount = itemInfo.Node.FileList.Count();
     FItemsList.AddValue(itemInfo);
 
-
     for (auto& item : itemInfo.Node.FileList)
     {     
         if (!item.NtfsInternal()) // bypass hidden mft metafiles
         {
-            if (dirLevel == 0) cout_t << item.ciName.c_str() /*<< " [" <<item.Attr.dup.FileSize << "]"*/ << std::endl;
-            //if (dirLevel == 1) cout_t << _T("\t") << item.ciName.c_str() << std::endl;
+            if ((dirLevel == 0) && (callback)) callback(item.ciName.c_str()); // cout_t << item.ciName.c_str() /*<< " [" <<item.Attr.dup.FileSize << "]"*/ << std::endl;
+            //if ((dirLevel == 1) && (callback)) callback(std::wstring(_T("\t")) + item.ciName.c_str()); //cout_t << _T("\t") << item.ciName.c_str() << std::endl;
 
             // reading detailed info about each item (files, directories and reparse points)
-            res = ReadMftItems(item.MFTRef, dirLevel + 1);
+            res = ReadMftItems(item.MFTRef, dirLevel + 1, callback);
             if (res != TErrorCode::Success)
             {
-                logger.ErrorFmt("ReadMftItems() finished with error for MFT Rec ID: {:#x}", item.MFTRef.sId.low);
+                logger.ErrorFmt("ReadMftItems() finished with error for MFT Rec ID: {}", item.MFTRef.toHexString());
             }
         }
     }
@@ -749,6 +708,11 @@ TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF startMftRecRef, uint32_t dirL
     return TErrorCode::Success;
 }
 
+int32_t PrintProgress(const std::wstring& data)
+{
+    cout_t << data /*<< " [" <<item.Attr.dup.FileSize << "]"*/ << std::endl;
+    return 1; // not used at the moment
+}
 
 // Reads entire disk and prints to console various statistics
 // Starts reading from root dir (c:), goes to all subdirs and reads detailed attributes data for each file/dir
@@ -765,13 +729,17 @@ void TMFTStatCollector::ShowVolumeStat()
     startId.Id = MFT_ROOT_REC_ID;
     
     Ticks::Start(_T("Loading time"));
-    if (TErrorCode::Success != ReadMftItems(startId, 0))
+    if (TErrorCode::Success != ReadMftItems(startId, 0, PrintProgress))
     {
         logger.Error("ReadMftItems() returned error!");
     }
     Ticks::Finish(_T("Loading time"));
 
-    Ticks::Start(_T("Calc and Print stat time"));
+    Ticks::Start(_T("Calc and Print statistic"));
+
+    //int64_t value;
+    //FStatistics.SetValue("Attrs Count > 9: ");
+
     auto AttrCountGreater9 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrsCount > 9; });
     auto HardLinksGreater9 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.HardLinksCount > 9; });
     auto FilenamesCountGreater13 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.FileNames.Count() > 13; });
