@@ -10,6 +10,7 @@ private:
     HANDLE FHFile = INVALID_HANDLE_VALUE;
     uint64_t FPartitionOffset{ 0 }; // offset from beginning of the file where NTFS partition starts 
     uint64_t FMFTRecordsCount{ 0 }; // total number of MFT records in $MFT file
+    uint32_t FSystemFilesCount{ 0 }; // number of first "system" hidden files till first non-system file met
     TDataRuns FMFTDataRuns; // Data Runs of $MFT file, used to properly calc offsets for MFT records
 
 public:
@@ -18,6 +19,7 @@ public:
     ~TMFTRawImageLoader() { CloseVolume(); }
 
     bool Eof(MFTRecIndex id) const { return id >= FMFTRecordsCount; }
+    uint32_t GetSystemFilesCount() const { return FSystemFilesCount; }
 
     int64_t MFTRecIdToOffset(MFTRecIndex MFTRecID)
     {
@@ -31,24 +33,113 @@ public:
     {
         if (runs.Count() == 0) return -1;
 
-        uint32_t k = BytesPerCluster / BytesPerMFTRec;
-        EXPECT_NE(k, 0ul);
-
-        uint64_t sum = 0;
+        uint64_t MFTRecIDBytes = MFTRecID * (uint64_t)BytesPerMFTRec;
+        uint64_t sumBytes = 0;
         DATA_RUN_ITEM rli{ 0 };
 
         for (uint i = 0; i < runs.Count(); i++)
         {
             rli = runs[i];
             EXPECT_GT(rli.len, 0ul); // len>0
-            sum += rli.len * k;
-            if (sum > MFTRecID) break;
+            
+            if (((rli.len * BytesPerCluster) % BytesPerMFTRec) != 0) // we've met len that is not divisible by BytesPerMFTRec
+                return -1;
+
+            sumBytes += rli.len * BytesPerCluster;
+            if (sumBytes > MFTRecIDBytes) break;
+        }
+
+        if (sumBytes <= MFTRecIDBytes) return -1;
+
+        return (rli.lcn + rli.len) * BytesPerCluster - (sumBytes - MFTRecIDBytes);
+
+
+        /*if (BytesPerCluster >= BytesPerMFTRec)
+        {
+            uint32_t k = BytesPerCluster / BytesPerMFTRec;
+            EXPECT_GT(k, 0ul); // k>0
+
+            for (uint i = 0; i < runs.Count(); i++)
+            {
+                rli = runs[i];
+                EXPECT_GT(rli.len, 0ul); // len>0
+                sum += rli.len * k;
+                if (sum > MFTRecID) break;
+            }
+        }
+        else
+        {
+            uint32_t k = BytesPerMFTRec / BytesPerCluster;
+            EXPECT_GT(k, 0ul); // k>0
+
+            for (uint i = 0; i < runs.Count(); i++)
+            {
+                rli = runs[i];
+                EXPECT_GT(rli.len, 0ul); // len>0
+                EXPECT_EQ(0, rli.len % k);
+                sum += rli.len / k;
+                if (sum > MFTRecID) break;
+            }
         }
 
         if (sum <= MFTRecID) return -1;
 
+        
+
         EXPECT_GT(rli.len, 0ul); // len>0
         return (rli.lcn + rli.len) * BytesPerCluster - (sum - MFTRecID) * BytesPerMFTRec;
+        */
+
+    }
+
+    uint32_t ReadFirstSystemFilesCount(TMFTParserBase& parser)
+    {   
+        uint8_t* mftRecBuf = (uint8_t*)alloca(DEFAULT_BYTES_PER_MFT_REC);
+        MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
+        MFT_REF mftRef{ 0 };
+        TErrorCode res;
+
+        while (!Eof(mftRef.sId.low))
+        {
+            res = LoadMFTRecord(mftRef, mftRecBuf); // function checks signature (should be 'FILE'), returns NotInUse error when signature <>'FILE'
+            if ((res == TErrorCode::MFTRecordNotInUse) || (mftRec->Flags & MFT_FLAG_IN_USE) == 0)
+            {
+                // MFT record does not contain 'FILE' signature (consider them as NotInUse)
+                // OR
+                // MFT record contains 'FILE' signature, but field Flags tell us that this record is NOT In Use.
+                
+                // nothing to do
+            }
+            else
+            {
+                EXPECT_EQ(TErrorCode::Success, res) << "Error loading MFT record " << mftRef.sId.low;
+
+                TAttrCollection coll;
+                res = parser.FillAttrCollection(mftRec, MakeAttrBitmask(ATTR_FILENAME), coll); // MFTRecordNotInUse is valid return value
+                EXPECT_EQ(TErrorCode::Success, res) << "Error parsing MFT record " << mftRef.sId.low;
+
+                auto& afn = coll.Get(ATTR_FILENAME);
+
+                ATTR_FILE_NAME* fn{ nullptr };
+                // sometimes there are 'system' MFT records without ATTR_FILENAME attribute (ids #12-#15)
+                if (afn.Count() > 0)
+                {
+                    // some disk images contain system files like $TxfLogContainer0000000000000000001 which have two names (DOS and WIN), both names start from '$'
+                    //ASSERT_EQ(1ul, afn.Count());
+                    auto attr = afn[0];
+                    EXPECT_NE(nullptr, attr);
+                    fn = (ATTR_FILE_NAME*)Add2Ptr(attr, attr->res.DataOffset);
+                }
+
+                if ((fn != nullptr) && (fn->FileNameLen > 0) && (GetFName(fn)[0] != L'$'))
+                    if ((fn->FileNameLen > 1) || GetFName(fn)[0] != L'.')
+                        break;
+            }
+
+            mftRef.sId.low++;
+        }
+
+        return mftRef.sId.low;
     }
 
     // finds first NTFS partition in the file, then finds first MFT record in this partition.
@@ -121,7 +212,7 @@ public:
         FVolumeData.MftZoneStart.QuadPart = partNTFS.MftStartLcn;
         FVolumeData.Mft2StartLcn.QuadPart = partNTFS.MftMirrorStartLcn;
         FVolumeData.hVolume = FHFile;
-        FVolumeData.Name = imgFileName;
+        FVolumeData.Name = GetVolumeName(imgFileName);
 
         EXPECT_EQ(DEFAULT_SECTOR_SIZE, FVolumeData.BytesPerSector);
         EXPECT_EQ(DEFAULT_BYTES_PER_MFT_REC, FVolumeData.BytesPerMFTRec);
@@ -133,7 +224,7 @@ public:
 
         // these two temporary values needed for proper work of LoadMFTRecord
         FMFTRecordsCount = 1;
-        FMFTDataRuns.AddValue({ 1, 0, partNTFS.MftStartLcn });
+        FMFTDataRuns.AddValue({ 2, 0, partNTFS.MftStartLcn });
         TErrorCode res = LoadMFTRecord(mftRef, mftRecBuf); // loading MFT record #0 which is $MFT file
         ASSERT_EQ(TErrorCode::Success, res) << "Error loading MFT record " << mftRef.sId.low;
 
@@ -145,14 +236,14 @@ public:
 
         TMFTParserBase prsr(*this);
         TAttrCollection collection;
-        res = prsr.FillAttrCollection(mftRec, collection);
+        res = prsr.FillAttrCollection(mftRec, MakeAttrBitmask(ATTR_DATA), collection);
         ASSERT_EQ(TErrorCode::Success, res) << "Error parsing attributes in MFT record buffer " << mftRef.sId.low;
 
-        auto attr = collection.Get(ATTR_DATA);
-        ASSERT_NE(nullptr, attr);
+        auto& adata = collection.Get(ATTR_DATA);
+        ASSERT_EQ(1ul, adata.Count()); // $MFT file contain only one ATR_DATA attribute
 
         FMFTDataRuns.Clear();
-        res = prsr.DecodeDataRuns(attr, FMFTDataRuns);
+        res = prsr.DecodeDataRuns(adata[0], FMFTDataRuns);
         ASSERT_EQ(TErrorCode::Success, res);
         ASSERT_GT(FMFTDataRuns.Count(), 0ul);
 
@@ -164,7 +255,10 @@ public:
         FVolumeData.MftValidDataLength.QuadPart = FMFTRecordsCount * FVolumeData.BytesPerCluster;
 
         // recalc LCNs into MFT records, FMFTRecordsCount is in MFT records here
-        FMFTRecordsCount *= FVolumeData.BytesPerCluster / FVolumeData.BytesPerMFTRec;
+        ASSERT_EQ(0, (FMFTRecordsCount * FVolumeData.BytesPerCluster) % FVolumeData.BytesPerMFTRec);
+        FMFTRecordsCount = (FMFTRecordsCount* FVolumeData.BytesPerCluster) / FVolumeData.BytesPerMFTRec;
+
+        FSystemFilesCount = ReadFirstSystemFilesCount(prsr);
     }
 
     void CloseVolume() override
@@ -176,11 +270,15 @@ public:
         FMFTRecordsCount = 0;
     }
 
-    // returns false when: 
-    //   - incorrect record ID specified 
-    //   - attemt to position outside of a file
+    // returns error code WrongMFTRecID when: 
+    //   - incorrect record ID specified (out of range) 
+    // IOError when
+    //   - attemt to read outside of a file
     //   - cannot read needed BytesPerMFTRec bytes from a file
-    //   - record does not contain FILE signature
+    // MFTRecordNotInUse when 
+    //   - requested rec ID is inside of range but record does not contain 'FILE' signature
+    // CorruptedData when
+    //   - FixupUSA call failed
     TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override
     {
         // check that MFT Rec ID is less than MFT table size
@@ -208,7 +306,8 @@ public:
             logger.WarnFmt("[LoadMFTRecord] Signature 'FILE' has not been found in MFT record {}. Signature found: {}{}{}{}", 
                         mftRecRef.sId.low, sign[0], sign[1], sign[2], sign[3]);
 
-            return TErrorCode::WrongMFTRecID;
+            //record is inside MFT table but it does not contain 'FILE' signature - consider it as Not In Use
+            return TErrorCode::MFTRecordNotInUse;
         }
 
         // because we read MFT records directly from a file, we need to fixup USA in them.
