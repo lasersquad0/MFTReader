@@ -35,7 +35,7 @@ MFTREADERDLL_API TError ReadVolume(const wchar_t* volume, wchar_t* exclFolders, 
         while (true)
         {
             if (*currFolder == '\0') break;
-            auto mftId = srdr.GetMFTRecIdByPath(convert_string<ci_string::value_type>(currFolder).c_str());
+            auto mftId = srdr.MFTRecIdByPath(convert_string<ci_string::value_type>(currFolder).c_str());
             if(mftId) 
                 exclIDs.AddValue(mftId.value()); //if (mftid)=false it means "path not found", ignore it
             currFolder += wcslen(currFolder) + 1;
