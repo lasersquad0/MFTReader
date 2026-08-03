@@ -135,7 +135,7 @@ TEST_F(MFTParserBaseTests, GetMFTRecIdByPath_1)
 
     for (auto p : testData)
     {
-        auto expctValue = ps.GetMFTRecIdByPath(p.second);
+        auto expctValue = ps.MFTRecIdByPath(p.second);
         if (expctValue)
             EXPECT_EQ(p.first, expctValue.value());
         else
@@ -187,7 +187,7 @@ TEST_F(MFTParserBaseTests, GetPathByMFTRecId_1)
         THArray<std::wstring> paths;
         MFT_REF id{ p.first };
         paths.Clear();
-        EXPECT_EQ(TErrorCode::Success, ps.GetPathByMFTRecID(id, paths));
+        EXPECT_EQ(TErrorCode::Success, ps.PathByMFTRecID(id, paths));
         EXPECT_TRUE(EXPECT_ONE_OF(p.second, paths));
     }
 }
