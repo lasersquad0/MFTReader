@@ -1,6 +1,7 @@
 #pragma once
 
 #include "windows.h"
+#include "strutils/include/string_utils.h"
 
 #define MFT_TESTS_LOG_FILE "LogMFTReaderTests.log"
 //#define MFT_TESTS_LOGGER_NAME "mft_tests_logger"
@@ -73,4 +74,24 @@ bool EXPECT_ONE_OF(STRING expected, ARRAY arr)
 	for (auto& item : arr)
 		if (expected == STRING(item.c_str())) return true;
 	return false;
+}
+
+
+inline string_t GetVolumeName(const string_t& path)
+{
+	string_t vol;
+	vol.resize(MAX_PATH);
+
+	BOOL r = GetVolumePathName(path.c_str(), vol.data(), MAX_PATH);
+	UNREFERENCED_PARAMETER(r);
+	assert(r != 0);
+
+	vol.resize(vol.find(_T('\0')));
+	if (vol[vol.size() - 1] == '\\')
+	{
+		vol[vol.size() - 1] = _T('\0');
+		vol.resize(vol.size() - 1);
+	}
+
+	return vol;
 }
