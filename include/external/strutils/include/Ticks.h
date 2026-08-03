@@ -28,6 +28,7 @@ public:
 		f[tickName] = std::chrono::steady_clock::now();
 		return GetTick(tickName);
 	}
+	// generates an exception if s.at(tickName) does not exist in s map.
 	static long long GetTick(const string_t& tickName)
 	{
 		timepoint& fin = f.at(tickName);
@@ -45,6 +46,14 @@ public:
 		for (auto& item : f)
 		{
 			stream << item.first << U(" = ") << std::chrono::duration_cast<std::chrono::milliseconds>(item.second - s.at(item.first)).count() / factor << std::endl;
+		}
+	}
+
+	static void PrintTime()
+	{
+		for (auto& item : f)
+		{
+			cout_t << item.first << U(" = ") << MillisecToStr<std::wstring>(std::chrono::duration_cast<std::chrono::milliseconds>(item.second - s.at(item.first)).count()) << std::endl;
 		}
 	}
 	
