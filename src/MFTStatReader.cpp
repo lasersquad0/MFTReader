@@ -719,7 +719,7 @@ int32_t PrintProgress(const std::wstring& data)
 // Result is a plain list of all files/dirs wihtout preserving child-parent relationships
 // Use this function mostly for collecting detailed statictic about files and their NTFS attributes.
 // DOES NOT calculate dir sizes
-void TMFTStatCollector::ShowVolumeStat()
+void TMFTStatCollector::CollectVolumeStat()
 {
     GET_LOGGER;
 
@@ -735,40 +735,101 @@ void TMFTStatCollector::ShowVolumeStat()
     }
     Ticks::Finish(_T("Loading time"));
 
-    Ticks::Start(_T("Calc and Print statistic"));
+    Ticks::Start(_T("Calc statistic"));
 
-    //int64_t value;
-    //FStatistics.SetValue("Attrs Count > 9: ");
+    FStatistics.Clear();
 
-    auto AttrCountGreater9 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrsCount > 9; });
-    auto HardLinksGreater9 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.HardLinksCount > 9; });
-    auto FilenamesCountGreater13 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.FileNames.Count() > 13; });
-    auto FilenamesCountEQ1 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.FileNames.Count() == 1; });
-    auto FilenamesCountEQ0 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.FileNames.Count() == 0; });
-    auto DirHardLinksEQ1 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.HardLinksCount == 1; });
-    auto DirHardLinksEQ2 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.HardLinksCount == 2; });
-    auto DirsHardLinksGreater2 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.HardLinksCount > 2; });
-    auto DirFilenamesCountGreater2 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.FileNames.Count() > 2; });
-    auto DirFilenamesCountEQ2 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.FileNames.Count() == 2; });
-    auto DirFilenamesCountEQ1 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.FileNames.Count() == 1; });
-    auto DirHasAttrList = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.AttrCounters[MATI(ATTR_LIST_ATTR)] > 0; });
-    auto HasNonresAttrList = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.NonResidentAttrList; });
-    auto HasNonresBitmap = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.NonResidentBitmap; });
-    auto HasResidentData = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.HasResidentDataAttr; });
-    auto HasNonResidentData = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.HasNonResidentDataAttr; });
-    auto ReparsePointsCount = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MATI(ATTR_REPARSE)] > 0; });
-    auto LoggedUtilityStreamCountGreater1 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MATI(ATTR_LOGGED_UTILITY_STREAM)] > 1; });
-    auto LoggedUtilityStreamCountGreater2 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MATI(ATTR_LOGGED_UTILITY_STREAM)] > 2; });
-    auto HasObjectID = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MATI(ATTR_ID)] > 0; });
-    auto DoesNotHaveDataAttribute = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MATI(ATTR_DATA)] == 0; });
-    auto DataStreamsCountGreater2 = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.DataStreamNames.Count() > 2; });
+    int64_t value;
+
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir(); });
+    FStatistics.SetValue(L"Total Items Count: ", toStringSepW(FItemsList.Count()));
+    FStatistics.SetValue(L"Total Dirs Count: ", toStringSepW(value));
+    FStatistics.SetValue(L"Total Files Count: ", toStringSepW(FItemsList.Count() - value));  
+
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrsCount > 9; });
+    FStatistics.SetValue(L"Attrs Count > 9: ", toStringSepW(value));
+
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.HardLinksCount > 9; });
+    FStatistics.SetValue(L"Hard links Count > 9: ", toStringSepW(value));
+
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.FileNames.Count() > 13; });
+    FStatistics.SetValue(L"Filenames Count > 13: ", toStringSepW(value));
+
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.FileNames.Count() == 1; });
+    FStatistics.SetValue(L"Filenames Count = 1: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.FileNames.Count() == 0; });
+    FStatistics.SetValue(L"Filenames Count = 0: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && (a.HardLinksCount == 1); });
+    FStatistics.SetValue(L"Dir Hard links Count = 1: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && (a.HardLinksCount == 2); });
+    FStatistics.SetValue(L"Dir Hard links Count = 2: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && (a.HardLinksCount > 2); });
+    FStatistics.SetValue(L"Dirs with Hard Links Count > 2: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.FileNames.Count() > 2; });
+    FStatistics.SetValue(L"Dir Filenames Count > 2: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.FileNames.Count() == 1; });
+    FStatistics.SetValue(L"Dir Filenames Count = 1: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.FileNames.Count() == 2; });
+    FStatistics.SetValue(L"Dir Filenames Count = 2: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && (a.AttrCounters[MATI(ATTR_LIST_ATTR)] > 0); });
+    FStatistics.SetValue(L"Dir Has ATTR_LIST attribute: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.NonResidentAttrList; });
+    FStatistics.SetValue(L"Have non-resident ATTR_LIST: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.NonResidentBitmap; });
+    FStatistics.SetValue(L"Have non-resident BITMAP: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.HasResidentDataAttr; });
+    FStatistics.SetValue(L"Have resident Data: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.HasNonResidentDataAttr; });
+    FStatistics.SetValue(L"Have non-resident Data: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MATI(ATTR_REPARSE)] > 0; });
+    FStatistics.SetValue(L"Reparse Points Count: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MATI(ATTR_LOGGED_UTILITY_STREAM)] > 1; });
+    FStatistics.SetValue(L"Logged Utility Streams Count > 1: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MATI(ATTR_LOGGED_UTILITY_STREAM)] > 2; });
+    FStatistics.SetValue(L"Logged Utility Streams Count > 2: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MATI(ATTR_ID)] > 0; });
+    FStatistics.SetValue(L"Have Object ID: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MATI(ATTR_DATA)] == 0; });
+    FStatistics.SetValue(L"DOES NOT have Data attribute: ", toStringSepW(value));
+    
+    value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.DataStreamNames.Count() > 2; });
+    FStatistics.SetValue(L"Data streams Count > 2: ", toStringSepW(value));
     
     auto maxHardLinks = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.HardLinksCount < b.HardLinksCount; });
+    FStatistics.SetValue(L"Max Hard Links Count: ", std::format(L"{}, file name: '{}' (mft red id: {})", (*maxHardLinks).HardLinksCount, (*maxHardLinks).MainName, (*maxHardLinks).RecID.sId.low));
+   
     auto maxAttrs = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.AttrsCount < b.AttrsCount; });
+    FStatistics.SetValue(L"Max Attrs Count: ", std::format(L"{}, file name: '{}' (mft rec id: {})", (*maxAttrs).AttrsCount, (*maxAttrs).MainName, (*maxAttrs).RecID.sId.low));
+    
     auto maxFilenames = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.FileNames.Count() < b.FileNames.Count(); });
+    FStatistics.SetValue(L"Max File Names Count: ", std::format(L"{}, file name : '{}' (mft rec id : {})", (*maxFilenames).FileNames.Count(), (*maxFilenames).MainName, (*maxFilenames).RecID.sId.low));
+    
     auto maxDataStreams = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.DataStreamNames.Count() < b.DataStreamNames.Count(); });
+    FStatistics.SetValue(L"Max Data Streams Count: ", std::format(L"{}, filename: '{}' (mft rec id : {})", (*maxDataStreams).DataStreamNames.Count(), (*maxDataStreams).MainName, (*maxDataStreams).RecID.sId.low));
+    
     auto maxDataLCNsCount = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.DataLCNsCount < b.DataLCNsCount; });
+    FStatistics.SetValue(L"Max Data Runs Count: ", std::format(L"{}, filename: '{}' (mft rec id: {})", (*maxDataLCNsCount).DataLCNsCount, (*maxDataLCNsCount).MainName, (*maxDataLCNsCount).RecID.sId.low));
+    
     auto maxFilesInDirCount = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.FilesCount < b.FilesCount; });
+    FStatistics.SetValue(L"Max Files Count in Dir: ", std::format(L"{}, filename: '{}' (mft rec id : {})", (*maxFilesInDirCount).FilesCount, (*maxFilesInDirCount).MainName, (*maxFilesInDirCount).RecID.sId.low));
 
     uint32_t FileNamesTotalSymbols = std::accumulate(FItemsList.begin(), FItemsList.end(), (uint32_t)0,
         [](uint32_t acc, ITEM_INFO& x) 
@@ -781,6 +842,10 @@ void TMFTStatCollector::ShowVolumeStat()
     uint32_t FileNamesAverageSymbols = FileNamesTotalSymbols / FItemsList.Count(); // average file length in symbols
     uint32_t FileNamesAverageBytes = FileNamesTotalSymbols * sizeof(wchar_t) / FItemsList.Count(); // average file length in bytes
 
+    FStatistics.SetValue(L"\nFilenames Average Length (symbols): ", toStringSepW(FileNamesAverageSymbols));
+    FStatistics.SetValue(L"Filenames Average Length (bytes): ", toStringSepW(FileNamesAverageBytes));
+
+    /*
     std::cout << std::endl;
     auto dirCount = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir(); });
 
@@ -819,15 +884,18 @@ void TMFTStatCollector::ShowVolumeStat()
     std::cout << std::format("Max Files Count in Dir: {}, filename: '{}' (mft rec id: {})", (*maxFilesInDirCount).FilesCount, wtos((*maxFilesInDirCount).MainName), (*maxFilesInDirCount).RecID.toHexString()) << std::endl;
 
     std::cout << std::endl << "Filenames Average Length: " << FileNamesAverageSymbols << " symbols (" << FileNamesAverageBytes << " bytes)" << std::endl;
+    */
 
-    std::wcout << std::endl << L"Datastream names for '"<< (*maxDataStreams).MainName.c_str() << "':" << std::endl;
+    std::wstringstream strstream;
     for (auto ds : (*maxDataStreams).DataStreamNames)
     {
         if(ds.first.empty())
-            std::wcout << L"'<empty>' - data runs count: " << ds.second.Count() << std::endl;
+            strstream << L"'<empty>' - data runs count: " << ds.second.Count() << std::endl;
         else
-            std::wcout << "'" << ds.first << L"' - data runs count: " << ds.second.Count() << std::endl;
+            strstream << "'" << ds.first << L"' - data runs count: " << ds.second.Count() << std::endl;
     }
+
+    FStatistics.SetValue(L"\nDatastream names for '" + (*maxDataStreams).MainName + L"':\n", strstream.str());
 
    /* std::wcout << std::endl << "File names for '" << (*maxFilenames).MainName.c_str() << "':" << std::endl;
     for (auto& fn : (*maxFilenames).FileNames)
@@ -835,13 +903,15 @@ void TMFTStatCollector::ShowVolumeStat()
         std::wcout << fn << std::endl;
     }*/
 
-    std::wcout << std::endl << "Attribute counts for '" << (*maxAttrs).MainName.c_str() << "':" << std::endl;
+    strstream.seekp(0);
     for (int i = 1; i < ATTR_TYPE_CNT; i++) // bypass ATTR_ZERO
     {
-        std::wcout << AttrTypeNames[i] << " = " <<(*maxAttrs).AttrCounters[i] << std::endl;
+        strstream << AttrTypeNames[i] << " = " <<(*maxAttrs).AttrCounters[i] << std::endl;
     }
+    FStatistics.SetValue(L"\nAttribute counts for '" + (*maxAttrs).MainName + L"':\n", strstream.str());
 
-    auto hasAttrList = std::find_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.AttrCounters[MATI(ATTR_LIST_ATTR)] > 0; });
+
+    /*auto hasAttrList = std::find_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.AttrCounters[MATI(ATTR_LIST_ATTR)] > 0; });
     if (hasAttrList != FItemsList.end())
     {
         std::cout << std::format("Dir has ATTR_LIST. Name '{}', MFT Rec id: {})", wtos((*hasAttrList).MainName), (*hasAttrList).RecID.toHexString()) << std::endl;
@@ -850,51 +920,62 @@ void TMFTStatCollector::ShowVolumeStat()
         if (hasAttrList2 != FItemsList.end())
             std::cout << std::format("Dir has ATTR_LIST. Name '{}', MFT Rec id: {}", wtos((*hasAttrList2).MainName), (*hasAttrList2).RecID.toHexString()) << std::endl;
     }
-
-    Ticks::Finish(_T("Calc and Print stat time"));
-
-    /*std::cout << "Sorting... " << std::endl;
-
-    Ticks::Start(_T("Sorting time"));
-    THArray<uint> index;
-    index.AddFillValues(itemsList.Count());
-    std::iota(index.begin(), index.end(), 0); // fill index with increasing values from 0 to itemList.Count()
-
-    std::sort(std::execution::par, index.begin(), index.end(), [&](uint a, uint b)
-        {
-            return itemsList[a].MainName < itemsList[b].MainName;
-        });
-
-    Ticks::Finish(_T("Sorting time"));
     */
-    /*std::cout << "Converting... " << std::endl;
-    Ticks::Start(_T("Converting time"));
-    THArray<string_t> arr;
-    arr.SetCapacity(itemsList.Count() + 1); // 1 is just in case
-    for (auto& item : itemsList)
-    {
-        arr.AddValue(item.MainName.c_str());
-    }
-    Ticks::Finish(_T("Converting time"));
 
+    Ticks::Finish(_T("Calc statistic"));
+
+    std::cout << std::endl << "Freeing memory..." << std::endl;
+    FItemsList.ClearMem();
+    //std::cout << "Freed" << std::endl << std::endl;
+
+    Ticks::PrintTime();
+}
+
+void TMFTStatCollector::ShowVolumeStat()
+{
+    if (FStatistics.Count() == 0)
+    {
+        std::wcout << std::endl << L"No statistics collected. Nothing to show. " << std::endl;
+    }
+    else
+    {
+        std::wcout << std::endl <<L"Showing volume statistics for " << FLoader.GetVolumeData().Name << "." << std::endl << std::endl;
+
+        for (auto item : FStatistics)
+        {
+            std::wcout << item.first << item.second << std::endl;
+        }
+    }
+}
+
+void TMFTStatCollector::SaveToFile(string_t fileName)
+{
     std::cout << "Sorting... " << std::endl;
 
-    Ticks::Start(_T("Sorting time"));
-    std::sort(arr.begin(), arr.end());
-    Ticks::Finish(_T("Sorting time"));
-    */
-    /*
-    std::string filename = "ListMFTFile_sorted.log";
-    LogEngine::TFileStream ff(filename);
+    Ticks::Start(_T("Sorting indexes time"));
+    THArray<uint> index;
+    index.AddFillValues(FItemsList.Count());
+    std::iota(index.begin(), index.end(), 0); // fill index with increasing values from 0 to itemList.Count()
+
+    // compare file names, but sort only indexes here (used below)
+    std::sort(std::execution::par, index.begin(), index.end(), [&](uint a, uint b)
+        {
+            return FItemsList[a].MainName < FItemsList[b].MainName;
+        });
+
+    Ticks::Finish(_T("Sorting idexes time"));
+    
+    //std::string filename = "ListMFTFile_sorted.log";
+    LogEngine::TFileStream ff(convert_string<char>(fileName));
 
     string_t fendl;
     BUILD_ENDL(fendl);
-    
+
     ff << L"Total Items Count: " << toStringSep<uint,std::wstring>(index.Count()) << fendl;
     //ff << toStringSepW(itemsList.Count() - dirCount) + L" - files"; // only files
     //ff << toStringSepW(dirCount) + L" - dirs"; // only dirs
 
-    std::cout << "Saving list of files to '" << filename << "'..." << std::endl;
+    std::cout << "Saving list of files to '" << convert_string<char>(fileName) << "'..." << std::endl;
 
     Ticks::Start(_T("Saving time"));
     for (auto& ind : index)
@@ -902,15 +983,9 @@ void TMFTStatCollector::ShowVolumeStat()
         //if (item.IsDir())
         //    ff << item.MainName  << L'\\' << fendl;
         //else
-            ff << itemsList[ind].MainName << fendl;
+            ff << FItemsList[ind].MainName << fendl;
     }
     Ticks::Finish(_T("Saving time"));
-    */
 
-    std::cout << std::endl << "Freeing memory..." << std::endl;
-    FItemsList.ClearMem();
-    std::cout << "Freed" << std::endl << std::endl;
-
-    Ticks::PrintCon(1);
+    std::cout << "Saved." << std::endl;
 }
-
