@@ -147,7 +147,7 @@ int _tmain(int argc, TCHAR* argv[])
            // MFTRef.sId.low = mftRecID;
             THArray<std::wstring> paths;
             
-            rdr.GetPathByMFTRecID(MFTRef, paths);
+            rdr.PathByMFTRecID(MFTRef, paths);
 
             std::wcout << "Showing information about MFT record." << std::endl;
             std::wcout << "MFT Record ID: " << mftRecID << std::endl;
@@ -160,13 +160,13 @@ int _tmain(int argc, TCHAR* argv[])
             rdr.ReadMftItemInfo(MFTRef, info);
 
         }
-        else if (cmd.HasOption(OPT_P))
+        else if (cmd.HasOption(OPT_P)) // info about one item (file or dir) specified by path is requested
         {         
             string_t path = cmd.GetOptionValue(OPT_P, 0);
             TMFTRecordLoader ldr(path);
             TMFTStatCollector rdr(ldr);
             
-            auto MFTRecID = rdr.GetMFTRecIdByPath(path.c_str());
+            auto MFTRecID = rdr.MFTRecIdByPath(path.c_str());
             if (MFTRecID)
             {
                 logger.SetLogLevel(LogEngine::Levels::llDebug);
@@ -174,8 +174,7 @@ int _tmain(int argc, TCHAR* argv[])
                 cout_t << "Path: " << path << std::endl;
 
                 MFT_REF MFTRef{ MFTRecID.value()};
-                //MFTRef.sId.low = MFTRecID;
-
+               
                 ITEM_INFO info{ 0 };
 
                 rdr.ReadMftItemInfo(MFTRef, info);
@@ -192,6 +191,7 @@ int _tmain(int argc, TCHAR* argv[])
 
             TMFTRecordLoader ldr(volume);
             TMFTStatCollector srdr(ldr);
+            srdr.CollectVolumeStat();
             srdr.ShowVolumeStat();
 
             //ReadDirsV2(vol);
