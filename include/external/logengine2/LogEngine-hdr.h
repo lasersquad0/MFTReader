@@ -19,7 +19,7 @@ class Registry
 {
 private:
 	// logger names are case INsensitive
-	THash<std::string, Logger*, CompareStringNCase> FLoggers;
+	THashBase<std::string, Logger*, THArraySorted<std::string, CompareStringNCase>> FLoggers;
 
 	Registry() 
 	{
