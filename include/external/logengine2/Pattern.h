@@ -285,7 +285,7 @@ public:
 #define DefaultStopAppLine    "%APPNAME% %APPVERSION% normal shutdown \nLog stopped at %DATETIME%.\n"
 #define DefaultSeparatorLine  "----------------------------------------------------------------"
 
-class THashOwner : public THash<std::string, Holder*, CompareStringNCase>
+class THashOwner : public THashBase<std::string, Holder*, THArraySorted<std::string, CompareStringNCase>>
 {
 public:
 	~THashOwner() override
@@ -293,7 +293,7 @@ public:
 		for (auto item : FAValues) delete item;
 	}
 
-	THashOwner(std::initializer_list<std::pair<std::string, Holder*> > list): THash(list) {	}
+	THashOwner(std::initializer_list<std::pair<std::string, Holder*> > list): THashBase(list) {	}
 };
 
 class Pattern
