@@ -2,7 +2,7 @@
 #include "Readers.h"
 
 // make volume look like \\.\\C: 
-string_t IRecordLoader::ParseVolume(const string_t& vol)
+string_t IRecordLoader::NormalizeVolume(const string_t& vol)
 {
     if (vol.starts_with(_T("\\\\.\\")))
     {
@@ -20,7 +20,7 @@ string_t IRecordLoader::ParseVolume(const string_t& vol)
 
 void TMFTRecordLoader::OpenVolume(const string_t& vol)
 {
-    string_t vol2 = ParseVolume(vol);
+    string_t vol2 = NormalizeVolume(vol);
 
     GET_LOGGER;
 
@@ -36,7 +36,7 @@ void TMFTRecordLoader::OpenVolume(const string_t& vol)
     {
         DWORD err = GetLastError();
         auto errMsg = GetErrorMessageTextA(err, "CreateFile");
-        logger.Error(errMsg);
+        //logger.Error(errMsg);
         throw std::system_error(std::error_code(err, std::system_category()), errMsg);
     }
 
@@ -47,7 +47,7 @@ void TMFTRecordLoader::OpenVolume(const string_t& vol)
         DWORD err = GetLastError();
 
         std::string errMsg = GetErrorMessageTextA(err, "DeviceIoControl"); 
-        logger.Error(errMsg);
+        //logger.Error(errMsg);
         throw std::system_error(std::error_code(err, std::system_category()), errMsg);
     }
 
@@ -156,7 +156,3 @@ TErrorCode TMFTRecordLoader::ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* d
         return TErrorCode::IOError;
     }
 }
-
-
-
-
