@@ -160,8 +160,9 @@
       <AdditionalIncludeDirectories>$(ProjectDir)..\..\include\external;$(ProjectDir)..\..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <ExceptionHandling>Async</ExceptionHandling>
-      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
       <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
+      <Optimization>Disabled</Optimization>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -181,6 +182,7 @@
     <ClCompile Include="..\..\include\external\cli\Option.cpp" />
     <ClCompile Include="..\..\include\external\cli\OptionsList.cpp" />
     <ClCompile Include="..\..\include\external\strutils\src\string_utils.cpp" />
+    <ClCompile Include="..\..\src\MFTAllRecordsLoader.cpp" />
     <ClCompile Include="..\..\src\MFTParserBase.cpp" />
     <ClCompile Include="..\..\src\MFTRecordLoader.cpp" />
     <ClCompile Include="..\..\src\MFTStatReader.cpp" />
@@ -203,6 +205,7 @@
     <ClInclude Include="..\..\include\FileCache.h" />
     <ClInclude Include="..\..\include\FileLevel.h" />
     <ClInclude Include="..\..\include\Functions.h" />
+    <ClInclude Include="..\..\include\MFTReader.h" />
     <ClInclude Include="..\..\include\NTFS.h" />
     <ClInclude Include="..\..\include\Readers.h" />
     <ClInclude Include="..\..\include\Utils.h" />
