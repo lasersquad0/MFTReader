@@ -93,11 +93,13 @@ public:
  */
 class THArrayRaw
 {
+public:
+	using pointer = uint8_t*;
 protected:
 	uint	FCount;    // number of items in the array
 	uint	FCapacity; // amount of memory allocated for storing items, FCapacity >= Fcount always
 	uint	FItemSize; // size in bytes of one element in array
-	void*	FMemory;
+	pointer	FMemory;
 	void	Error(const uint Value, const uint vmax) const;
 
 	// Increase capacity to the next level (usually adding 25% to existing capacity)
@@ -107,7 +109,7 @@ protected:
 	// if ToCount < Capacity then nothing is done 
 	void	GrowTo(const uint ToCount);
 
-	void*	CalcAddr(const uint num) const { return static_cast<void*>(static_cast<uint8_t*>(FMemory) + static_cast<size_t>(num) * FItemSize); }
+	pointer	CalcAddr(const uint num) const { return FMemory + static_cast<size_t>(num) * FItemSize; }// { return static_cast<void*>(static_cast<uint8_t*>(FMemory) + static_cast<size_t>(num) * FItemSize); }
 	[[noreturn]] void	ThrowZeroItemSize() const { throw THArrayException("Error in THArrayRaw: ItemSize cannot be zero!"); }
 public:
 	THArrayRaw(); // sets ItemSize to default value 1
@@ -115,80 +117,111 @@ public:
 	virtual ~THArrayRaw() { ClearMem(); }
 	//	void operator=(const THArrayRaw& a);
 
+	pointer operator[](const uint Index) { return GetValue(Index); }
+
+	bool operator==(const THArrayRaw& a) const;
+
+	// one compare operator is enough
+	bool operator>(const THArrayRaw& a) const;
+
 	// sets new size of each element in the array
 	// if new size differs from existing one - all data in array is cleared before setting new item size.
 	// if Size=0 then exception is thrown
-	void		SetItemSize(const uint ItemSize); 
-	uint		GetItemSize() const { return FItemSize; }
+	void SetItemSize(const uint ItemSize);
+	uint GetItemSize() const { return FItemSize; }
 	
+	pointer		GetAddr(const uint Index) const { Error(Index, FCount); return CalcAddr(Index); }
+
+	// Returns number of element in the array
+	uint Count()    const { return FCount; }
+
+	// Amount of memory allocated in the array for current and future elements 
+	uint Capacity() const { return FCapacity; }
+
 	// just zeroes number of elements in the array.
-	// allocated memory remains allocated
-	virtual void Clear() { FCount = 0; }
+	// allocated memory remains allocated (Capacity hasn't changed)
+	void Clear() { FCount = 0; }
 
 	// zeroes number of elements in the array and frees all allocated memory for array items.
-	void		ClearMem();
+	void ClearMem();
+
+	// Frees unused memory. Capacity=Count after this call
+	void		Hold() { SetCapacity(FCount); }
+	//void		MoveData(const int FromPos, const int Count, const int Offset);
 
 	// Adds new element at the end of the array
 	// pValue should point to the element of ItemSize size
-	uint		Add(const void* pValue) { return Insert(FCount, pValue); }
-	
+	//uint		Add(const pointer pValue) { return Insert(FCount, pValue); }
+	uint		AddValue(const pointer pValue) { return Insert(FCount, pValue); }
+
 	// Adds Count elements to the array. elements added at the and of the array.
 	// pValue points to the first element being added, pValue + ItemSize points to the second element and so on
 	// pValue should be at least Count*ItemSize bytes length  
-	void		AddMany(const void* pValue, const uint Count);
+	void		AddMany(const pointer pValue, const uint Count);
 
 	// Inserts element into array to the Index position
 	// Index should be in a range from 0 to FCount inclusively
 	// Exception is thrown is Index is out of bounds
-	uint		Insert(const uint Index, const void* pValue);
+	uint		Insert(const uint Index, const pointer pValue);
+	uint		InsertValue(const uint Index, const pointer pValue) { return Insert(Index, pValue); }
 
 	// Inserts Count elements to the array starting from position Index. 
 	// pValue points to the first element being added, pValue + ItemSize points to the second element and so on
 	// pValue should be at least Count*ItemSize bytes length  
 	// Exception is thrown is Index is out of bounds
-	void		InsertMany(const uint Index, const void* pValue, const uint Count); // pValue should have at least Count*ItemSize bytes length  
+	void		InsertMany(const uint Index, const pointer pValue, const uint Count); // pValue should have at least Count*ItemSize bytes length  
 	
-	// Replaces element in the array with new value pointer by pValue
-	void		Update(const uint Index, const void* pValue);
+	// Replaces element in the array with new value pointed by pValue
+	void		Update(const uint Index, const pointer pValue);
+	void		SetValue(const uint Index, const pointer pValue) { Update(Index, pValue); }
 
 	// Replaces many elements by the values pointed by pValue
 	// pValue points to the first element being added, pValue + ItemSize points to the second element and so on
 	// pValue should be at least Count*ItemSize bytes length  
 	// Exception is thrown is Index is out of bounds
-	void		UpdateMany(const uint Index, const void* pValue, const uint Count); // pValue should have at least Count*ItemSize bytes length  
-	void*		GetAddr(const uint Index) const { Error(Index, FCount); return CalcAddr(Index); }
-	
+	void		UpdateMany(const uint Index, const pointer pValue, const uint Count); // pValue should have at least Count*ItemSize bytes length 
+
 	// Deletes element with index Index. all other element are shifted.
 	// Exception is thrown is Index is out of bounds
-	virtual	void Delete(const uint Index);
-	
+	//virtual	void Delete(const uint Index);
+	void DeleteValue(const uint Index);// { Delete(Index); }
+
 	// Copies element with index Index to the memory pointed by pValue.
 	// pValue should be at least ItemSize size
-	void		Get(const uint Index, void* pValue) const;
-	
-	// Return pointer to the element in array
-	// Exception is thrown is Index is out of bounds
-	void*		GetPointer(const uint Index) const { return GetAddr(Index); }
-	
-	// Frees unused memory. Capacity=Count after this call
-	void		Hold() { SetCapacity(FCount); }
-	//void		MoveData(const int FromPos, const int Count, const int Offset);
-	
-	// Returns number of element in the array
-	uint		Count()    const { return FCount; }
+	void		Get(const uint Index, pointer pValue) const;
 
-	// Amount of memory allocated in the array for current and future elements 
-	uint		Capacity() const { return FCapacity; }
+	// returns reference to element inside THArrayRaw 
+	pointer		GetValue(const uint Index) const { return GetAddr(Index); }
+
+	// Return pointer to the element in array
+	// for THArrayRaw it is equivalent to GetValue call
+	// Exception is thrown is Index is out of bounds
+	//pointer	GetPointer(const uint Index) const { return GetAddr(Index); }
+	pointer		GetValuePointer(const uint Index) const { return GetAddr(Index); }
+
+	// Finds element in array by comparing them with = operator
+	// Elements stored in the array should suppoprt comparing by operator == and >
+	int IndexOf(const pointer Value) const { return IndexOfFrom(Value, 0); }
+
+	// the same is IndexOf but seach is started from element from index Start
+	int IndexOfFrom(const pointer Value, const uint Start) const;
 
 	// Pointer to the first element in the array
-	void*		Memory()  const { return FMemory; }
+	pointer	Memory()  const { return FMemory; }
 
 	// Zeroes all data in the array
-	void		Zero() { if (FCount > 0) memset(FMemory, 0, static_cast<size_t>(FCount) * FItemSize); }
+	void Zero() { if (FCount > 0) memset(FMemory, 0, static_cast<size_t>(FCount) * FItemSize); }
 	
+	// Sets new array capacity
+	// if Value < current Count then extra elements are deleted and extra memory freed
 	void		SetCapacity(const uint Value);
 
-	// Adds Count element to the array and set them to zero.
+	// Sets count of elements in array to Count
+	// No actual element are added, new elements will contain "garbage"
+	// This function may be useful before mass updating of elements
+	void		SetCount(const uint Count) { if (Count > FCapacity) GrowTo(Count); FCount = Count; }
+
+	// Adds Count elements to the array and set them to zero.
 	void		AddFillValues(const uint Count);
  
 	void		Swap(const uint Index1, const uint Index2);
@@ -200,7 +233,7 @@ public:
  * abstract class declaring only virtual methods manipulating arrays. It is
  * not a template class therefore it contains only type independent methods
  */
-
+/*
 class THArrayBase
 {
 public:
@@ -224,39 +257,41 @@ public:
 	/*	void	Reverse ();
 		void	Reverse (int endIndex);*/
 
-};
+//};
 
 
 //////////////////////////////////////////////////////////////////////
 //  THArrayStringFix Class Interface
 //////////////////////////////////////////////////////////////////////
 
-class THArrayStringFix : public THArrayBase
+class THArrayStringFix //: public THArrayBase
 {
 private:
 	THArrayRaw data;
 protected:
-	char* GetAddr(const uint Index) const {	return static_cast<char*>(data.GetAddr(Index));	}
+	char* GetAddr(const uint Index) const { return (char*)(data.GetAddr(Index)); }
 public:
+	using pointer = THArrayRaw::pointer;
+
 	//	void operator=(const THArrayStringFix& a) {
 	//		printf("THArrayStringFix =");
 	//	}
 	THArrayStringFix(uint Length) { data.SetItemSize(Length); }
-	~THArrayStringFix() override { ClearMem(); }
+	virtual ~THArrayStringFix() { ClearMem(); }
 	std::string GetValue(const uint Index) const { std::string s(GetAddr(Index), data.GetItemSize()); return s; }
-	void	SetValue(const uint Index, const std::string& Value) { data.Update(Index, Value.c_str()); }
+	void	SetValue(const uint Index, const std::string& Value) { data.Update(Index, (pointer)Value.c_str()); }
 	std::string operator[](const uint Index) const { return GetValue(Index); }
-	inline uint	Count() const override { return data.Count(); }
-	void	Clear()    override { data.Clear(); }
-	void	ClearMem() override { data.ClearMem(); }
-	void	Zero()     /*override*/ { data.Zero(); }
-	void	Hold()     override { data.Hold(); }
-	void	DeleteValue(const uint Index) override { data.Delete(Index); }
-	uint	Add(const void* pValue) override       { return data.Add(pValue); }
-	uint	AddValue(const std::string& Value)     { return data.Add(Value.c_str()); }
-	void	AddFillValues(const uint Count) override { data.AddFillValues(Count); }
-	uint	Insert(const uint Index, const void* Value) { return data.Insert(Index, Value); }
-	void	Swap(const uint Index1, const uint Index2) override { data.Swap(Index1, Index2); }
+	inline uint	Count() const { return data.Count(); }
+	void	Clear() { data.Clear(); }
+	void	ClearMem() { data.ClearMem(); }
+	void	Zero() { data.Zero(); }
+	void	Hold() { data.Hold(); }
+	void	DeleteValue(const uint Index) { data.DeleteValue(Index); }
+	uint	Add(const void* pValue) { return data.AddValue((pointer)pValue); }
+	uint	AddValue(const std::string& Value)     { return data.AddValue((pointer)Value.c_str()); }
+	void	AddFillValues(const uint Count) { data.AddFillValues(Count); }
+	uint	Insert(const uint Index, const void* Value) { return data.Insert(Index, (pointer)(Value)); }
+	void	Swap(const uint Index1, const uint Index2) { data.Swap(Index1, Index2); }
 	uint	AddChars(const void* pValue, const uint len);
 	void	Reverse();
 };
@@ -267,7 +302,7 @@ public:
 //////////////////////////////////////////////////////////////////////
 
 template<class T>
-class THArray : public THArrayBase
+class THArray// : public THArrayBase
 {
 private:
 	// Iterator class for THArray
@@ -331,10 +366,11 @@ protected:
 
 	// Increase capacity to the next level (usually adding 25% to existing capacity)
 	void	Grow();
-
+	virtual void Error(const uint Value, const uint vmax) const { if (Value >= vmax) throw THArrayException("Element with index " + std::to_string(Value) + " not found!"); }
 	inline bool	EnoughCapacity(const uint numItems) { return FBegin + numItems <= FMemory + FCapacity; }
 	inline void	EnsureCapacity(const uint numItems) { if(!EnoughCapacity(numItems)) GrowTo(numItems); }
 public:
+	static const int NPOS = -1;  // return value that usually mean "item is not found", this value returned by functions like IndexOf()
 	// useful types used by the array and by users
 	using iterator = THArrayIterator<THArray>;
 	using const_iterator = THArrayIterator<const THArray>;
@@ -350,7 +386,7 @@ public:
 
 	THArray();
 	THArray(const THArray<T>& a); // copy constructor
-	~THArray() override { ClearMem(); }
+	virtual ~THArray() { ClearMem(); }
 
 	// allows to initialize array from initialiser list in code, e.g. THArray<std::string> arr = {"s1", "s2", "s3"};
 	THArray(std::initializer_list<T> list);
@@ -365,49 +401,49 @@ public:
 	bool operator>(const THArray<T>& a) const;
 
 	// readonly method that just calcualted size in bytes of element in the array
-	inline uint ItemSize() const override { return sizeof(T); }
+	virtual inline uint ItemSize() const { return sizeof(T); }
 
 	// number of elements stored in the array
-	inline uint Count() const override { return FCount; }
+	virtual inline uint Count() const { return FCount; }
 
 	// just sets the number of elements in the array to zero.
 	// allocated memory remains allocated
-	void		Clear() override { FCount = 0; }
+	virtual void Clear() { FCount = 0; }
 	
 	// Amount of memory allocated in the array for current and future elements 
-	uint		Capacity() const override { return FCapacity; }
+	virtual uint Capacity() const { return FCapacity; }
 	
 	// Frees unused memory. Capacity=Count after this call
-	void		Hold() override { SetCapacity(FCount); }
+	virtual void Hold() { SetCapacity(FCount); }
 	
 	// zeroes number of elements in the array and frees all allocated memory for array items.
-	void		ClearMem() override;
+	virtual void ClearMem();
 	
 	// Zeroes all data in the array
 	//template<typename U = T>
 	//typename std::enable_if<std::is_default_constructible<U>::value, void>::type
-	void	Zero();// override;
+	virtual void Zero();
 
 	// Increase capacity to the max(ToCount, increase_after_Grow()_call) elements.
     // if ToCount < Capacity then nothing is done 
-	void		GrowTo(const uint ToCount);
+	virtual void GrowTo(const uint ToCount);
 	
 	// Sets new array capacity
-	// if Value < current Capacity then extra elements are deleted
-	void		SetCapacity(const uint Value) override;
+	// if Value < current Count then extra elements are deleted, and extra memory is freed
+	virtual void SetCapacity(const uint Value);
 
-	// Sets count of element in array to Count
-	// No actual element are added, new element will contain "garbage"
+	// Sets number of elements in array to Count
+	// No actual elements are added, new elements will contain "garbage"
 	// This function may be useful before mass updating of elements
-	void		SetCount(const uint Count);
+	virtual void SetCount(const uint Count);
 	
 	// Updates element with index Index with new Value
 	// Exception is thrown is Index is out of bounds
-	void		SetValue(const uint Index, const T& Value);
+	void SetValue(const uint Index, const T& Value);
 
 	// Return reference to the element with indexIndex
 	// Reference allows to modify element in the array
-	T&			GetValue(const uint Index) const;
+	virtual T& GetValue(const uint Index) const;
 
 	// Inserts new element Value into position Index
 	// Returns reference of inserted element
@@ -419,7 +455,7 @@ public:
 	
 	// Deletes element at position Index from array
 	// All right element are shifted in memory accordingly
-	void		DeleteValue(const uint Index) override;
+	virtual void DeleteValue(const uint Index);
 
 	// Adds new element to the end of the array.
 	// Return index of added element
@@ -427,11 +463,11 @@ public:
 
 	// The same as AddValue but element is refered by pointer pValue.
 	// Returns index of added element
-	uint		Add(const void* pValue) override { return AddValue(*static_cast<const T*>(pValue)); }
+	//uint		Add(const void* pValue) { return AddValue(*static_cast<const T*>(pValue)); }
 
 	// Returns pointer to the value with index Index in the array
 	// Returns nullptr if no element with Index exist in the array. No exception is thrown.
-	inline	 T* GetValuePointer(const uint Index) const;
+	virtual inline T* GetValuePointer(const uint Index) const;
 
 	//virtual int IndexOf(const T& Value, const Compare<T>& cmp) const { return IndexOfFrom(Value, 0, cmp); }
 	// Tries to find element with value Value in the array
@@ -452,7 +488,7 @@ public:
 	// Adds Count elements to the array. Elements are initialised by default constructor like T()
 	//template<typename U>
     //typename std::enable_if<std::is_default_constructible<U>::value, void>::type  
-	void		AddFillValues(const uint Count) override;
+	virtual void AddFillValues(const uint Count);
 
 	// the same as AddValue call. Usefull when array is used as stack
 	virtual void Push(const T& Value) { AddValue(Value); }
@@ -466,11 +502,11 @@ public:
 	// Returns last element in the array (without deleting it)
 	virtual T&	 Last() const { return GetValue(FCount - 1); }
 
-	void		 Swap(const uint Index1, const uint Index2) override;
+	virtual void Swap(const uint Index1, const uint Index2);
 	virtual void Reverse();
 	virtual void Reverse(uint endIndex); // Reverse till specified element
 #ifdef _USE_STREAMS_
-	void		SaveToStream(TStream& stre);
+	virtual void SaveToStream(TStream& stre);
 #endif
 
 };
@@ -550,17 +586,18 @@ public:
 };
 
 //////////////////////////////////////////////////////////////////////
-//  THash Class Interface
+//  THashBase Class Interface
 //////////////////////////////////////////////////////////////////////
 
 /**
-* THash class stores pairs of values Key (can be any type) and Value (can be any type too)
+* THashBase class stores pairs of values Key (can be any type) and Value (can be any type too)
 * Values can be accessed by Key or also by integer Index (like usual array). 
 * Value Indexes (not Keys) are not preserved and may change depending on which pairs Key:Value are stored in the hash
-* THash defines an iterator that can be used with any functions from <algorithm> file
-* Comparator Cmp used to order Keys in THash for fater search (binary search used to find keys)
+* THashBase defines an iterator that can be used with any functions from <algorithm> file
+* THashBase uses type KT defined by third parameter to store Keys. This type can be any descendant of THArray<T>. 
+* By default KT=THArraySorted<I>. This class provides fast binary search to find keys.
 */
-template <class I, class V, class KT = THArraySorted<I, Compare<I>> >
+template <class I, class V, class KT = THArraySorted<I, Compare<I>>, class VT = THArray<V> >
 class THashBase
 {
 private:
@@ -596,7 +633,7 @@ public:
 	using KeyType = I;
 	using ValueType = V;
 	using KeysType = KT; //THArraySorted<I, Cmp>;
-	using ValuesType = THArray<V>;
+	using ValuesType = VT; //THArray<V>;
 	using iterator = THashIterator<THashBase>;
 	using const_iterator = THashIterator<const THashBase>;
 protected:
@@ -605,12 +642,12 @@ protected:
 	//Cmp FACompare;
 public:
 	THashBase() {}
-	THashBase(const THashBase<I, V, KT>& a);
+	THashBase(const THashBase<I, V, KT, VT>& a);
 
 	// allows to initialize hash from initialiser list in code, e.g. THash<int, std::string> hash = { {1, "s1"}, {30, "s2"}, {1001, "s3"} };
 	THashBase(std::initializer_list<std::pair<I, V>> list);
 	
-	THashBase<I, V, KT>& operator=(const THashBase<I, V, KT>& other) = default;
+	THashBase<I, V, KT, VT>& operator=(const THashBase<I, V, KT, VT>& other) = default;
 	//THash(uint Capacity) { FAKeys.SetCapacity(Capacity); FAValues.SetCapacity(Capacity); }
 	virtual ~THashBase() {}
 
@@ -619,8 +656,8 @@ public:
 	const_iterator cbegin(){ return const_iterator(this, 0); }
 	const_iterator cend()  { return const_iterator(this, Count()); }
 
-	bool operator==(const THashBase<I, V, KT>& a) const;
-	bool operator> (const THashBase<I, V, KT>& a) const;
+	bool operator==(const THashBase<I, V, KT, VT>& a) const;
+	bool operator> (const THashBase<I, V, KT, VT>& a) const;
 
 	// operator is used for reading value from hash  
 	const V& operator[](const I& Key) const { return GetValue(Key); } 
@@ -641,10 +678,10 @@ public:
 	void	ClearMem() { FAKeys.ClearMem(); FAValues.ClearMem(); }
 	uint	Count() const { return FAKeys.Count(); }
 	
-	// Returns all keys as a sorted array of Keys
+	// Returns all keys as a an array of Keys (type is specified by third template parameter, if not default)
 	KeysType& GetKeys() { return FAKeys; }
 
-	// Returns all Values as an unsorted array of values
+	// Returns all Values as an array of values (type is specified by fourth template parameter, if not default)
 	ValuesType& GetValues() { return FAValues; }
 
 	bool	IfExists(const I& Key) const;
@@ -677,8 +714,10 @@ template <class I, class V>
 using THash = THashBase<I, V>;
 
 template <class I, class V>
-using THashUnordered = THashBase<I, V, THArray<I>> ;
+using THashUnordered = THashBase<I, V, THArray<I>>;
 
+template <class I, class V>
+using THashRaw = THashBase<I, V, THArray<I>, THArrayRaw>;
 
 //////////////////////////////////////////////////////////////////////
 //  THash2 Class Interface
@@ -1200,6 +1239,24 @@ inline THArrayRaw::THArrayRaw(const uint ItemSize) : THArrayRaw()
 		ThrowZeroItemSize();
 }
 
+inline bool THArrayRaw::operator==(const THArrayRaw& a) const
+{
+	if ( (FCount == a.FCount) && (FItemSize == a.FItemSize) )
+		return memcmp(FMemory, a.FMemory, FCount * FItemSize) == 0;
+	else
+		return false;
+}
+
+inline bool THArrayRaw::operator>(const THArrayRaw& a) const
+{
+	auto res = memcmp(FMemory, a.FMemory, valuemin(FCount* FItemSize, a.FCount* a.FItemSize));
+
+	if (res == 0)
+		return FCount*FItemSize > a.FCount*a.FItemSize;
+	else
+		return res > 0;
+}
+
 /*void THArrayRaw::operator=(const THArrayRaw& a) {
 	ClearMem();
 	FItemSize=a.FItemSize;
@@ -1227,7 +1284,7 @@ inline void THArrayRaw::SetItemSize(const uint Size)
 		ThrowZeroItemSize();
 }
 
-inline void THArrayRaw::Delete(const uint num)
+inline void THArrayRaw::DeleteValue(const uint num)
 {
 	Error(num, FCount);
 	if (num < FCount - 1) // do not need to call memmove if we delete last item.
@@ -1243,7 +1300,7 @@ inline void THArrayRaw::ClearMem()
 	FMemory = nullptr;
 }
 
-inline void THArrayRaw::Get(const uint Index, void* pValue) const
+inline void THArrayRaw::Get(const uint Index, pointer pValue) const
 {
 	Error(Index, FCount);
 
@@ -1251,7 +1308,7 @@ inline void THArrayRaw::Get(const uint Index, void* pValue) const
 		memmove(pValue, CalcAddr(Index), FItemSize);
 }
 
-inline void THArrayRaw::AddMany(const void* pValue, const uint Count)
+inline void THArrayRaw::AddMany(const pointer pValue, const uint Count)
 {
 	if (Count == 0)
 	{
@@ -1261,20 +1318,20 @@ inline void THArrayRaw::AddMany(const void* pValue, const uint Count)
 	InsertMany(FCount, pValue, Count);
 }
 
-inline uint THArrayRaw::Insert(const uint Index, const void* pValue)
+inline uint THArrayRaw::Insert(const uint Index, const pointer pValue)
 {
 	Error(Index, FCount + 1);
 
 	if (FCount >= FCapacity) Grow();
 
-	FCount++;
+	FCount++; //TODO place FCount++ after memmove and remove '-1' from memmove third parameter
 	memmove(CalcAddr(Index + 1), CalcAddr(Index), (FCount - static_cast<size_t>(Index) - 1) * FItemSize); // make free space
 	Update(Index, pValue);
 
 	return Index;
 }
 
-inline void THArrayRaw::InsertMany(const uint Index, const void* pValue, const uint Count)
+inline void THArrayRaw::InsertMany(const uint Index, const pointer pValue, const uint Count)
 {
 	Error(Index, FCount + 1);
 	if ((FCount + Count) > FCapacity)
@@ -1285,7 +1342,8 @@ inline void THArrayRaw::InsertMany(const uint Index, const void* pValue, const u
 	UpdateMany(Index, pValue, Count);
 }
 
-inline void THArrayRaw::Update(const uint Index, const void* pValue)
+// fills element Index with zeroes if pValue=nullptr
+inline void THArrayRaw::Update(const uint Index, const pointer pValue)
 {
 	Error(Index, FCount);
 	if (pValue != nullptr)
@@ -1294,7 +1352,7 @@ inline void THArrayRaw::Update(const uint Index, const void* pValue)
 		memset(CalcAddr(Index), 0, FItemSize);
 }
 
-inline void THArrayRaw::UpdateMany(const uint Index, const void* pValue, const uint Count)
+inline void THArrayRaw::UpdateMany(const uint Index, const pointer pValue, const uint Count)
 {
 	Error(Index + Count - 1, FCount);
 	memmove(GetAddr(Index), pValue, FItemSize * static_cast<size_t>(Count));
@@ -1346,7 +1404,7 @@ inline void THArrayRaw::SetCapacity(const uint Value)
 {
 	if (Value > 0)
 	{
-		FMemory = realloc(FMemory, static_cast<size_t>(Value) * FItemSize);
+		FMemory = (pointer)realloc(FMemory, static_cast<size_t>(Value) * FItemSize);
 		FCapacity = Value;
 	}
 	else  // Value == 0
@@ -1397,8 +1455,8 @@ inline void THArrayStringFix::Reverse()
 	for (uint i = 0; i < data.Count() / 2; i++)
 	{
 		temp = GetValue(i);
-		data.Update(i, GetValue(data.Count() - 1 - i).data());
-		data.Update(data.Count() - 1 - i, temp.data());
+		data.Update(i, (pointer)GetValue(data.Count() - 1 - i).data());
+		data.Update(data.Count() - 1 - i, (pointer)temp.data());
 	}
 }
 
@@ -1418,7 +1476,7 @@ inline uint THArrayStringFix::AddChars(const void* pValue, const uint len)
 	 strncpy(b, static_cast<const char*>(pValue), i);
 #endif
 
-	i = data.Add(b);
+	i = data.AddValue((pointer)b);
 	free(b);
 	return i;
 }
@@ -1568,39 +1626,39 @@ inline T* THArrayAuto<T>::GetValuePointer(const int Index)
 //  THash Class Implementation
 //////////////////////////////////////////////////////////////////////
 
-template <class I, class V, class KT>
-THashBase<I, V, KT>::THashBase(std::initializer_list<std::pair<I, V> > list)
+template <class I, class V, class KT, class VT>
+THashBase<I, V, KT, VT>::THashBase(std::initializer_list<std::pair<I, V> > list)
 {
 	for (const auto& pair : list) 
 		SetValue(pair.first, pair.second);
 }
 
-template <class I, class V, class KT>
-THashBase<I, V, KT>::THashBase(const THashBase<I, V, KT>& a)
+template <class I, class V, class KT, class VT>
+THashBase<I, V, KT, VT>::THashBase(const THashBase<I, V, KT, VT>& a)
 {
 	FAKeys = a.FAKeys;
 	FAValues = a.FAValues;
 	//FACompare = a.FACompare;
 }
 
-template <class I, class V, class KT>
-bool THashBase<I, V, KT>::operator==(const THashBase<I, V, KT>& a) const
+template <class I, class V, class KT, class VT>
+bool THashBase<I, V, KT, VT>::operator==(const THashBase<I, V, KT, VT>& a) const
 {
 	return (FAKeys == a.FAKeys) && (FAValues == a.FAValues);// && (FACompare == a.FACompare);
 }
 
-template <class I, class V, class KT>
-bool THashBase<I, V, KT>::operator>(const THashBase<I, V, KT>& a) const
+template <class I, class V, class KT, class VT>
+bool THashBase<I, V, KT, VT>::operator>(const THashBase<I, V, KT, VT>& a) const
 {
 	return (FAKeys > a.FAKeys) && (FAValues > a.FAValues);// && (a.FACompare == b.FACompare);
 }
 
-template <class I, class V, class KT>
-V& THashBase<I, V, KT>::operator[](const I& Key)  // this operator is used for writing values into hash
+template <class I, class V, class KT, class VT>
+V& THashBase<I, V, KT, VT>::operator[](const I& Key)  // this operator is used for writing values into hash
 {
 	int n = FAKeys.IndexOf(Key);
 	if (n >= 0)
-		return FAValues[static_cast<uint>(n)];
+		return FAValues.GetValue(n); //[static_cast<uint>(n)];
 	else
 	{
 		uint index = FAKeys.AddValue(Key);
@@ -1624,8 +1682,8 @@ void THash<I,V>::Reverse()
 }
 */
 
-template <class I, class V, class KT>
-bool THashBase<I, V, KT>::IfExists(const I& Key) const
+template <class I, class V, class KT, class VT>
+bool THashBase<I, V, KT, VT>::IfExists(const I& Key) const
 {
 	return (FAKeys.IndexOf(Key) >= 0);
 	//if (FAKeys.IndexOf(Key) != DA_NPOS)
@@ -1634,8 +1692,8 @@ bool THashBase<I, V, KT>::IfExists(const I& Key) const
 	//	return false;
 }
 
-template <class I, class V, class KT>
-void THashBase<I, V, KT>::Delete(const I& Key)
+template <class I, class V, class KT, class VT>
+void THashBase<I, V, KT, VT>::Delete(const I& Key)
 {
 	int n = FAKeys.IndexOf(Key);
 	if (n >= 0)
@@ -1645,8 +1703,8 @@ void THashBase<I, V, KT>::Delete(const I& Key)
 	}
 }
 
-template <class I, class V, class KT>
-void THashBase<I, V, KT>::SetValue(const I& Key, const V& Value)
+template <class I, class V, class KT, class VT>
+void THashBase<I, V, KT, VT>::SetValue(const I& Key, const V& Value)
 {
 	int n = FAKeys.IndexOf(Key);
 	if (n >= 0)
@@ -1658,8 +1716,8 @@ void THashBase<I, V, KT>::SetValue(const I& Key, const V& Value)
 	}
 }
 
-template <class I, class V, class KT>
-V& THashBase<I, V, KT>::GetValue(const I& Key) const
+template <class I, class V, class KT, class VT>
+V& THashBase<I, V, KT, VT>::GetValue(const I& Key) const
 {
 	int n = FAKeys.IndexOf(Key);
 	if (n < 0)
@@ -1668,8 +1726,8 @@ V& THashBase<I, V, KT>::GetValue(const I& Key) const
 	return FAValues[static_cast<uint>(n)];
 }
 
-template <class I, class V, class KT>
-V* THashBase<I, V, KT>::GetValuePointer(const I& Key) const
+template <class I, class V, class KT, class VT>
+V* THashBase<I, V, KT, VT>::GetValuePointer(const I& Key) const
 {
 	int n = FAKeys.IndexOf(Key);
 	if (n < 0)
