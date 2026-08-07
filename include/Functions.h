@@ -9,7 +9,7 @@
 #include "logengine2/LogEngine.h"
 #include "logengine2/DynamicArrays.h"
 #include "NTFS.h"
-#include "FileCache.h"
+//#include "FileCache.h"
 #include "BitField.h"
 
 
