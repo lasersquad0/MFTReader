@@ -75,7 +75,7 @@ struct MFT_REF
 
     static std::string toHexString(MFTRecIndex indexMFTRec)
     {
-        return std::format("l:{0:#x} ({0})", indexMFTRec);
+        return std::format("{0:#x} ({0})", indexMFTRec);
     }
 
     operator std::string() const 
@@ -239,8 +239,8 @@ struct MFT_ATTR_RESIDENT
     uint16_t DataOffset;    //0x14 Byte offset of the attribute value from the start of the attribute record.
                             //     When creating, align to 8 - byte boundary if we have a name present as this might
                             //     not have a length of a multiple of 8 - bytes.
-    uint8_t  IndexedFlag;   //0x16
-    uint8_t  Align;         //0x17 
+    uint8_t  IndexedFlag;   //0x16 Attribute is referenced in an index (has implications for deleting and modifying the attribute)
+    uint8_t  Align;         //0x17 Reserved/alignment to 8-byte boundary.
 }; // 0x08
 
 static_assert(sizeof(MFT_ATTR_RESIDENT) == 0x08);
@@ -260,7 +260,7 @@ struct MFT_ATTR_NONRESIDENT
 //  values here (1-5?), even if the implementation only generates a smaller set of values itself.
     uint8_t CompressionUnitSize; // 0x22: The compression unit for the attribute expressed as the logarithm to the base two of the number 
                                  // of clusters in a compression unit. If CompressionUnitSize is zero, the attribute is not compressed.
-    uint8_t res1[5];		     // 0x23: Reserved
+    uint8_t reserved1[5];		 // 0x23 Reserved
     uint64_t AllocatedSize;      // 0x28 Byte size of disk space allocated to hold the attribute value. Always is a multiple of the cluster size.
                                  // When a file is compressed, this field is a multiple of the compression block size (2 ^ compression_unit) and it represents 
                                  // the logically allocated space rather than the actual on disk usage. For this use the CompressedSize below.
@@ -280,6 +280,8 @@ static_assert(sizeof(MFT_ATTR_NONRESIDENT) == 0x38);
 #define ATTR_FLAG_ENCRYPTED	      0x4000
 #define ATTR_FLAG_SPARSED	      0x8000
 
+#define ATTR_FLAG_RESIDENT	      0x00
+#define ATTR_FLAG_NONRESIDENT     0x01
 
 struct MFT_ATTR_HEADER
 {
@@ -317,18 +319,19 @@ enum class FILE_ATTR_FLAGS : uint32_t
     OFFLINE       = 0x00001000,
     NOT_CONTENT_INDEXED = 0x00002000,
     ENCRYPTED     = 0x00004000,
-    VALID_FLAGS   = 0x00007fb7, // VALID_FLAGS masks out the old DOS VolId and the DEVICE and preserves everything else. This mask is used to obtain all flags that are valid for reading.
+    VALID_FLAGS   = 0x00007fb7,   // VALID_FLAGS masks out the old DOS VolId and the DEVICE and preserves everything else. 
+                                  // This mask is used to obtain all flags that are valid for reading.
     VALID_SET_FLAGS = 0x000031a7, // VALID_SET_FLAGS masks out the old DOS VolId, the DEVICE, DIRECTORY, SPARSE_FILE, REPARSE_POINT, COMPRESSED and ENCRYPTED
                                   // and preserves the rest. This mask is used to obtain all flags that are valid for setting.
 
-    DIRECTORY     = 0x10000000, // Better name of this attr is I30_INDEX_PRESENT
-                                // This is a copy of the MFT_RECORD_IS_DIRECTORY bit from the mft record, telling us whether this is a directory or not, 
-                                // i.e.whether it has an index root attribute named "$I30" or not.
-                                // This flag is only present in the FILE_NAME attribute (in the file_attributes field).
-                                // Does not present in STD_INFO attr
+    DIRECTORY     = 0x10000000,   // Better name of this attr is I30_INDEX_PRESENT
+                                  // This is a copy of the MFT_RECORD_IS_DIRECTORY bit from the mft record, telling us whether this is a directory or not, 
+                                  // i.e.whether it has an index root attribute named "$I30" or not.
+                                  // This flag is only present in the FILE_NAME attribute (in the file_attributes field).
+                                  // Does not present in STD_INFO attr
 
     VIEW_INDEX_PRESENT = 0x20000000, // VIEW_INDEX_PRESENT - Does have a non-directory index?
-                                     // This is a copy of the MFT_RECORD_IS_VIEW_INDEX bit from the mft record, telling us whether this file has a view index present 
+                                     // This is a copy of the MFT_RECORD_IS_VIEW_INDEX bit from the mft record, telling us whether this file has a view index present
                                      // E.g. object id index, quota index, one of the security indexes and the reparse points index.
                                      // This flag is only present in the $STANDARD_INFORMATION and $FILE_NAME attributes.
 
@@ -343,6 +346,7 @@ static_assert(sizeof(enum FILE_ATTR_FLAGS) == 4);
  * 00:00:00 UTC and is stored as the number of 1-second intervals since then.)
  */
 
+// ATTR_STD_INFO Attribute
 // Always resident.
 // Always first attribute in MFT record
 // Present in all base file records.
@@ -378,7 +382,7 @@ struct ATTR_LIST_ENTRY
     uint64_t StartVCN;       // 0x08 Lowest VCN of this portion of the attribute value.This is usually 0. It is non-zero for the case where one attribute
                              // does not fit into one mft record and thus several mft records are allocated to hold this attribute. In the latter case, each mft
                              // record holds one extent of the attribute and there is one attribute list entry for each extent
-    MFT_REF ref;	         // 0x10 The reference of the MFT record holding the MFT_ATTR_HEADER for this portion of the attribute value.
+    MFT_REF RecRef;	         // 0x10 The reference of the MFT record holding the MFT_ATTR_HEADER for this portion of the attribute value.
     uint16_t AttrId;		 // 0x18 If StartVCN = 0, the Id of the attribute being referenced; otherwise 0.
     uint16_t name[3];		 // 0x1A Just to align. To get real name can use NameOffset.
 
@@ -387,23 +391,27 @@ struct ATTR_LIST_ENTRY
 static_assert(sizeof(struct ATTR_LIST_ENTRY) == 0x20);
 
 /* File name types (the field type in struct ATTR_FILE_NAME). */
-#define FILE_NAME_POSIX   0
-#define FILE_NAME_UNICODE 1
-#define FILE_NAME_DOS	  2
-#define FILE_NAME_UNICODE_AND_DOS (FILE_NAME_DOS | FILE_NAME_UNICODE)
+#define FILE_NAME_POSIX   0   // It is case sensitive and allows all Unicode characters except for: '\0' and '/'.
+#define FILE_NAME_UNICODE 1   // The standard WinNT/2k NTFS long filenames. Case insensitive. All Unicode chars except : '\0', '"', '*', '/', ':', '<', '>', '?', '\' and ' | '.  Trailing dots and spaces are allowed.
+#define FILE_NAME_DOS	  2   // The standard DOS filenames (8.3 format). Uppercase only.
+#define FILE_NAME_UNICODE_AND_DOS (FILE_NAME_DOS | FILE_NAME_UNICODE) // means that both the Win32 and the DOS filenames are identical and hence have been saved in this single filename record.
 
 struct NTFS_DUP_INFO
 {
-    uint64_t CreateTime;	 // 0x00 File creation file.
-    uint64_t ModifyTime;	 // 0x08 File modification time.
-    uint64_t ModifyAttrTime; // 0x10 Last time any attribute was modified.
-    uint64_t LastAccessTime; // 0x18 File last access time.
-    uint64_t AllocSize;      // 0x20 Data attribute allocated size (for unnamed $DATA attribute), multiple of cluster size.
-    uint64_t FileSize;	     // 0x28 Actual data attribute size <= AllocSize.
-    uint32_t FileAttrib;     // 0x30 Standard DOS attributes & more.
-    uint16_t ea_size;		 // 0x34 Size of the buffer needed to pack the extended attributes (EAs), if such are present..
-    uint16_t reparse;		 // 0x36 Used by Reparse.
-    //TODO check if ea_size and reparse fields are correct. looks like they both should be union {}
+    uint64_t CreateTime;	   // 0x00 File creation file.
+    uint64_t ModifyTime;	   // 0x08 File modification time.
+    uint64_t ModifyAttrTime;   // 0x10 Last time any attribute was modified.
+    uint64_t LastAccessTime;   // 0x18 File last access time.
+    uint64_t AllocSize;        // 0x20 Data attribute allocated size (for unnamed $DATA attribute), multiple of cluster size.
+    uint64_t FileSize;	       // 0x28 Actual data attribute size <= AllocSize.
+    uint32_t FileAttrib;       // 0x30 Standard DOS attributes & more.
+    union {
+        struct {
+            uint16_t ea_size;	// 0x34 Size of the buffer needed to pack the extended attributes (EAs), if such are present.
+            uint16_t reparse;	// 0x36 Used by Reparse reparse_tag.
+        } ea;
+        uint32_t reparse_tag;   // 0x34 Type of reparse point, present only in reparse points and only if there are no EAs.
+    };
 }; // 0x38
  
 static_assert(sizeof(NTFS_DUP_INFO) == 0x38);
@@ -421,7 +429,7 @@ struct ATTR_FILE_NAME
 static_assert(sizeof(ATTR_FILE_NAME) == 0x42);
 
 /**
- * struct REPARSE_POINT - Attribute: Reparse point (0xC0).
+ * ATTR_REPARSE_POINT - Attribute: Reparse point (0xC0).
  * NOTE: Can be resident or non-resident.
  */
 struct ATTR_REPARSE_POINT
@@ -442,17 +450,38 @@ struct fsntfs_mount_point_reparse_data
     uint8_t print_name_size[2];        // The print name size. Consists of 2 bytes
 };
 
-// resident only????
-/*struct VOLUME_INFO
+/**
+ * enum VOLUME_FLAGS - Possible flags for the volume (16-bit).
+ */
+typedef enum : uint16_t 
 {
-    uint64_t res1;	   // 0x00
-    uint8_t major_ver; // 0x08: NTFS major version number (before .)
-    uint8_t minor_ver; // 0x09: NTFS minor version number (after .)
-    uint16_t flags;	   // 0x0A: Volume flags, see VOLUME_FLAG_XXX
+    VOLUME_DIRTY               = 0x0001,
+    VOLUME_RESIZE_LOG_FILE     = 0x0002,
+    VOLUME_UPGRADE_ON_MOUNT    = 0x0004,
+    VOLUME_MOUNTED_ON_NT4      = 0x0008,
+    VOLUME_DELETE_USN_UNDERWAY = 0x0010,
+    VOLUME_REPAIR_OBJECT_ID    = 0x0020,
+    VOLUME_CHKDSK_UNDERWAY     = 0x4000,
+    VOLUME_MODIFIED_BY_CHKDSK  = 0x8000,
+    VOLUME_FLAGS_MASK          = 0xc03f,
+} VOLUME_FLAGS;
 
-}; // sizeof=0xC   */
+/**
+ * VOLUME_INFO - Attribute Volume information (0x70).
+ *
+ * Always resident.
+ * Present only in $Volume.
+ * Windows 2000 uses NTFS 3.0 while Windows NT4 service pack 6a uses NTFS 1.2. I haven't personally seen other values yet.
+ */
+struct VOLUME_INFO
+{
+    uint64_t reserved; // 0x00
+    uint8_t MajorVer;  // 0x08: NTFS major version number (before .)
+    uint8_t MinorVer;  // 0x09: NTFS minor version number (after .)
+    uint16_t Flags;	   // 0x0A: Volume flags, see VOLUME_FLAGS enum
+};
 
-//#pragma pack(show)  
+static_assert(sizeof(VOLUME_INFO) == 0x0C);
 
 // Object ID (0x40). Resident only???? 
 struct ATTR_OBJECT_ID
@@ -476,31 +505,26 @@ struct INDEX_HDR
     uint32_t Used;      // 0x04 The size of this structure plus all entries (quad-word aligned).
     uint32_t Allocated; // 0x08 The allocated size of for this structure plus all entries.
     uint8_t Flags;	    // 0x0C 0x00 = Small directory, 0x01 = Large directory.
-    uint8_t res[3];
+    uint8_t reserved[3];
     //
     // DEOffset + Used <= Allocated
     //
-}; // 0x10
+};
 
 static_assert(sizeof(INDEX_HDR) == 0x10);
 
-// Index root structure ( 0x90 ).
+// The list of collation rules for sorting views / indexes / etc (32bit).
 enum class COLLATION_RULE: uint32_t
 {
-    BINARY = 0, // Collate by binary compare where the first byte is most significant.
-
-    // $I30
-    FILENAME = 0x01, // Collate Unicode strings by comparing their 16-bit coding units, primarily ignoring case using the volume's $UpCase table,
-                     // but falling back to a case-sensitive comparison if the names are equal ignoring case.
-    // $SII of $Secure and $Q of Quota
-    UINT = 0x10,    // Sorting is done according to ascending le32 key values. E.g.used for $SII index in FILE_Secure, which sorts by security_id(le32).
-
-    SID = 0x11,   // Sorting is done according to ascending SID values. E.g.used for $O index in FILE_Extend / $Quota.
-    
-    SECURITY_HASH = 0x12, // Sorting is done first by ascending hash values and second by ascending security_id values.E.g.used for $SDH index in FILE_Secure.
-    
+    BINARY   = 0x00,      // Collate by binary compare where the first byte is most significant.
+    // used in $I30
+    FILENAME = 0x01,      // Collate Unicode strings by comparing their 16-bit coding units, primarily ignoring case using the volume's $UpCase table,
+                          // but falling back to a case-sensitive comparison if the names are equal ignoring case.
+    UINT  = 0x10,         // Sorting is done according to ascending le32 key values. E.g.used for $SII index in $Secure, which sorts by security_id(le32).
+    SID   = 0x11,         // Sorting is done according to ascending SID values. E.g.used for $O index in $Extend / $Quota.
+    SECURITY_HASH = 0x12, // Sorting is done first by ascending hash values and second by ascending security_id values.E.g.used for $SDH index in $Secure.
     // $O of ObjId and "$R" for Reparse
-    UINTS = 0x13 // Sorting is done according to a sequence of ascending le32 key values.E.g.used for $O index in FILE_Extend / $ObjId
+    UINTS = 0x13         // Sorting is done according to a sequence of ascending le32 key values.E.g.used for $O index in $Extend / $ObjId
 };
 
 static_assert(sizeof(COLLATION_RULE) == 4);
@@ -515,7 +539,7 @@ struct ATTR_INDEX_ROOT
                               // Number of clusters per index block (in the index allocation attribute) when index_block_size is greater or
                               // equal to the cluster size and number of sectors per index block when the index_block_size is smaller 
                               // than the cluster size.
-    uint8_t res[3];
+    uint8_t reserved[3];
     struct INDEX_HDR ihdr;    // 0x10:
 }; // 0x10
 
@@ -533,18 +557,18 @@ struct NTFS_DE
 {
     union 
     {
-        struct MFT_REF ref; // 0x00: MFT record number with this file.
+        MFT_REF RecRef; // 0x00: MFT record number with this file.
         struct 
         {
             uint16_t data_off;  // 0x00:
             uint16_t data_size; // 0x02:
-            uint32_t res;	    // 0x04: Must be 0.
+            uint32_t reserved;	// 0x04: Must be 0.
         } view;
     };
     uint16_t size;		// 0x08: The size of this entry.
     uint16_t key_size;	// 0x0A: The size of File name attr in bytes (sizeof(ATTR_FILE_NAME) + length of file name).
     uint16_t flags;		// 0x0C: Entry flags: NTFS_IE_***.
-    uint16_t res;		// 0x0E:
+    uint16_t reserved;	// 0x0E:
 
     // Here any indexed attribute can be placed.
     // One of them is: ATTR_FILE_NAME 
