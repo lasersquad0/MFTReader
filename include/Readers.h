@@ -1,8 +1,9 @@
 #pragma once
 
 #include <expected>
-#include "Functions.h"
+#include "Functions.h" //for TErrorCode
 #include "Caches.h"
+#include "FileCache.h"
 
 #define STREAM_NONAME "<noname>"
 #define STREAM_NONAME_W L"<noname>"
@@ -13,10 +14,10 @@ class IRecordLoader
 {
 protected:
 	VOLUME_DATA FVolumeData;
-	TMFTRecCache FMFTRecCache; // = Singleton<TMFTRecCache>::getInstance();
+	TMFTRecCache FMFTRecCache;
 
 public:
-	static string_t ParseVolume(const string_t& vol);
+	static string_t NormalizeVolume(const string_t& vol);
 	const VOLUME_DATA& GetVolumeData() const { return FVolumeData; }
 	virtual void OpenVolume(const string_t& vol) = 0;
 	virtual TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) = 0;
@@ -64,21 +65,27 @@ public:
 	}
 
 	typedef uint8_t* puint8_t;
+	typedef std::expected<puint8_t, TErrorCode> ret_expected;
 
-	virtual std::expected<puint8_t, TErrorCode> LoadMFTRecordCache(MFT_REF mftRecRef) // returns NULL if error occurred during loading MFT record
+	virtual ret_expected LoadMFTRecordCache(MFT_REF mftRecRef) // returns NULL if error occurred during loading MFT record
 	{
 		uint8_t** result = FMFTRecCache.GetValuePointer(mftRecRef.sId.low);
+	
 		if (result == nullptr) // no value in cache, load MFT record from disk
 		{
 			uint8_t* mftRecBuf = DBG_NEW uint8_t[FVolumeData.BytesPerMFTRec];
 			TErrorCode res = LoadMFTRecord(mftRecRef, mftRecBuf);
-			if (res != TErrorCode::Success) return std::unexpected(res); // error loading MFT record
+			if (res != TErrorCode::Success) 
+				return std::unexpected(res); // error loading MFT record
 
 			//we use mftRecRef.sId.low here because high part of mftRecRef.Id may change when MFT record is modified
 			FMFTRecCache.SetValue(mftRecRef.sId.low, mftRecBuf); // update cache
 
 			return mftRecBuf;
 		}
+
+		GET_LOGGER;
+		logger.Warn("[LoadMFTRecordCache] Record is loaded from cache!");
 
 		return *result; // return MFT record from cache
 	}
@@ -108,6 +115,24 @@ public:
 	void OpenVolume(const string_t& vol) override;
 	TErrorCode ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf) override;
 	TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override;
+};
+
+class TMFTAllRecordsLoader : public TMFTRecordLoader
+{
+protected:
+	THArrayRaw FRecs;
+	TBitField FBitmap;
+public:
+	TMFTAllRecordsLoader() {}
+	TMFTAllRecordsLoader(const string_t& vol) { OpenVolume(vol); }
+	void OpenVolume(const string_t& vol) override;
+	TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override;
+	ret_expected LoadMFTRecordCache(MFT_REF mftRecRef) override 
+	{ 
+		UNREFERENCED_PARAMETER(mftRecRef); 
+		throw std::exception("LoadMFTRecordCache methhod is not supported."); 
+	}
+	TErrorCode ReadAllMftRecords();
 };
 
 
@@ -151,7 +176,7 @@ public:
 	std::expected<MFTRecIndex, TErrorCode> MFTRecIdByPath(const ci_string& path); // ci_string is for case INsensitive search here
 };
 
-typedef int32_t(*ReadMftItemsCallback)(const std::wstring& data);
+typedef int32_t(*ReadMftItemsCallback)(const string_t& data);
 
 class TMFTStatCollector : public TMFTParserBase
 {
@@ -167,7 +192,7 @@ public:
 	TErrorCode ReadMftItems(MFT_REF startMftRecRef, uint32_t dirLevel, ReadMftItemsCallback callback);
 	TErrorCode ReadMftItemInfo(MFT_REF mftRecRef, ITEM_INFO& itemInfo);
 	TErrorCode ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& itemInfo);
-	void CollectVolumeStat();
+	TErrorCode CollectVolumeStat();
 	void ShowVolumeStat();
 	void SaveToFile(string_t fileName);
 
