@@ -161,7 +161,7 @@ public:
         //    FAIL() << std::format(L"Error setting file pointer for file '{}', Error code: {}", imgFileName, GetLastError());
 
         if (!(ReadFile(FHFile, &partNTFS, sizeof(partNTFS), &bytesRead, nullptr) && (bytesRead == sizeof(partNTFS))))
-            FAIL() << std::format(L"Error reading file '{}', Error code: {}", imgFileName, GetLastError());
+            FAIL() << std::format(_T("Error reading file '{}', Error code: {}"), imgFileName, GetLastError());
 
         FPartitionOffset = 0;
 
@@ -178,18 +178,18 @@ public:
             for (size_t i = 0; i < 4; i++)
             {
                 if (SetFilePointer(FHFile, off, 0, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
-                    FAIL() << std::format(L"Error setting file pointer for file '{}', Error code: {}", imgFileName, GetLastError());
+                    FAIL() << std::format(_T("Error setting file pointer for file '{}', Error code: {}"), imgFileName, GetLastError());
 
                 bytesRead = 0;
 
                 if (!(ReadFile(FHFile, &mbr, sizeof(mbr), &bytesRead, nullptr) && (bytesRead == sizeof(mbr))))
-                    FAIL() << std::format(L"Error reading file '{}', Error code: {}", imgFileName, GetLastError());
+                    FAIL() << std::format(_T("Error reading file '{}', Error code: {}"), imgFileName, GetLastError());
 
                 if (SetFilePointer(FHFile, mbr.FirstLBA * DEFAULT_SECTOR_SIZE, 0, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
-                    FAIL() << std::format(L"Error setting file pointer for file '{}', Error code: {}", imgFileName, GetLastError());
+                    FAIL() << std::format(_T("Error setting file pointer for file '{}', Error code: {}"), imgFileName, GetLastError());
 
                 if (!(ReadFile(FHFile, &partNTFS, sizeof(partNTFS), &bytesRead, nullptr) && (bytesRead == sizeof(partNTFS))))
-                    FAIL() << std::format(L"Error reading file '{}', Error code: {}", imgFileName, GetLastError());
+                    FAIL() << std::format(_T("Error reading file '{}', Error code: {}"), imgFileName, GetLastError());
 
                 if (memcmp(partNTFS.OemId, NTFS_LABEL, 8) == 0)
                 {
@@ -212,20 +212,20 @@ public:
         FVolumeData.MftZoneStart.QuadPart = partNTFS.MftStartLcn;
         FVolumeData.Mft2StartLcn.QuadPart = partNTFS.MftMirrorStartLcn;
         FVolumeData.hVolume = FHFile;
-        FVolumeData.Name = GetVolumeName(imgFileName);
+        FVolumeData.Name = convert_string<wchar_t>(GetVolumeName(imgFileName));
 
         EXPECT_EQ(DEFAULT_SECTOR_SIZE, FVolumeData.BytesPerSector);
         EXPECT_EQ(DEFAULT_BYTES_PER_MFT_REC, FVolumeData.BytesPerMFTRec);
 
         // reading MFT record #0, getting $MFT LCNs
-        uint8_t* mftRecBuf = (uint8_t*)alloca(FVolumeData.BytesPerMFTRec);
-        MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
+        uint8_t* mftRecData = (uint8_t*)alloca(FVolumeData.BytesPerMFTRec);
+        MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecData;
         MFT_REF mftRef{ 0 };
 
         // these two temporary values needed for proper work of LoadMFTRecord
         FMFTRecordsCount = 1;
         FMFTDataRuns.AddValue({ 2, 0, partNTFS.MftStartLcn });
-        TErrorCode res = LoadMFTRecord(mftRef, mftRecBuf); // loading MFT record #0 which is $MFT file
+        TErrorCode res = LoadMFTRecord(mftRef, mftRecData); // loading MFT record #0 which is $MFT file
         ASSERT_EQ(TErrorCode::Success, res) << "Error loading MFT record " << mftRef.sId.low;
 
         if (!ntfs_is_file_recp(mftRec->RecHeader.Signature))
