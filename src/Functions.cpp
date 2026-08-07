@@ -3,22 +3,14 @@
 #define NOMINMAX
 
 #include "Debug.h"
-#include <iostream>
+//#include <iostream>
 #include <string>
-#include <cstdint>
-#include <cassert>
-#include <vector>
-#include <stdexcept>
-#include <system_error>
 
 #include "strutils/include/string_utils.h"
-#include "strutils/include/ci_string.h"
+//#include "strutils/include/ci_string.h"
 #include "logengine2/LogEngine.h"
-//#include "logengine2/FileStream.h"
-#include "NTFS.h"
 #include "Functions.h"
-#include "Caches.h"
-#include "Readers.h"
+#include "Utils.h"
 
 //TODO think of better solution of FUNC logger
 LogEngine::Logger& GetLoggerFunc()
@@ -73,102 +65,3 @@ std::string FormatFileAttributes(uint32_t a)
          FILE_ATTRIBUTE_STRICTLY_SEQUENTIAL*/
     return s;
 }
-
-
-
-
-
-// reads list of files in already sorted order
-TErrorCode TMFTSearchReaderV2::ReadDirectoryV2(MFT_REF parentMftRecID, uint32_t dirLevel)
-{
-    if (dirLevel > 30) throw std::runtime_error("dirLevel > 30 !!!!!!!");
-
-    GET_LOGGER;
-
-    uint8_t* mftRecBuf = (uint8_t*)alloca(getVolData().BytesPerMFTRec);
-    MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
-
-    auto res = FLoader.LoadMFTRecord(parentMftRecID, mftRecBuf);
-    if (res != TErrorCode::Success)
-    {
-        logger.Error("LoadMFTRecord finished with error.");
-        return res;
-    }
-
-    DIR_NODE node;
-    auto expctValue = GetFileListFromMFTRec(mftRec, node); // writes error to log file in case of error
-    if (!expctValue) return expctValue.error();
-
-    for (auto& item : node.FileList)
-    {
-        if (!item.NtfsInternal()) // do not add hidden metafiles into file list
-        {
-            if (dirLevel == 0) std::wcout << item.ciName.c_str() << std::endl;
-            //if (dirLevel == 1) std::wcout << "      " << item.ciName.c_str() << std::endl;
-
-            FDirList.AddValue(item);
-
-            if (item.IsDir())
-            {
-                if (!item.IsReparse())
-                {
-                    if (TErrorCode::Success != ReadDirectoryV2(item.MFTRef, dirLevel + 1))
-                        logger.ErrorFmt("ReadDirectoryV2 finished with error for MFT rec: {}", item.MFTRef.sId.low);
-                }
-            }
-        }
-    }
-
-    return TErrorCode::Success;
-}
-
-/*static bool compare(const FILE_NAME& a, const FILE_NAME& b)
-{
-    if (IsDir(a.Attr) && !IsDir(b.Attr)) return true; // folders on top during sorting
-    if (!IsDir(a.Attr) && IsDir(b.Attr)) return false;
-    return a.ciName < b.ciName;
-}*/
-
-void TMFTSearchReaderV2::ReadDirsV2()
-{
-    //TFileList dirList;
-    FDirList.Clear();
-    FDirList.SetCapacity(1'000'000);
-
-    MFT_REF startId{0};
-    startId.Id = MFT_ROOT_REC_ID;
-    auto res = ReadDirectoryV2(startId, 0);
-    UNREFERENCED_PARAMETER(res);
-    assert(res == TErrorCode::Success);
-
-    auto dirCount = std::count_if(FDirList.begin(), FDirList.end(), [](FILE_NAME& a) { return a.IsDir(); });
-
-    std::cout << toStringSepA(FDirList.Count()) + " - total" << std::endl;
-    std::cout << toStringSepA(FDirList.Count() - dirCount) + " - files" << std::endl; // only files 
-    std::cout << toStringSepA(dirCount) + " - dirs" << std::endl; // only dirs 
-
-    /* std::string filename = "ListMFTFile_sortedV2.log";
-     LogEngine::TFileStream ff(filename);
-
-     string_t endl;
-     BUILD_ENDL(endl);
-
-     ff << toStringSepW(dirList.Count()) + L" - total" << endl;
-     ff << toStringSepW(dirList.Count() - dirCount) + L" - files" << endl; // only files
-     ff << toStringSepW(dirCount) + L" - dirs" << endl; // only dirs
-
-     std::cout << "Sorting... " << std::endl;
-     std::sort(dirList.begin(), dirList.end());
-
-     std::cout << "Saving list of files to " << filename << std::endl;
-
-     for (auto& item : dirList)
-     {
-         ff << item.ciName;
-         if (item.IsDir()) ff << L'\\';
-         ff << endl;
-     }*/
-
-    FDirList.ClearMem();
-}
-
