@@ -33,12 +33,13 @@ bool COptionsList::VerifyOptionNames(cli_string shortName, cli_string longName)
         return true;
 }
 
+// if option exists already it will be "overwritten" by new option
 void COptionsList::AddOption(COption& option)
 {
     const cli_string& sn = option.GetShortName();
     const cli_string& ln = option.GetLongName();
     
-    if (!VerifyOptionNames(sn, ln)) return; // option has invalid short and/or long names (or has incomlete data)
+    if (!VerifyOptionNames(sn, ln)) return; // option has invalid short and/or long names (or has incomplete data)
 
     COption* opt;
 
