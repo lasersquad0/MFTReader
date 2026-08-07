@@ -33,7 +33,7 @@ public:
         FVolumeData.hVolume = INVALID_HANDLE_VALUE;
         FVolumeData.MftZoneStart.QuadPart = 0;
         FVolumeData.MftZoneEnd.QuadPart = 1000;
-        FVolumeData.Name = GetVolumeName(fileName);
+        FVolumeData.Name = convert_string<wchar_t>(GetVolumeName(fileName));
 
         // reading MFT record #0, getting $MFT LCNs
         uint8_t* mftRecBuf = (uint8_t*)alloca(FVolumeData.BytesPerMFTRec);
