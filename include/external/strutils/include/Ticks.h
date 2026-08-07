@@ -53,7 +53,7 @@ public:
 	{
 		for (auto& item : f)
 		{
-			cout_t << item.first << U(" = ") << MillisecToStr<std::wstring>(std::chrono::duration_cast<std::chrono::milliseconds>(item.second - s.at(item.first)).count()) << std::endl;
+			cout_t << item.first << U(" = ") << MillisecToStr<string_t>(std::chrono::duration_cast<std::chrono::milliseconds>(item.second - s.at(item.first)).count()) << std::endl;
 		}
 	}
 	
