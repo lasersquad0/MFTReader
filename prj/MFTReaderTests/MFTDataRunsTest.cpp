@@ -63,7 +63,7 @@ TEST_P(MFTDataRunDecodeTest, DecodeDataRuns_1)
         MFT_ATTR_HEADER* attr = (MFT_ATTR_HEADER*)buf;
         attr->AttrType = ATTR_DATA;
         attr->AttrSize = sz + sizeof(MFT_ATTR_HEADER);
-        attr->NonResidentFlag = 1;
+        attr->NonResidentFlag = ATTR_FLAG_NONRESIDENT;
         attr->nonres.DataRunsOffset = sizeof(MFT_ATTR_HEADER);
         attr->nonres.StartVCN = 0;
         attr->nonres.CompressionUnitSize = 0;
