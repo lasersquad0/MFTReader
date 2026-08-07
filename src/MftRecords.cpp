@@ -9,9 +9,6 @@
 #include "Readers.h"
 
 
-
-
-
 bool ReadAllMftRecords(string_t volume, TLCNRecs& mftRecs)
 {
     cout_t << _T("Opening volume: ") << volume << std::endl;
