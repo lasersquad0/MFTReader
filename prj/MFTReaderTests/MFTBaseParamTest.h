@@ -29,7 +29,7 @@ public:
         if (FCache.IndexOf(param) == -1)
         {
             auto& logger = LogEngine::GetLogger(MFT_LOGGER_NAME);
-            std::string str = convert_string<std::string::value_type>(param);
+            std::string str = wtos(param);
             logger.DebugFmt("{} START ('{}')", FName, str);
             FCache.AddValue(param);
         }
