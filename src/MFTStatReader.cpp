@@ -16,10 +16,6 @@
 #include "NTFS.h"
 #include "Readers.h"
 
-// first 33 records are internal records
-//TODO this is not always correct. Better check is to read first NFT records starting from #6 and find first name that does NOT start from $
-#define IsMFTRecInternal(mftrec) ((mftrec) < 33) 
-
 /** 
 * @brief Reads information about one MFT record 
 * @details Reads information ONLY about one MFT record refered by mftRecRef 
@@ -541,7 +537,7 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_I
                               nameOfAttrA, MFT_REF::toHexString(mftRec->IndexMFTRec));
 
                 // all non-Internal BITMAP attrs have name '$I30'
-                if (!IsMFTRecInternal(mftRec->IndexMFTRec)) assert(nameOfAttrA == "$I30");
+                if (mftRec->IndexMFTRec >= FLoader.GetMetaFilesCount()) assert(nameOfAttrA == "$I30");
 
                 if (FProcessNonResAttr)
                 {
@@ -722,7 +718,8 @@ TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF startMftRecRef, uint32_t dirL
 
     for (auto& item : itemInfo.Node.FileList)
     {     
-        if (!item.NtfsInternal()) // bypass hidden mft metafiles
+        //if (!item.NtfsInternal()) // bypass hidden mft metafiles
+        if (!FLoader.IsMetaFile(item.MFTRef.sId.low))
         {
             if ((dirLevel == 0) && (callback)) callback(item.ciName.c_str()); // cout_t << item.ciName.c_str() /*<< " [" <<item.Attr.dup.FileSize << "]"*/ << std::endl;
             //if ((dirLevel == 1) && (callback)) callback(std::wstring(_T("\t")) + item.ciName.c_str()); //cout_t << _T("\t") << item.ciName.c_str() << std::endl;
