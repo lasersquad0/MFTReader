@@ -48,9 +48,9 @@ void TMFTAllRecordsLoader::OpenVolume(const string_t& vol)
 
 TErrorCode TMFTAllRecordsLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
 {
-    //TODO mft rec copying happens here, think how to avoid that
     if (FBitmap.Test(mftRecRef.sId.low))
     {
+        //TODO mft rec copying happens here, think how to avoid that
         FRecs.Get(mftRecRef.sId.low, mftRecData);
         return TErrorCode::Success;
     }
