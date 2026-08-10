@@ -36,18 +36,18 @@
 * @param node Will be filled with BITMAP and Data Runs data
 * @param parentIdx Index of parent item in upper level. Need for connection read items to parent item.
 * @param level Pointer to level where new items will be added (current level)
-* @return true if success, false in case of error
-*/ 
-TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint32_t parentIdx, TFileCache::TLevel* level)
+* @return TErrorCode value that contains code for success or code of error occurred
+*/
+TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, AddFileAttrPred addFilePred /*uint32_t parentIdx, TFileCache::TLevel* level*/)
 {
     GET_LOGGER;
 
-    AddFileAttrPred AddFilePred = [parentIdx, &level](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
+    /*AddFileAttrPred AddFilePred = [parentIdx, &level](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
         {
             // do not add NTFS internal files that are in root dir and start from $
             //if (!AttrIsNtfsInt(attr))
                 level->AddValue(parentIdx, ref, attr);
-        };
+        };*/
 
     MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecData;
 
@@ -156,7 +156,7 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
                 logger.DebugFmt("IHDR Used Bytes: {}", pihdr->Used);
 
                 // does not go to subnodes
-                GetFileList(pihdr, AddFilePred);
+                GetFileList(pihdr, addFilePred);
 
                 break;
             }
@@ -205,7 +205,7 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
                         {
                             if (TErrorCode::Success == FLoader.LoadMFTRecord(attrListItem->RecRef, mftRecBuf))
                             {
-                                if (TErrorCode::Success == ParseMFTRecord(mftRecBuf, node, parentIdx, level)) //TODO shall we break in case of an error in LoadMFTRecord or ParseMFTRecord 
+                                if (TErrorCode::Success == ParseMFTRecord(mftRecBuf, node, addFilePred /*parentIdx, level*/)) //TODO shall we break in case of an error in LoadMFTRecord or ParseMFTRecord 
                                     visitedMFTRec.AddValue(attrListItem->RecRef.sId.low);
                                 else
                                     logger.Error("ParseMFTRecord finished with error.");
@@ -243,16 +243,13 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
 
                 break;
             }
-            case ATTR_DATA: // Resident. ATTR_DATA can be resident or non-resident
-            {
-                logger.InfoFmt("Resident ATTR_DATA. Size: {}", currAttr->res.DataSize);
-                logger.DebugFmt("We do not process this resident attribute. Attr: '{}', AttrName: '{}'.", AttrName(currAttr->AttrType), nameOfAttrA);
-                break;
-            }
+            case ATTR_DATA: // can be resident or non-resident
             case ATTR_STD_INFO: // resident only
             case ATTR_FILENAME: // resident only
             case ATTR_ID:
             case ATTR_SECURE:
+            case ATTR_VOL_INFO: // resident only
+            case ATTR_LABEL:
             case ATTR_REPARSE: // can be resident or non-resident
             case ATTR_EA:      // can be resident or non-resident  
             case ATTR_EA_INFO: // can be resident or non-resident
@@ -406,7 +403,7 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
                             {
                                 //TODO There may be a case when 2 attributes located in a one child MFT record. 
                                 // They will be parsed twice now. Think of solution for it. 
-                                if (TErrorCode::Success != ParseMFTRecord(mftRecBuf.value(), node, parentIdx, level))
+                                if (TErrorCode::Success != ParseMFTRecord(mftRecBuf.value(), node, addFilePred /*parentIdx, level*/))
                                     logger.Error("ParseMFTRecord finished with error.");
                             }
                             else
@@ -458,17 +455,18 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
 }
 
 /**
- * @brief Loads files/dirs into gFileList recursively
- * @details Loads files/dirs refered by parentItem, then goes into subdirs and loads files/dirs from there
- * Adds loaded info gFileList level by level. gFileList can then be used for quick searching for files in volume.
+ * @brief Loads files/dirs into FFileList recursively
+ * @details Loads files/dirs refered by parentItem, then goes into parentItem subdirs and loads files/dirs from there
+ * Adds loaded info FFileList level by level. FFileList can then be used for very quick searching for files in volume.
  * Reads only INDEX_ROOT, ALLOC, BiTMAP attributes. Also parses ATTR_LIST attribute too when met.
- * File information is got from aINDEX_ROOT and ALLOC attributes only.
+ * File information is got from an INDEX_ROOT and ALLOC attributes only.
  * Calculates and stores size of each directory met.
- * ReadDirectoryV1 may call itself reccurcively when needed to read CHILD MFT records.
- * @param parentIdx Index of parent item in previous/parent level of gFileList
+ * ReadDirectoryV1 calls itself reccurcively to go to subdirs of subdirs.
+ * @param parentIdx Index of parent item in previous/parent level of FFileList
  * @param parentItem Item (directory) whose files will be read. NULL for root item.
  * @param dirSize Passed by ref because we return dir size to upper directory 
  * @param callback Since reading may take a time function tells its progress to caller via callback of ProgressCallbackPtr type.
+ * @return TErrorCode value that contains code for success or code of error occurred 
 */
 TErrorCode TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentItem, uint64_t& dirSize, ProgressCallbackPtr callback)
 {
@@ -540,22 +538,22 @@ TErrorCode TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* par
     uint32_t startPos = level->Count(); // remember start position for newly added items
     CACHE_ITEM* startItem = level->Last(); // NOTE! Last() returns pointer to item that WILL BE added next. Also startItem may become invalid if realloc happened in the level duing adding new items
 
-    DIR_NODE node; //TODO replace two last parameters with predicate FileListPred similar to passed into ProcessAllocDataRuns below.
-    res = ParseMFTRecord(mftRecBuf, node, parentIdx, level);
+    AddFileAttrPred addToFileListPred = [parentIdx, &level](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
+        {
+            // do not add NTFS internal files that are in root dir and start from $
+            //if (!AttrIsNtfsInt(attr))
+            level->AddValue(parentIdx, ref, attr);
+        };
+
+    DIR_NODE node;
+    res = ParseMFTRecord(mftRecBuf, node, addToFileListPred/*parentIdx, level */ );
     if (res != TErrorCode::Success)
     {
         logger.Error("ParseMFTRecord finished with error.");
         return res;
     }
 
-    AddFileAttrPred addToFileListPred = [parentIdx, &level](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
-        {
-            // do not add NTFS internal files that are in root dir and start from $
-            //if (!AttrIsNtfsInt(attr))
-                level->AddValue(parentIdx, ref, attr);
-        };
-
-    //TODO this is the same predicate code as in FileStat.cpp. Think how to avoid duplication
+    //TODO this is the same predicate code as in MFTStatReader.cpp. Think how to avoid duplication
     ProcessiBlocksPred processAllocPred = [this, &addToFileListPred](uint8_t* dataBuf, CLST VCN, CLST LCN)
         {
             auto allocIndex = (INDEX_BUFFER*)dataBuf;
@@ -732,9 +730,10 @@ TErrorCode TMFTSearchReaderV2::ReadDirectoryV2(MFT_REF parentMftRecID, uint32_t 
     }
 
     DIR_NODE node;
-    auto expctValue = GetFileListFromMFTRec(mftRec, node); // writes error to log file in case of error
-    if (!expctValue)
-        return expctValue.error();
+    // GetFileListFromMFTRec uses FillAttrCollection() to read file attributes
+    res = GetFileListFromMFTRec(mftRec, node); // writes error to log file in case of error
+    if (res != TErrorCode::Success)
+        return res;
 
     for (auto& item : node.FileList)
     {
