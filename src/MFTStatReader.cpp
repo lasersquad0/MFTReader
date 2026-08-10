@@ -70,6 +70,7 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_I
             return res;
         };
 
+    //TODO this is the same predicate code as in MFTSearchReader.cpp. Think how to avoid duplication
     ProcessiBlocksPred processAllocPred = [this, &addToFileListPred](uint8_t* dataBuf, CLST VCN, CLST LCN)
         {
             auto allocIndex = (INDEX_BUFFER*)dataBuf;
@@ -744,11 +745,14 @@ int32_t PrintProgress(const string_t& data)
     return 1; // not used at the moment
 }
 
-// Reads entire disk and prints to console various statistics
-// Starts reading from root dir (c:), goes to all subdirs and reads detailed attributes data for each file/dir
-// Result is a plain list of all files/dirs wihtout preserving child-parent relationships
-// Use this function mostly for collecting detailed statictic about files and their NTFS attributes.
-// DOES NOT calculate dir sizes
+/** 
+* @brief Reads entire disk and prints to console various statistics
+* @details Starts reading from directory defined by FLoader class (usually c: or d:), goes to all subdirs and reads detailed attributes data for each file/dir
+* Result is a plain list of all files/dirs wihtout preserving child-parent relationships
+* Use this function mostly for collecting various statictic about files and their NTFS attributes.
+* DOES NOT calculate dir sizes.
+* @return TErrorCode value that contains code for success or code of error occurred
+*/
 TErrorCode TMFTStatCollector::CollectVolumeStat()
 {
     GET_LOGGER;
