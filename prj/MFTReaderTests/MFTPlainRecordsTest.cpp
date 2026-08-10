@@ -11,15 +11,17 @@ class TMFTPlainRecordsLoader : public IRecordLoader
 {
 private:
     std::ifstream FFile;
-    uint64_t FMFTRecordsCount = 0;
+   // uint64_t FMFTRecordsCount = 0;
 public:
-    TMFTPlainRecordsLoader(const string_t& fileName) { OpenVolume(fileName); }
-    ~TMFTPlainRecordsLoader() { CloseVolume(); }
+    TMFTPlainRecordsLoader(const string_t& fileName) { Open(fileName); }
+    ~TMFTPlainRecordsLoader() { Close(); }
 
     bool Eof() { return FFile.eof(); }
 
-    void OpenVolume(const string_t& fileName) override
+    void Open(const string_t& fileName) override
     {
+        ASSERT_FALSE(IsOpened()) << "TMFTPlainRecordsLoader has already opened. Close it before opening again.";
+
         FFile.open(fileName, std::ios::binary);
         if (!FFile) FAIL() << "Error opening file '" << fileName << "'";
         
@@ -40,7 +42,7 @@ public:
         MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
         MFT_REF mftRef{ 0 };
 
-        FMFTRecordsCount = 1; //temporary
+        FRecordsCount = 1; //temporary
         TErrorCode res = LoadMFTRecord(mftRef, mftRecBuf); // loading MFT record #0 which is $MFT file
         ASSERT_EQ(TErrorCode::Success, res) << "Error loading MFT record " << mftRef.sId.low;
 
@@ -64,20 +66,29 @@ public:
         ASSERT_EQ(TErrorCode::Success, res);
         ASSERT_EQ(1ul, dataRuns.Count());
 
-        FMFTRecordsCount = dataRuns[0].len * FVolumeData.BytesPerCluster / FVolumeData.BytesPerMFTRec;
+        FRecordsCount = dataRuns[0].len * FVolumeData.BytesPerCluster / FVolumeData.BytesPerMFTRec;
+
+        auto expct = ReadMetaFilesCount(prsr);
+        ASSERT_TRUE(expct);
+        FMetaFilesCount = expct.value();
+
+        SetOpened(true);
     }
 
-    void CloseVolume() override
+    void Close() override
     {
         FFile.close();
-        IRecordLoader::CloseVolume();
+        IRecordLoader::Close();
+        SetOpened(false);
     }
 
     TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override
     {
+        EXPECT_TRUE(IsOpened());
+
         assert(!FFile.fail());
 
-        if (mftRecRef.sId.low >= FMFTRecordsCount)
+        if (mftRecRef.sId.low >= FRecordsCount)
         {
             FFile.setstate(std::ios_base::eofbit);
             return TErrorCode::NotFound;
@@ -115,6 +126,8 @@ public:
 
     TErrorCode ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf) override
     {
+        EXPECT_TRUE(IsOpened());
+
         try
         {
             FFile.seekg(lcnStart * FVolumeData.BytesPerCluster/*, std::ios::beg*/);
