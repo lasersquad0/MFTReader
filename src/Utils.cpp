@@ -4,45 +4,12 @@
 
 #include "Debug.h"
 #include <string>
-#include <cassert>
+//#include <cassert>
 #include <windows.h>
-#include <shlwapi.h>
-#include <strsafe.h>
+//#include <shlwapi.h>
+//#include <strsafe.h>
 
 #include "Utils.h"
-
-string_t FileDateToString(const string_t& str, uint64_t dateTime)
-{
-    if (dateTime == 0)
-        return std::format(_T("{}---"), str);
-
-    const uint BUF_SZ = 100;
-    string_t::value_type buf[BUF_SZ];
-    DWORD dateTimeFlags = /*FDTF_DEFAULT */ FDTF_SHORTDATE | FDTF_LONGTIME | FDTF_NOAUTOREADINGORDER;
-    FILETIME ft{ 0 };
-
-    ft.dwLowDateTime = LODWORD(dateTime);
-    ft.dwHighDateTime = HIDWORD(dateTime);
-    SHFormatDateTime(&ft, &dateTimeFlags, buf, BUF_SZ);
-    return std::format(_T("{}{}"), str, convert_string<string_t::value_type>(buf));
-}
-
-// removes all leading and trailing \n\t\r and space symbols from string
-// works with std::wstring ONLY because std::string version already present inLogEngine
-std::wstring TrimSPCRLF(std::wstring str) // str passed by value here intentionally
-{
-    // remove any leading and traling spaces, tabs and \n, \r.
-    size_t strBegin = str.find_first_not_of(L" \t\r\n");
-    if (strBegin == std::string::npos) return L"";
-
-    size_t strEnd = str.find_last_not_of(L" \t\r\n");
-    assert(strEnd != std::string::npos);
-
-    str.erase(strEnd + 1 /*, S.size() - strEnd*/); // erase till end of string
-    str.erase(0, strBegin);
-
-    return str;
-}
 
 std::string GetErrorMessageTextA(ulong lastErrorCode, const std::string& errorPlace)
 {
@@ -65,6 +32,7 @@ std::string GetErrorMessageTextA(ulong lastErrorCode, const std::string& errorPl
     return buf2;*/
 }
 
+/*
 string_t GetErrorMessageText(ulong lastErrorCode, const string_t& errorPlace)
 {
     const uint32_t BUF_SIZE = 2048; // should be enough for all error messages
@@ -81,7 +49,7 @@ string_t GetErrorMessageText(ulong lastErrorCode, const string_t& errorPlace)
 
     return buf2;
 }
-
+*/
 /*
 void PrintWindowsErrorMessage(const std::string& errorPlace)
 {
@@ -114,23 +82,4 @@ void PrintWindowsErrorMessage(const std::string& errorPlace)
 }
 */
 
-// assuming that dest buffer is large enough
-void WCHARtoChar(char* dest, wchar_t* src)
-{
-   // int len = WideCharToMultiByte(CP_UTF8, 0 /*WC_NO_BEST_FIT_CHARS*/, src, -1, dest, MAX_PATH, nullptr, nullptr);
-
-    //size_t len;
-    WideCharToMultiByte(CP_ACP, 0, src, -1, dest, MAX_PATH, nullptr, nullptr);
-    //wcstombs_s(&len, dest, MAX_PATH, src, wcslen(src));
-    //if (len > 0u) dest[len] = '\0';
-}
-
-// assuming that dest buffer is large enough
-void CharToWCHAR(wchar_t* dest, const char* src)
-{
-    // size_t len;
-    MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, src, -1, dest, MAX_PATH);
-    // mbstowcs_s(&len, dest, MAX_PATH, src, strlen(src));
-    // if (len > 0u) dest[len] = '\0';
-}
 
