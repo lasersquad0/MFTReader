@@ -20,7 +20,7 @@ struct CACHE_ITEM
 	uint32_t FParent;
 	uint32_t FLevel;
 	int32_t FFilesCount;
-	MFT_REF FMFTRecID; // MFT Rec ID of this file
+	MFT_REF FMFTRecRef; // MFT Rec ID of this file
 	ATTR_FILE_NAME FileAttr; // 66 bytes. must be last field in CACHE_ITEM because it has variable size
 
 	//uint32_t FileAttrSize() const { return sizeof(ATTR_FILE_NAME) + FileAttr.FileNameLen * sizeof(wchar_t); } // size in bytes of current item instance 
@@ -28,11 +28,11 @@ struct CACHE_ITEM
 	
 	//NOTE! Name() does not guarantee that string will be null terminated 
 	wchar_t* Name()   const { return (wchar_t*)((uint8_t*)this + sizeof(CACHE_ITEM)); }
-	bool IsMetaFile() const { return (FileAttr.ParentDir.sId.low == MFT_ROOT_REC_ID) && (Name()[0] == L'$'); }
-	bool IsDotDir()   const { return (FileAttr.FileNameLen == 1) && (Name()[0] == L'.'); }
+	//bool IsMetaFile() const { return (FileAttr.ParentDir.sId.low == MFT_ROOT_REC_ID) && (Name()[0] == L'$'); }
+	//bool IsDotDir()   const { return (FileAttr.FileNameLen == 1) && (Name()[0] == L'.'); }
 	bool IsDir()      const { return (FileAttr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::DIRECTORY) > 0;	}
 	bool IsReparse()  const { return (FileAttr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::REPARSE_POINT) > 0; };
-	bool NtfsInternal()const{ return IsMetaFile() || IsDotDir(); }
+	//bool NtfsInternal()const{ return IsMetaFile() || IsDotDir(); }
 };
 
 class TFileLevelList
@@ -124,7 +124,7 @@ public:
 		((CACHE_ITEM*)FHead)->FParent = parent;
 		((CACHE_ITEM*)FHead)->FLevel = FLevel;
 		((CACHE_ITEM*)FHead)->FFilesCount = -1;  // -1 is to differ from empty folders where FFilesCount=0
-		((CACHE_ITEM*)FHead)->FMFTRecID = MFTRecID; //TODO may be we could store MFTRectID as uint32_t (4 bytes) here instead of 8 bytes structure
+		((CACHE_ITEM*)FHead)->FMFTRecRef = MFTRecID; //TODO may be we could store MFTRectID as uint32_t (4 bytes) here instead of 8 bytes structure
 
 		uint32_t dataSize = CalcFileAttrSize(data); // this is size of ATTR_FILE_NAME + filename size, needed only for memcpy
 		auto res = memcpy_s(FHead + offsetof(CACHE_ITEM, FileAttr), dataSize, data, dataSize);

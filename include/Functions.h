@@ -62,10 +62,10 @@ struct FILE_NAME
     bool operator==(const FILE_NAME& other) const { return ciName == other.ciName; }
 
     bool IsDir() const { return (Attr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::DIRECTORY) > 0; }
-    bool IsMetaFile() const { return (Attr.ParentDir.sId.low == MFT_ROOT_REC_ID) && (ciName[0] == L'$'); } // assumes ciName is not empty
-    bool IsDotDir() const { return (ciName.size() == 1) && (ciName[0] == L'.'); } 
+    //bool IsMetaFile() const { return (Attr.ParentDir.sId.low == MFT_ROOT_REC_ID) && (ciName[0] == L'$'); } // assumes ciName is not empty
+    //bool IsDotDir() const { return (ciName.size() == 1) && (ciName[0] == L'.'); } 
     bool IsReparse() const { return (Attr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::REPARSE_POINT) > 0; };
-    bool NtfsInternal() const { return IsMetaFile() || IsDotDir(); }
+    //bool NtfsInternal() const { return IsMetaFile() || IsDotDir(); }
 };
 
 #if _DEBUG
