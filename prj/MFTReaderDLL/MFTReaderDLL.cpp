@@ -24,7 +24,7 @@ MFTREADERDLL_API TError ReadVolume(const wchar_t* volume, wchar_t* exclFolders, 
         
         logger.InfoFmt("Reading volume data for: {}", wtos(volume));
 
-        ldr.OpenVolume(convert_string<string_t::value_type>(volume));
+        ldr.Open(convert_string<string_t::value_type>(volume));
 
         //string_t vol = ParseVolume(convert_string<string_t::value_type>(volume)); // gets first two symbols of volume (e.g. C:) and adds prefix "\\.\" in front of it 
         //VOLUME_DATA volData;
@@ -69,7 +69,7 @@ MFTREADERDLL_API TError ReadVolume(const wchar_t* volume, wchar_t* exclFolders, 
 
         //fileCache.SaveTo("MFTReader_items.txt");
 
-        ldr.CloseVolume();
+        ldr.Close();
 
         auto stop = std::chrono::high_resolution_clock::now();
         Ticks::Finish(_T("ReadVolumeTime"));

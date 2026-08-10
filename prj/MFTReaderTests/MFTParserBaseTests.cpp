@@ -57,56 +57,56 @@ TEST_F(MFTParserBaseTests, ParseVolume_1)
     EXPECT_TRUE(true);
 }
 
-TEST_F(MFTParserBaseTests, DISABLED_OpenVolume_1)
+TEST_F(MFTParserBaseTests, OpenVolume_1)
 {
     TMFTRecordLoader ldr;
-    ldr.OpenVolume(_T("c:")); // generates an exception if not run as Admin
-    ldr.OpenVolume(_T("c"));
-    ldr.OpenVolume(_T("c:\testfile"));
+    ldr.Open(_T("c:")); // generates an exception if not run as Admin
+    ldr.Open(_T("c"));
+    ldr.Open(_T("c:\testfile"));
 }
 
-TEST_F(MFTParserBaseTests, DISABLED_OpenVolume_2)
+TEST_F(MFTParserBaseTests, OpenVolume_2)
 {
     TMFTRecordLoader ldr;
 
-    EXPECT_THROW(ldr.OpenVolume(_T("d:")), std::system_error); 
-    EXPECT_THROW(ldr.OpenVolume(_T("f")), std::system_error);
+    EXPECT_THROW(ldr.Open(_T("d:")), std::system_error); 
+    EXPECT_THROW(ldr.Open(_T("f")), std::system_error);
 
-    EXPECT_THROW(ldr.OpenVolume(_T(":")), std::system_error);
-    EXPECT_THROW(ldr.OpenVolume(_T("\\")), std::system_error);
-    EXPECT_THROW(ldr.OpenVolume(_T("/")), std::system_error);
+    EXPECT_THROW(ldr.Open(_T(":")), std::system_error);
+    EXPECT_THROW(ldr.Open(_T("\\")), std::system_error);
+    EXPECT_THROW(ldr.Open(_T("/")), std::system_error);
 
-    EXPECT_THROW(ldr.OpenVolume(_T("::")), std::system_error);
-    EXPECT_THROW(ldr.OpenVolume(_T("\\\\")), std::system_error);
-    EXPECT_THROW(ldr.OpenVolume(_T("//")), std::system_error);
+    EXPECT_THROW(ldr.Open(_T("::")), std::system_error);
+    EXPECT_THROW(ldr.Open(_T("\\\\")), std::system_error);
+    EXPECT_THROW(ldr.Open(_T("//")), std::system_error);
 
-    EXPECT_THROW(ldr.OpenVolume(_T("\\.\\")), std::system_error);
-    EXPECT_THROW(ldr.OpenVolume(_T("\\\\.\\")), std::system_error);
-    EXPECT_THROW(ldr.OpenVolume(_T("\\\\.\\\\")), std::system_error);
+    EXPECT_THROW(ldr.Open(_T("\\.\\")), std::system_error);
+    EXPECT_THROW(ldr.Open(_T("\\\\.\\")), std::system_error);
+    EXPECT_THROW(ldr.Open(_T("\\\\.\\\\")), std::system_error);
 
 }
 
-TEST_F(MFTParserBaseTests, DISABLED_OpenVolumeCloseVolume_1)
+TEST_F(MFTParserBaseTests, OpenVolumeCloseVolume_1)
 {
     TMFTRecordLoader ldr;
 
-    ldr.CloseVolume();
+    ldr.Close();
 
-    ldr.OpenVolume(_T("c:")); // generates an exception if not run as Admin
-    ldr.CloseVolume();
-    ldr.CloseVolume();
+    ldr.Open(_T("c:")); // generates an exception if not run as Admin
+    ldr.Close();
+    ldr.Close();
 
-    ldr.OpenVolume(_T("c"));
-    ldr.OpenVolume(_T("c:\testfile"));
-    ldr.CloseVolume();
+    ldr.Open(_T("c"));
+    ldr.Open(_T("c:\testfile"));
+    ldr.Close();
 
-    ldr.OpenVolume(_T("c"));
-    EXPECT_THROW(ldr.OpenVolume(_T("//")), std::system_error);
-    ldr.CloseVolume();
+    ldr.Open(_T("c"));
+    EXPECT_THROW(ldr.Open(_T("//")), std::system_error);
+    ldr.Close();
 }
 
 // MFT IDs will be different for different disks, this test linked to one disk only
-TEST_F(MFTParserBaseTests, DISABLED_GetMFTRecIdByPath_1)
+TEST_F(MFTParserBaseTests, GetMFTRecIdByPath_1)
 {
     TMFTRecordLoader ldr(_T("c:")); // assume that all path are on C:
     TMFTParserBase ps(ldr);
@@ -146,7 +146,7 @@ TEST_F(MFTParserBaseTests, DISABLED_GetMFTRecIdByPath_1)
 
 
 // MFT IDs will be different for different disks, this test linked to disk C: only
-TEST_F(MFTParserBaseTests, DISABLED_GetPathByMFTRecId_1)
+TEST_F(MFTParserBaseTests, GetPathByMFTRecId_1)
 {
     TMFTRecordLoader ldr(_T("c:")); // assume that all path are on C:
     TMFTParserBase ps(ldr);

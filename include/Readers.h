@@ -8,67 +8,38 @@
 #define STREAM_NONAME "<noname>"
 #define STREAM_NONAME_W L"<noname>"
 
-
+class TMFTParserBase;
 
 class IRecordLoader
 {
 protected:
+	bool FOpened{ false };
+	uint64_t FRecordsCount{ 0 }; // total number of MFT records in $MFT file
+	uint32_t FMetaFilesCount{ 0 }; // number of first "system" hidden meta files till first non-system file met
 	VOLUME_DATA FVolumeData;
 	TMFTRecCache FMFTRecCache;
 
+	virtual std::expected<uint32_t, TErrorCode> ReadMetaFilesCount(TMFTParserBase& parser);
 public:
 	static string_t NormalizeVolume(const string_t& vol);
 	const VOLUME_DATA& GetVolumeData() const { return FVolumeData; }
-	virtual void OpenVolume(const string_t& vol) = 0;
+	virtual void Open(const string_t& vol) = 0;
+	virtual bool IsOpened() { return FOpened; };
+	virtual void SetOpened(bool opened) { FOpened = opened; }
+	virtual uint32_t GetMetaFilesCount() { return FMetaFilesCount; }
+	virtual bool IsMetaFile(MFTRecIndex mftRecID) { assert(FMetaFilesCount > 0); return mftRecID < FMetaFilesCount; }
+
 	virtual TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) = 0;
 	virtual TErrorCode ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf) = 0;
-
-	// FixupUSA1 makes USA fixes in buffer refered by record param.
-	// This function is going to be used for processing ALLOC attr Index Blocks or MFT records (only when they read directly from disk, not via WINAPI). 
-	// When MFT records loadded via WINAPI call they already have USA fixed up.
-    // BytesPerBlock value is usually defined in ATTR_ROOT attr (field IndexBlockSize) and it may differ from filesystem's ClusterSize.
-	// For MFT records BytesPerBlock is standard MFT record size (BytesPerMFTRec)
-    // record buffer should be at least BytesPerBlock size
-	static TErrorCode FixupUSA1(NTFS_RECORD_HEADER* record, uint32_t BytesPerBlock, uint32_t BytesPerSector)
-	{
-		UNREFERENCED_PARAMETER(BytesPerBlock);
-
-		uint32_t wordsPerSector = BytesPerSector >> 1;
-
-		uint16_t sectorsCnt = record->FixupCnt - 1;
-		assert(sectorsCnt == BytesPerBlock / BytesPerSector);
-
-		uint16_t* fixupArr = (uint16_t*)(Add2Ptr(record, record->FixupOffset));
-		uint16_t checkValue = *fixupArr;
-		fixupArr++; // now it refers to first array item
-
-		uint16_t* sectorEnd = (uint16_t*)(record) + wordsPerSector - 1;
-
-		uint32_t s = 0;
-		while (s < sectorsCnt)
-		{
-			assert(checkValue == *sectorEnd);
-			if (checkValue != *sectorEnd)
-			{
-				GET_LOGGER;
-				logger.Error("[FixupUSA1] Error: looks like data is corrupted in the sector");
-				return TErrorCode::CorruptedData; // looks like data is corrupted in this sector
-			}
-
-			*sectorEnd = fixupArr[s]; // restore data
-
-			sectorEnd += wordsPerSector;
-			s++;
-		}
-
-		return TErrorCode::Success;
-	}
+	static TErrorCode FixupUSA1(NTFS_RECORD_HEADER* record, uint32_t BytesPerBlock, uint32_t BytesPerSector);
 
 	typedef uint8_t* puint8_t;
 	typedef std::expected<puint8_t, TErrorCode> ret_expected;
 
 	virtual ret_expected LoadMFTRecordCache(MFT_REF mftRecRef) // returns NULL if error occurred during loading MFT record
 	{
+		assert(IsOpened());
+
 		uint8_t** result = FMFTRecCache.GetValuePointer(mftRecRef.sId.low);
 	
 		if (result == nullptr) // no value in cache, load MFT record from disk
@@ -90,29 +61,33 @@ public:
 		return *result; // return MFT record from cache
 	}
 
-	virtual void CloseVolume()
+	virtual void Close()
 	{
-		// closes volume handle opened by OpenVolume
-		// clears data about volume, clears caches
+		if (!IsOpened()) return;
 
 		GET_LOGGER;
 		logger.DebugFmt("Closing volume: {}", wtos(FVolumeData.Name));
 
-		CloseHandle(FVolumeData.hVolume);
+		// clears data about volume, clears caches
+
+		//CloseHandle(FVolumeData.hVolume);
 		auto& volDataBuf = (NTFS_VOLUME_DATA_BUFFER&)FVolumeData;
 		ZeroMemory(&volDataBuf, sizeof(NTFS_VOLUME_DATA_BUFFER));
-		FVolumeData.hVolume = INVALID_HANDLE_VALUE;
+		//FVolumeData.hVolume = INVALID_HANDLE_VALUE;
 		FVolumeData.Name.clear();
 		FMFTRecCache.Clear();
+		FRecordsCount = 0;
+		FMetaFilesCount = 0;
 	}
+
 };
 
 class TMFTRecordLoader : public IRecordLoader
 {
 public:
 	TMFTRecordLoader() { }
-	TMFTRecordLoader(const string_t& vol) { OpenVolume(vol); }
-	void OpenVolume(const string_t& vol) override;
+	TMFTRecordLoader(const string_t& vol) { Open(vol); }
+	void Open(const string_t& vol) override;
 	TErrorCode ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf) override;
 	TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override;
 };
@@ -122,17 +97,18 @@ class TMFTAllRecordsLoader : public TMFTRecordLoader
 protected:
 	THArrayRaw FRecs;
 	TBitField FBitmap;
+
+	TErrorCode ReadAllMftRecords();
 public:
 	TMFTAllRecordsLoader() {}
-	TMFTAllRecordsLoader(const string_t& vol) { OpenVolume(vol); }
-	void OpenVolume(const string_t& vol) override;
+	TMFTAllRecordsLoader(const string_t& vol) { Open(vol); }
+	void Open(const string_t& vol) override;
 	TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override;
 	ret_expected LoadMFTRecordCache(MFT_REF mftRecRef) override 
 	{ 
 		UNREFERENCED_PARAMETER(mftRecRef); 
 		throw std::exception("LoadMFTRecordCache methhod is not supported."); 
 	}
-	TErrorCode ReadAllMftRecords();
 };
 
 
