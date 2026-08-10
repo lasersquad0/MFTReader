@@ -38,7 +38,7 @@ Some attrs may not present in MFT Rec. e.g. BITMAP is not created for empty dire
 // volume root MFT rec ID. This is ID of '.' (or c:\) directory
 constexpr uint32_t MFT_ROOT_REC_ID = 5;
 
-// max file name length, this is because length is stored in uint8_t in FILE_ATTR
+// max file name length, this is because length is stored as uint8_t in ATTR_FILE_NAME structure
 #define MAX_FILE_NAME 255
 
 // structure fields alignment set to 1 byte.
