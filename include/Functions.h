@@ -271,6 +271,8 @@ public:
 };
 
 LogEngine::Logger& GetLoggerFunc();
+string_t FileDateToString(const string_t& str, uint64_t dateTime);
 std::string FormatFileAttributes(uint32_t a);
 MFTRecIndex StringToMFTRecID(const string_t& strMFTRecID);
-
+// removes all leading and trailing \n\t\r and space symbols from string
+//std::wstring TrimSPCRLF(std::wstring str);
