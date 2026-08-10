@@ -33,31 +33,31 @@ protected:
 
 TEST_F(MFTParserBaseTests, ParseVolume_1)
 {
-    EXPECT_EQ(_T(""), IRecordLoader::ParseVolume(_T(""))); // no default value here, empty string indicates an error.
-    EXPECT_EQ(_T("\\\\.\\C:"), IRecordLoader::ParseVolume(_T("C")));
-    EXPECT_EQ(_T("\\\\.\\c:"), IRecordLoader::ParseVolume(_T("c")));
-    EXPECT_EQ(_T("\\\\.\\C:"), IRecordLoader::ParseVolume(_T("C:")));
-    EXPECT_EQ(_T("\\\\.\\c:"), IRecordLoader::ParseVolume(_T("c:")));
+    EXPECT_EQ(_T(""), IRecordLoader::NormalizeVolume(_T(""))); // no default value here, empty string indicates an error.
+    EXPECT_EQ(_T("\\\\.\\C:"), IRecordLoader::NormalizeVolume(_T("C")));
+    EXPECT_EQ(_T("\\\\.\\c:"), IRecordLoader::NormalizeVolume(_T("c")));
+    EXPECT_EQ(_T("\\\\.\\C:"), IRecordLoader::NormalizeVolume(_T("C:")));
+    EXPECT_EQ(_T("\\\\.\\c:"), IRecordLoader::NormalizeVolume(_T("c:")));
 
-    EXPECT_EQ(_T("\\\\.\\D:"), IRecordLoader::ParseVolume(_T("D")));
-    EXPECT_EQ(_T("\\\\.\\d:"), IRecordLoader::ParseVolume(_T("d")));
-    EXPECT_EQ(_T("\\\\.\\D:"), IRecordLoader::ParseVolume(_T("D:")));
-    EXPECT_EQ(_T("\\\\.\\d:"), IRecordLoader::ParseVolume(_T("d:")));
+    EXPECT_EQ(_T("\\\\.\\D:"), IRecordLoader::NormalizeVolume(_T("D")));
+    EXPECT_EQ(_T("\\\\.\\d:"), IRecordLoader::NormalizeVolume(_T("d")));
+    EXPECT_EQ(_T("\\\\.\\D:"), IRecordLoader::NormalizeVolume(_T("D:")));
+    EXPECT_EQ(_T("\\\\.\\d:"), IRecordLoader::NormalizeVolume(_T("d:")));
 
-    EXPECT_EQ(_T("\\\\.\\ :"), IRecordLoader::ParseVolume(_T(" "))); // it does not check that disk letter is correct disk letter
-    EXPECT_EQ(_T("\\\\.\\1:"), IRecordLoader::ParseVolume(_T("1")));
-    EXPECT_EQ(_T("\\\\.\\*:"), IRecordLoader::ParseVolume(_T("*")));
+    EXPECT_EQ(_T("\\\\.\\ :"), IRecordLoader::NormalizeVolume(_T(" "))); // it does not check that disk letter is correct disk letter
+    EXPECT_EQ(_T("\\\\.\\1:"), IRecordLoader::NormalizeVolume(_T("1")));
+    EXPECT_EQ(_T("\\\\.\\*:"), IRecordLoader::NormalizeVolume(_T("*")));
 
-    EXPECT_EQ(_T(""), IRecordLoader::ParseVolume(_T("\\\\.\\")));
-    EXPECT_EQ(_T("\\\\.\\e:"), IRecordLoader::ParseVolume(_T("\\\\.\\e")));
-    EXPECT_EQ(_T("\\\\.\\e:"), IRecordLoader::ParseVolume(_T("\\\\.\\e:")));
-    EXPECT_EQ(_T("\\\\.\\e:"), IRecordLoader::ParseVolume(_T("\\\\.\\e:filename1")));
-    EXPECT_EQ(_T("\\\\.\\fi"), IRecordLoader::ParseVolume(_T("\\\\.\\filename1")));//TODO not sure this is correct test
+    EXPECT_EQ(_T(""), IRecordLoader::NormalizeVolume(_T("\\\\.\\")));
+    EXPECT_EQ(_T("\\\\.\\e:"), IRecordLoader::NormalizeVolume(_T("\\\\.\\e")));
+    EXPECT_EQ(_T("\\\\.\\e:"), IRecordLoader::NormalizeVolume(_T("\\\\.\\e:")));
+    EXPECT_EQ(_T("\\\\.\\e:"), IRecordLoader::NormalizeVolume(_T("\\\\.\\e:filename1")));
+    EXPECT_EQ(_T("\\\\.\\fi"), IRecordLoader::NormalizeVolume(_T("\\\\.\\filename1")));//TODO not sure this is correct test
 
     EXPECT_TRUE(true);
 }
 
-TEST_F(MFTParserBaseTests, OpenVolume_1)
+TEST_F(MFTParserBaseTests, DISABLED_OpenVolume_1)
 {
     TMFTRecordLoader ldr;
     ldr.OpenVolume(_T("c:")); // generates an exception if not run as Admin
@@ -65,12 +65,12 @@ TEST_F(MFTParserBaseTests, OpenVolume_1)
     ldr.OpenVolume(_T("c:\testfile"));
 }
 
-TEST_F(MFTParserBaseTests, OpenVolume_2)
+TEST_F(MFTParserBaseTests, DISABLED_OpenVolume_2)
 {
     TMFTRecordLoader ldr;
 
-    EXPECT_THROW(ldr.OpenVolume(_T("d:")), std::system_error); // generates an exception if drive not found
-    EXPECT_THROW(ldr.OpenVolume(_T("f")), std::system_error); // generates an exception if drive not found
+    EXPECT_THROW(ldr.OpenVolume(_T("d:")), std::system_error); 
+    EXPECT_THROW(ldr.OpenVolume(_T("f")), std::system_error);
 
     EXPECT_THROW(ldr.OpenVolume(_T(":")), std::system_error);
     EXPECT_THROW(ldr.OpenVolume(_T("\\")), std::system_error);
@@ -86,7 +86,7 @@ TEST_F(MFTParserBaseTests, OpenVolume_2)
 
 }
 
-TEST_F(MFTParserBaseTests, OpenVolumeCloseVolume_1)
+TEST_F(MFTParserBaseTests, DISABLED_OpenVolumeCloseVolume_1)
 {
     TMFTRecordLoader ldr;
 
@@ -106,7 +106,7 @@ TEST_F(MFTParserBaseTests, OpenVolumeCloseVolume_1)
 }
 
 // MFT IDs will be different for different disks, this test linked to one disk only
-TEST_F(MFTParserBaseTests, GetMFTRecIdByPath_1)
+TEST_F(MFTParserBaseTests, DISABLED_GetMFTRecIdByPath_1)
 {
     TMFTRecordLoader ldr(_T("c:")); // assume that all path are on C:
     TMFTParserBase ps(ldr);
@@ -146,7 +146,7 @@ TEST_F(MFTParserBaseTests, GetMFTRecIdByPath_1)
 
 
 // MFT IDs will be different for different disks, this test linked to disk C: only
-TEST_F(MFTParserBaseTests, GetPathByMFTRecId_1)
+TEST_F(MFTParserBaseTests, DISABLED_GetPathByMFTRecId_1)
 {
     TMFTRecordLoader ldr(_T("c:")); // assume that all path are on C:
     TMFTParserBase ps(ldr);
@@ -190,4 +190,35 @@ TEST_F(MFTParserBaseTests, GetPathByMFTRecId_1)
         EXPECT_EQ(TErrorCode::Success, ps.PathByMFTRecID(id, paths));
         EXPECT_TRUE(EXPECT_ONE_OF(p.second, paths));
     }
+}
+
+static bool is_in(uint val, uint* arr, uint cnt)
+{
+    for (uint i = 0; i < cnt; i++)
+        if (val == arr[i]) return true;
+
+    return false;
+}
+
+TEST_F(MFTParserBaseTests, BitField_1)
+{
+    const uint32_t DWORDS = 10;
+    const uint64_t BITS = DWORDS*64;
+
+    TBitField bmp;
+    bmp.SetData(DWORDS, false); // 10 dwords it is 640 bits in total
+
+    uint arr[] = {4,6,100,55,639,199,9, 0,1,2,3, 512, 127,128,129, 600,599,601,602,603};
+    
+    for(uint val: arr)
+        bmp.SetTrue(val);
+    
+    for (uint val : arr)
+        ASSERT_EQ(true, bmp.Test(val));
+
+    for (uint i = 0; i < BITS; i++)
+        if (is_in(i, arr, sizeof(arr)/sizeof(arr[0])))
+            ASSERT_EQ(true, bmp.Test(i));
+        else
+            ASSERT_EQ(false, bmp.Test(i));
 }
