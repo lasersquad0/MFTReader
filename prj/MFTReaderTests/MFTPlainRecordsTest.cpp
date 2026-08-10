@@ -73,9 +73,6 @@ public:
         IRecordLoader::CloseVolume();
     }
 
-    //TODO think of logic described below. possibly need to change this logic.
-    // returns error NotFound error when out of bounds record id is requested
-    // also it sets eofbit bit in the FFile
     TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override
     {
         assert(!FFile.fail());
@@ -88,7 +85,7 @@ public:
 
         try
         {
-            FFile.seekg(FVolumeData.BytesPerMFTRec * (uint64_t)mftRecRef.sId.low/*, std::ios::beg*/);
+            FFile.seekg(FVolumeData.BytesPerMFTRec * (uint64_t)mftRecRef.sId.low);
             FFile.read(reinterpret_cast<char*>(mftRecData), FVolumeData.BytesPerMFTRec);
         }
         catch (const std::ios_base::failure& ex)
@@ -99,6 +96,8 @@ public:
 
             return TErrorCode::IOError;
         }
+
+        //TODO shall we add FixupUSA1 call here?
 
         return TErrorCode::Success;
 
@@ -112,8 +111,6 @@ public:
         else
             return false;
         */
-
-        //TODO shall we add FixupUSA1 call here?
     }
 
     TErrorCode ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf) override
