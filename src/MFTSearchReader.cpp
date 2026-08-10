@@ -22,122 +22,6 @@
 #include "Readers.h"
 
 
-/**
-* @brief Extracts list of files from node.DataRuns
-* @details Extracts list of files from parameter node.DataRuns. Goes through all LCNs in Data Runs and extracts list of files
-* Files are extracted in random order (in order of LCNs in Data Runs). Does not go to sub-nodes
-* node.Bitmap is used to select which LCNs in Data Runs are valid (need to be processed)
-* @param volData General info about NTFS volume. volData.BytesPerCluster used by the function
-* @param node Contains Data Runs to be processed, and Bitmap that tells us what LCNs are valid.
-* @param pred Predicate used for adding extracted files into external list. Called for each extracted file.
-*/
-/*
-bool TMFTReaderBase::ProcessAllocDataRuns(DIR_NODE& node, AddFileAttrPred pred)
-{
-    GET_LOGGER;
-    logger.Debug("---------- PROCESSING Alloc Attr Data Runs ---------");
-
-    int64_t lastBit = node.Bitmap.LastBit();
-
-    if (lastBit == -1)
-    {
-        logger.Debug("[ProcessAllocDataRuns] BITMAP attr is NULL or not present!");
-        logger.Debug("---------- END OF PROCESSING Alloc Attr Data Runs ---------");
-        return true;
-    }
-
-    logger.DebugFmt("BITMAP Size in 64bit words: {}, Value64: {:#x}", node.Bitmap.Count(), *(uint64_t*)node.Bitmap.GetData());
-
-    int64_t bitsCounter = 0;
-    uint8_t* dataBuf = nullptr;
-    uint64_t dataBufLen = 0; // dataBuf size in clusters
-    uint32_t currRun = 0;
-    while (currRun < node.DataRuns.Count())
-    {
-        if (bitsCounter > lastBit) // no more valid LCNs, break loop 
-            break;
-
-        DATA_RUN_ITEM& rli = node.DataRuns[currRun];
-        logger.DebugFmt("[ProcessAllocDataRuns] Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
-        
-        // check correctness of decoded LCNs
-        assert(rli.len < (uint64_t)FVolumeData.TotalClusters.QuadPart);
-        assert(rli.lcn < (uint64_t)FVolumeData.TotalClusters.QuadPart);
-        assert((rli.lcn < (uint64_t)FVolumeData.MftZoneStart.QuadPart) || (rli.lcn > (uint64_t)FVolumeData.MftZoneEnd.QuadPart));
-
-        //TODO MFT may be fragmented, it might be good idea to read list of MFT fragments in advance and check that rli.lcn does not inside any MFT fragment
-        //assert((rli.lcn < (uint64_t)volData.MftStartLcn.QuadPart) || (rli.lcn > (uint64_t)(volData.MftStartLcn.QuadPart + volData.MftValidDataLength.QuadPart / volData.BytesPerCluster)));
-        
-        CLST rlilen = valuemin((CLST)(lastBit + 1 - bitsCounter), rli.len);
-
-        if (rlilen > dataBufLen)
-        {
-            delete[] dataBuf;
-            dataBuf = DBG_NEW uint8_t[rlilen * FVolumeData.BytesPerCluster];
-            dataBufLen = rlilen;
-        }
-
-        assert(dataBuf);
-
-        if (!ReadClusters(rli.lcn, rlilen, dataBuf))
-            break;
-
-        if (!FixupUSA(dataBuf, rli, rlilen))
-        {
-            logger.Error("FixupUSA returned error.");
-            break;
-        }
-
-        INDEX_BUFFER* allocIndex = (INDEX_BUFFER*)dataBuf;
-        uint8_t* dataBufEnd = dataBuf + rlilen * FVolumeData.BytesPerCluster;
-
-        uint32_t cnt = 0;
-        while (true) // loop by LCNs in one data run
-        {
-            if (node.Bitmap.Test(bitsCounter)) // bypass this LCN if bitmap contain zero bit in that position
-            {
-                // read items only if cluster starts from correct signature INDX
-                // sometimes fully empty (filled with zero) clusters present in run list without INDX signature
-                if (ntfs_is_indx_recp(allocIndex->RecHeader.Signature))
-                {
-                    assert(rli.vcn + cnt == allocIndex->vcn);
-
-                    auto pihdr = &(allocIndex->ihdr);
-                    GetFileList(pihdr, pred);
-                }
-                else
-                {
-                    uint8_t* sign = allocIndex->RecHeader.Signature;
-                    logger.WarnFmt("Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", rli.lcn + cnt, sign[0], sign[1], sign[2], sign[3]);
-                }
-            }
-            else
-            {
-                logger.DebugFmt("Bitmap bit {}th is zero. LastBit: {}. Bypassing LCN cluster {}.", bitsCounter, lastBit, rli.lcn + cnt);
-                if (bitsCounter > lastBit) // no more valid LCNs 
-                    break;
-            }
-
-            assert(cnt < rlilen);
-
-            // go to the next LCN
-            allocIndex = (INDEX_BUFFER*)Add2Ptr(allocIndex, FVolumeData.BytesPerCluster);
-            cnt++; 
-            bitsCounter++;
-
-            if ((uint8_t*)allocIndex >= dataBufEnd) break;
-        }
-
-        currRun++;
-    }
-
-    delete[] dataBuf;
-
-    logger.Debug("---------- END OF PROCESSING Data Runs ---------");
-
-    return true;
-}*/
-
 
 /**
 * @brief Fills level with files/dirs read from MFT record
@@ -180,14 +64,17 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
     logger.Debug("---------- PARSING MFT RECORD ---------");
 
     bool IsBASERec = mftRec->ParentFileRec.Id == 0;
-
-    logger.DebugFmt("Signature: {}", std::string((char*)mftRec->RecHeader.Signature, 4));
-    logger.DebugFmt("MFT Rec ID: {}", MFT_REF::toHexString(mftRec->IndexMFTRec));
-    logger.DebugFmt("MFT Rec Num re-used: {}", mftRec->SeqNum);
-    logger.DebugFmt("MFT Parent Rec ID: {} {}", mftRec->ParentFileRec.toHexString(), IsBASERec ? " BASE" : "CHILD");
-    logger.DebugFmt("MFT Hard links Count: {}", mftRec->HardLinksCnt, !IsBASERec ? " (may be inaccurate for child records)" : "");
-    logger.DebugFmt("MFT Rec Size: {}", mftRec->FileRecSize);
-    logger.DebugFmt("MFT Alloc Rec Size: {}", mftRec->AllocFileRecSize);
+    
+    if (logger.ShouldLog(LogEngine::Levels::llDebug))
+    {
+        logger.DebugFmt("Signature: {}", std::string((char*)mftRec->RecHeader.Signature, 4));
+        logger.DebugFmt("MFT Rec ID: {}", MFT_REF::toHexString(mftRec->IndexMFTRec));
+        logger.DebugFmt("MFT Rec Num re-used: {}", mftRec->SeqNum);
+        logger.DebugFmt("MFT Parent Rec ID: {} {}", mftRec->ParentFileRec.toHexString(), IsBASERec ? " BASE" : "CHILD");
+        logger.DebugFmt("MFT Hard links Count: {}", mftRec->HardLinksCnt, !IsBASERec ? " (may be inaccurate for child records)" : "");
+        logger.DebugFmt("MFT Rec Size: {}", mftRec->FileRecSize);
+        logger.DebugFmt("MFT Alloc Rec Size: {}", mftRec->AllocFileRecSize);
+    }
 
     switch (mftRec->Flags)
     {
@@ -216,12 +103,15 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
     int attroOrderNum = 1;
     do  // reading all attributes in a loop
     {
-        logger.DebugFmt("********** #{} Attribute ({} {:#x}) **********", attroOrderNum++, AttrName(currAttr->AttrType), (uint32_t)currAttr->AttrType);
-        logger.Debug(currAttr->NonResidentFlag ? "Attr Type: NON-RESIDENT" : "Attr Type: RESIDENT");
-        logger.DebugFmt("Attr ID: {}", currAttr->AttrID);
-        logger.DebugFmt("Attr Size: {}", currAttr->AttrSize);
-        logger.DebugFmt("Attr Flags: {}", currAttr->Flags);
-    
+        if (logger.ShouldLog(LogEngine::Levels::llDebug))
+        {
+            logger.DebugFmt("********** #{} Attribute ({} {:#x}) **********", attroOrderNum++, AttrName(currAttr->AttrType), (uint32_t)currAttr->AttrType);
+            logger.Debug(currAttr->NonResidentFlag == ATTR_FLAG_NONRESIDENT ? "Attr Type: NON-RESIDENT" : "Attr Type: RESIDENT");
+            logger.DebugFmt("Attr ID: {}", currAttr->AttrID);
+            logger.DebugFmt("Attr Size: {}", currAttr->AttrSize);
+            logger.DebugFmt("Attr Flags: {}", currAttr->Flags);
+        }
+
         std::wstring nameOfAttrW;
         std::string nameOfAttrA = "<noname>";
         if (currAttr->AttrNameSize > 0) // if attr has name - show it
@@ -231,7 +121,7 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
             logger.DebugFmt("Attr Name: '{}'", nameOfAttrA);
         }
 
-        if (currAttr->NonResidentFlag == 0) // attribute is RESident
+        if (currAttr->NonResidentFlag == ATTR_FLAG_RESIDENT) // attribute is RESident
         {
             logger.DebugFmt("Attr Indexed: {}", currAttr->res.IndexedFlag);
 
@@ -253,11 +143,14 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
 
                 node.IndexBlockSize = indexR->IndexBlockSize; // need this value for further processing ALLOC Data Runs
 
-                logger.DebugFmt("IndexRoot Indexed Attr Type: {} {:#x}", AttrName(indexR->AttrType), (uint32_t)indexR->AttrType);
-                logger.DebugFmt("IndexRoot Collation Rule: {} ({:#x})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
-                logger.DebugFmt("IndexRoot Dir Type: {} ({:#x})", indexR->ihdr.Flags == 0 ? "SMALL DIR" : "BIG DIR", indexR->ihdr.Flags);
-                logger.DebugFmt("IndexRoot IndexBlockSize: {}", indexR->IndexBlockSize);
-                logger.DebugFmt("IndexRoot IndexBlockClst: {}", indexR->IndexBlockClst);
+                if (logger.ShouldLog(LogEngine::Levels::llDebug))
+                {
+                    logger.DebugFmt("IndexRoot Indexed Attr Type: {} {:#x}", AttrName(indexR->AttrType), (uint32_t)indexR->AttrType);
+                    logger.DebugFmt("IndexRoot Collation Rule: {} ({:#x})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
+                    logger.DebugFmt("IndexRoot Dir Type: {} ({:#x})", indexR->ihdr.Flags == 0 ? "SMALL DIR" : "BIG DIR", indexR->ihdr.Flags);
+                    logger.DebugFmt("IndexRoot IndexBlockSize: {}", indexR->IndexBlockSize);
+                    logger.DebugFmt("IndexRoot IndexBlockClst: {}", indexR->IndexBlockClst);
+                }
 
                 auto pihdr = &(indexR->ihdr);
                 logger.DebugFmt("IHDR Used Bytes: {}", pihdr->Used);
@@ -308,12 +201,12 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
                             assert(attrListItem->StartVCN == 0);
                         }
 
-                        if (visitedMFTRec.IndexOf(attrListItem->ref.sId.low) == -1) // make sure we parse each record only once
+                        if (visitedMFTRec.IndexOf(attrListItem->RecRef.sId.low) == -1) // make sure we parse each record only once
                         {
-                            if (TErrorCode::Success == FLoader.LoadMFTRecord(attrListItem->ref, mftRecBuf))
+                            if (TErrorCode::Success == FLoader.LoadMFTRecord(attrListItem->RecRef, mftRecBuf))
                             {
                                 if (TErrorCode::Success == ParseMFTRecord(mftRecBuf, node, parentIdx, level)) //TODO shall we break in case of an error in LoadMFTRecord or ParseMFTRecord 
-                                    visitedMFTRec.AddValue(attrListItem->ref.sId.low);
+                                    visitedMFTRec.AddValue(attrListItem->RecRef.sId.low);
                                 else
                                     logger.Error("ParseMFTRecord finished with error.");
                             }
@@ -375,23 +268,26 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
         }
         else // Attribute is NON-Resident
         {
-            logger.DebugFmt("Attr StartVCN: {}",     currAttr->nonres.StartVCN);
-            logger.DebugFmt("Attr LastVCN: {}",      currAttr->nonres.LastVCN);
-            logger.DebugFmt("Attr RealSize: {}",     currAttr->nonres.RealSize);
-            logger.DebugFmt("Attr StreamSize: {}",   currAttr->nonres.StreamSize);
-            logger.DebugFmt("Attr AllocatedSize: {}",currAttr->nonres.AllocatedSize);
-
-            if (currAttr->nonres.CompressionUnitSize > 0) // for compressed files
+            if (logger.ShouldLog(LogEngine::Levels::llDebug))
             {
-                logger.DebugFmt("Attr CompressionUnitSize: {}", currAttr->nonres.CompressionUnitSize);
-                logger.DebugFmt("Attr CompressedSize: {}", currAttr->nonres.CompressedSize);
-            }
+                logger.DebugFmt("Attr StartVCN: {}", currAttr->nonres.StartVCN);
+                logger.DebugFmt("Attr LastVCN: {}", currAttr->nonres.LastVCN);
+                logger.DebugFmt("Attr RealSize: {}", currAttr->nonres.RealSize);
+                logger.DebugFmt("Attr StreamSize: {}", currAttr->nonres.StreamSize);
+                logger.DebugFmt("Attr AllocatedSize: {}", currAttr->nonres.AllocatedSize);
 
-            // this is rare case when file contains non-initialised portion of data
-            // in this case RealSize contains total file size while StreamSize contains size of initialised data (StreamSize<RealSize) 
-            if (currAttr->nonres.RealSize != currAttr->nonres.StreamSize)
-                logger.DebugFmt("'currAttr.RealSize != currAttr.StreamSize'. ReadlSize: {}, StreamSize: {}, MFT Rec ID: {}",
-                    currAttr->nonres.RealSize, currAttr->nonres.StreamSize, MFT_REF::toHexString(mftRec->IndexMFTRec));
+                if (currAttr->nonres.CompressionUnitSize > 0) // for compressed files
+                {
+                    logger.DebugFmt("Attr CompressionUnitSize: {}", currAttr->nonres.CompressionUnitSize);
+                    logger.DebugFmt("Attr CompressedSize: {}", currAttr->nonres.CompressedSize);
+                }
+
+                // this is rare case when file contains non-initialised portion of data
+                // in this case RealSize contains total file size while StreamSize contains size of initialised data (StreamSize<RealSize) 
+                if (currAttr->nonres.RealSize != currAttr->nonres.StreamSize)
+                    logger.DebugFmt("Rare case has been met when file contains non-initialised portion of data (RealSize != StreamSize). ReadlSize: {}, StreamSize: {}, MFT Rec ID: {}",
+                        currAttr->nonres.RealSize, currAttr->nonres.StreamSize, MFT_REF::toHexString(mftRec->IndexMFTRec));
+            }
 
             if (currAttr->nonres.RealSize < currAttr->nonres.StreamSize)
                 logger.WarnFmt("'currAttr.RealSize < currAttr.StreamSize'. ReadlSize: {}, StreamSize: {}, MFT Rec ID: {}",
@@ -490,8 +386,8 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
                             // StartVCN is a cluster where attribute portion value is located
                             if (attrListItem->StartVCN != 0)
                             {
-                                logger.WarnFmt("One attribute does not fit into one MFT record. StartVCN: {}, AttrType: {}, ref: {}, MFT Rec ID: {}",
-                                    attrListItem->StartVCN, AttrName(attrListItem->AttrType), attrListItem->ref.toHexString(), MFT_REF::toHexString(mftRec->IndexMFTRec));
+                                logger.WarnFmt("One attribute does not fit into one MFT record. StartVCN: {}, AttrType: {}, RecRef: {}, MFT Rec ID: {}",
+                                    attrListItem->StartVCN, AttrName(attrListItem->AttrType), attrListItem->RecRef.toHexString(), MFT_REF::toHexString(mftRec->IndexMFTRec));
                             }
                         }
                         else
@@ -502,9 +398,9 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
                             assert(attrListItem->StartVCN == 0);
                         }
 
-                        if (visitedMFTRec.IndexOf(attrListItem->ref.sId.low) == -1) // make sure we parse each record only once
+                        if (visitedMFTRec.IndexOf(attrListItem->RecRef.sId.low) == -1) // make sure we parse each record only once
                         {
-                            auto mftRecBuf = FLoader.LoadMFTRecordCache(attrListItem->ref);
+                            auto mftRecBuf = FLoader.LoadMFTRecordCache(attrListItem->RecRef);
                             assert(mftRecBuf);
                             if (mftRecBuf)
                             {
@@ -518,7 +414,7 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
                                 logger.Error("LoadMFTRecordCache returned nullptr.");
                             }
 
-                            visitedMFTRec.AddValue(attrListItem->ref.sId.low);
+                            visitedMFTRec.AddValue(attrListItem->RecRef.sId.low);
                         }
                     }
 
@@ -816,5 +712,101 @@ void TMFTSearchReader::ReadDirsV1()
      
 }
 
+
+
+// reads list of files in already sorted order
+TErrorCode TMFTSearchReaderV2::ReadDirectoryV2(MFT_REF parentMftRecID, uint32_t dirLevel)
+{
+    if (dirLevel > 30) throw std::runtime_error("dirLevel > 30 !!!!!!!");
+
+    GET_LOGGER;
+
+    uint8_t* mftRecBuf = (uint8_t*)alloca(getVolData().BytesPerMFTRec);
+    MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
+
+    auto res = FLoader.LoadMFTRecord(parentMftRecID, mftRecBuf);
+    if (res != TErrorCode::Success)
+    {
+        logger.Error("LoadMFTRecord finished with error.");
+        return res;
+    }
+
+    DIR_NODE node;
+    auto expctValue = GetFileListFromMFTRec(mftRec, node); // writes error to log file in case of error
+    if (!expctValue)
+        return expctValue.error();
+
+    for (auto& item : node.FileList)
+    {
+        if (!item.NtfsInternal()) // do not add hidden metafiles into file list
+        {
+            if (dirLevel == 0) std::wcout << item.ciName.c_str() << std::endl;
+            //if (dirLevel == 1) std::wcout << "      " << item.ciName.c_str() << std::endl;
+
+            FDirList.AddValue(item);
+
+            if (item.IsDir())
+            {
+                if (!item.IsReparse())
+                {
+                    if (TErrorCode::Success != ReadDirectoryV2(item.MFTRef, dirLevel + 1))
+                        logger.ErrorFmt("ReadDirectoryV2 finished with error for MFT rec: {}", item.MFTRef.sId.low);
+                }
+            }
+        }
+    }
+
+    return TErrorCode::Success;
+}
+
+/*static bool compare(const FILE_NAME& a, const FILE_NAME& b)
+{
+    if (IsDir(a.Attr) && !IsDir(b.Attr)) return true; // folders on top during sorting
+    if (!IsDir(a.Attr) && IsDir(b.Attr)) return false;
+    return a.ciName < b.ciName;
+}*/
+
+void TMFTSearchReaderV2::ReadDirsV2()
+{
+    //TFileList dirList;
+    FDirList.Clear();
+    FDirList.SetCapacity(1'000'000);
+
+    MFT_REF startId{ 0 };
+    startId.Id = MFT_ROOT_REC_ID;
+    auto res = ReadDirectoryV2(startId, 0);
+    UNREFERENCED_PARAMETER(res);
+    assert(res == TErrorCode::Success);
+
+    auto dirCount = std::count_if(FDirList.begin(), FDirList.end(), [](FILE_NAME& a) { return a.IsDir(); });
+
+    std::cout << toStringSepA(FDirList.Count()) + " - total" << std::endl;
+    std::cout << toStringSepA(FDirList.Count() - dirCount) + " - files" << std::endl; // only files 
+    std::cout << toStringSepA(dirCount) + " - dirs" << std::endl; // only dirs 
+
+    /* std::string filename = "ListMFTFile_sortedV2.log";
+     LogEngine::TFileStream ff(filename);
+
+     string_t endl;
+     BUILD_ENDL(endl);
+
+     ff << toStringSepW(dirList.Count()) + L" - total" << endl;
+     ff << toStringSepW(dirList.Count() - dirCount) + L" - files" << endl; // only files
+     ff << toStringSepW(dirCount) + L" - dirs" << endl; // only dirs
+
+     std::cout << "Sorting... " << std::endl;
+     std::sort(dirList.begin(), dirList.end());
+
+     std::cout << "Saving list of files to " << filename << std::endl;
+
+     for (auto& item : dirList)
+     {
+         ff << item.ciName;
+         if (item.IsDir()) ff << L'\\';
+         ff << endl;
+     }*/
+
+    FDirList.ClearMem();
+}
 
 
