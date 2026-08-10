@@ -482,7 +482,7 @@ TErrorCode TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* par
     if (parentItem == nullptr)
         MFTRec.Id = MFT_ROOT_REC_ID;
     else
-        MFTRec = parentItem->FMFTRecID;
+        MFTRec = parentItem->FMFTRecRef;
 
     auto res = FLoader.LoadMFTRecord(MFTRec, mftRecBuf);
     if (res != TErrorCode::Success)
@@ -616,7 +616,8 @@ TErrorCode TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* par
     {
         assert(item);
         
-        if (!item->NtfsInternal())
+        //if (!item->NtfsInternal())
+        if (!FLoader.IsMetaFile(item->FMFTRecRef.sId.low))
         {
             if (item->IsDir())
             {
@@ -624,7 +625,7 @@ TErrorCode TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* par
                 {
                     uint64_t childDirSize{ 0 };
                     if (TErrorCode::Success != ReadDirectoryV1(i, item, childDirSize, callback))
-                        logger.ErrorFmt("ReadDirectoryV1 finished with error for MFT Rec ID: {}", item->FMFTRecID.toHexString());
+                        logger.ErrorFmt("ReadDirectoryV1 finished with error for MFT Rec ID: {}", item->FMFTRecRef.toHexString());
                     dirSize += childDirSize;
                 }
             }
@@ -730,14 +731,15 @@ TErrorCode TMFTSearchReaderV2::ReadDirectoryV2(MFT_REF parentMftRecID, uint32_t 
     }
 
     DIR_NODE node;
-    // GetFileListFromMFTRec uses FillAttrCollection() to read file attributes
+    // GetFileListFromMFTRec uses FillAttrCollection to read file attributes
     res = GetFileListFromMFTRec(mftRec, node); // writes error to log file in case of error
     if (res != TErrorCode::Success)
         return res;
 
     for (auto& item : node.FileList)
     {
-        if (!item.NtfsInternal()) // do not add hidden metafiles into file list
+        //if (!item.NtfsInternal()) // do not add hidden metafiles into file list
+        if (!FLoader.IsMetaFile(item.MFTRef.sId.low)) 
         {
             if (dirLevel == 0) std::wcout << item.ciName.c_str() << std::endl;
             //if (dirLevel == 1) std::wcout << "      " << item.ciName.c_str() << std::endl;
