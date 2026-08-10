@@ -171,7 +171,7 @@ public:
 	std::wstring GetPathByAttrFileName(ATTR_FILE_NAME* attrFileName);
 	TErrorCode GetFileNameAttrPointers(MFT_FILE_RECORD* mftRec, THArray<ATTR_FILE_NAME*>& attrFileNames);
 	
-	std::expected<uint32_t, TErrorCode> GetFileListFromMFTRec(MFT_FILE_RECORD* mftRec, DIR_NODE& node);
+	TErrorCode GetFileListFromMFTRec(MFT_FILE_RECORD* mftRec, DIR_NODE& node);
 	TErrorCode PathByMFTRecID(MFT_REF mftRecRef, THArray<std::wstring>& paths);
 	std::expected<MFTRecIndex, TErrorCode> MFTRecIdByPath(const ci_string& path); // ci_string is for case INsensitive search here
 };
@@ -204,7 +204,7 @@ public:
 	TFileCache FFileList;
 
 	TMFTSearchReader(IRecordLoader& loader) : TMFTParserBase(loader) { }
-	TErrorCode ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, uint32_t parentIdx, TFileCache::TLevel* level);
+	TErrorCode ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, AddFileAttrPred addToFileListPred /*uint32_t parentIdx, TFileCache::TLevel* level*/);
 
 	TErrorCode ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentItem, uint64_t& dirSize, ProgressCallbackPtr callback);
 	void ReadDirsV1();
