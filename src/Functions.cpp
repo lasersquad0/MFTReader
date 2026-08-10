@@ -3,14 +3,13 @@
 #define NOMINMAX
 
 #include "Debug.h"
-//#include <iostream>
+#include <windows.h>
+#include <shlwapi.h>
 #include <string>
 
 #include "strutils/include/string_utils.h"
-//#include "strutils/include/ci_string.h"
 #include "logengine2/LogEngine.h"
 #include "Functions.h"
-#include "Utils.h"
 
 //TODO think of better solution of FUNC logger
 LogEngine::Logger& GetLoggerFunc()
@@ -19,6 +18,23 @@ LogEngine::Logger& GetLoggerFunc()
     //logger.SetAsyncMode(true);
     logger.SetLogLevel(LogEngine::Levels::llInfo);
     return logger;
+}
+
+// removes all leading and trailing \n\t\r and space symbols from string
+// works with std::wstring ONLY because std::string version already present inLogEngine
+static std::wstring TrimSPCRLF(std::wstring str) // str passed by value here intentionally
+{
+    // remove any leading and traling spaces, tabs and \n, \r.
+    size_t strBegin = str.find_first_not_of(L" \t\r\n");
+    if (strBegin == std::string::npos) return L"";
+
+    size_t strEnd = str.find_last_not_of(L" \t\r\n");
+    assert(strEnd != std::string::npos);
+
+    str.erase(strEnd + 1 /*, S.size() - strEnd*/); // erase till end of string
+    str.erase(0, strBegin);
+
+    return str;
 }
 
 // Supports both 10based mftRecID and hex format. 
@@ -64,4 +80,23 @@ std::string FormatFileAttributes(uint32_t a)
          FILE_ATTRIBUTE_RECALL_ON_OPEN
          FILE_ATTRIBUTE_STRICTLY_SEQUENTIAL*/
     return s;
+}
+
+#define HIDWORD(_) static_cast<uint32_t>(((uint64_t)(_)) >> 32)
+#define LODWORD(_) static_cast<uint32_t>(_)
+
+string_t FileDateToString(const string_t& str, uint64_t dateTime)
+{
+    if (dateTime == 0)
+        return std::format(_T("{}---"), str);
+
+    const uint BUF_SZ = 100;
+    string_t::value_type buf[BUF_SZ];
+    DWORD dateTimeFlags = /*FDTF_DEFAULT */ FDTF_SHORTDATE | FDTF_LONGTIME | FDTF_NOAUTOREADINGORDER;
+    FILETIME ft{ 0 };
+
+    ft.dwLowDateTime = LODWORD(dateTime);
+    ft.dwHighDateTime = HIDWORD(dateTime);
+    SHFormatDateTime(&ft, &dateTimeFlags, buf, BUF_SZ);
+    return std::format(_T("{}{}"), str, convert_string<string_t::value_type>(buf));
 }
