@@ -169,6 +169,7 @@ public:
         {
             // looks like this file contains MBR and list of partitions
             // go through partitions unless find NTFS partition
+            
             //TODO extended partitions are not supported yet, need to add support.
 
             MBR_PARTITION_ENTRY mbr{ 0 };
