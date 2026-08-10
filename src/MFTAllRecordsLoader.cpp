@@ -1,8 +1,13 @@
 #include "Readers.h"
 
-void TMFTAllRecordsLoader::OpenVolume(const string_t& vol)
+void TMFTAllRecordsLoader::Open(const string_t& vol)
 {
-    TMFTRecordLoader::OpenVolume(vol);
+    if (IsOpened()) Close();
+
+    TMFTRecordLoader::Open(vol);
+
+    ReadAllMftRecords();
+    SetOpened(true);
 
    /* MFT_REF mftRecRef{0};
 
@@ -34,7 +39,6 @@ void TMFTAllRecordsLoader::OpenVolume(const string_t& vol)
     */
 
 
-    ReadAllMftRecords();
 
    /* for (uint32_t i = 1; i < FBitmap.BitsCount(); i++)
     {
@@ -48,6 +52,8 @@ void TMFTAllRecordsLoader::OpenVolume(const string_t& vol)
 
 TErrorCode TMFTAllRecordsLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
 {
+    if(!IsOpened()) return TErrorCode::IOError;
+
     if (FBitmap.Test(mftRecRef.sId.low))
     {
         //TODO mft rec copying happens here, think how to avoid that
