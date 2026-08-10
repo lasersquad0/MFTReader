@@ -12,7 +12,7 @@
 #include "NTFS.h"
 
 // structure fields alignment set to 1 byte.
-// by default alignment is 16 bytes but here we need 1
+// by default alignment is 16 bytes, but here we need 1
 #pragma pack(push, 1)
 
 struct CACHE_ITEM
@@ -117,7 +117,7 @@ public:
 	uint32_t AddValue(const uint32_t parent, const MFT_REF MFTRecID, const ATTR_FILE_NAME* data)
 	{
 		uint32_t itemSize = CalcItemSize(data); // this is total item size: sizeof(CACHE_ITEM) + filename size
-		assert(itemSize < MAX_FILE_NAME * sizeof(wchar_t) + sizeof(CACHE_ITEM) + 1); // 260 max file name length. 1 extra byte just in case
+		assert(itemSize < MAX_FILE_NAME * sizeof(wchar_t) + sizeof(CACHE_ITEM) + 1); // 1 extra byte just in case
 
 		EnsureCapacity(itemSize);
 
