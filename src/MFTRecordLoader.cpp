@@ -18,14 +18,113 @@ string_t IRecordLoader::NormalizeVolume(const string_t& vol)
     }
 }
 
-void TMFTRecordLoader::OpenVolume(const string_t& vol)
+// FixupUSA1 makes USA fixes in buffer refered by record param.
+// This function is going to be used for processing ALLOC attr Index Blocks or MFT records (only when they read directly from disk, not via WINAPI). 
+// When MFT records loadded via WINAPI call they already have USA fixed up.
+// BytesPerBlock value is usually defined in ATTR_ROOT attr (field IndexBlockSize) and it may differ from filesystem's ClusterSize.
+// For MFT records BytesPerBlock is standard MFT record size (BytesPerMFTRec)
+// record buffer should be at least BytesPerBlock size
+TErrorCode  IRecordLoader::FixupUSA1(NTFS_RECORD_HEADER* record, uint32_t BytesPerBlock, uint32_t BytesPerSector)
 {
+    UNREFERENCED_PARAMETER(BytesPerBlock);
+
+    uint32_t wordsPerSector = BytesPerSector >> 1;
+
+    uint16_t sectorsCnt = record->FixupCnt - 1;
+    assert(sectorsCnt == BytesPerBlock / BytesPerSector);
+
+    uint16_t* fixupArr = (uint16_t*)(Add2Ptr(record, record->FixupOffset));
+    uint16_t checkValue = *fixupArr;
+    fixupArr++; // now it refers to first array item
+
+    uint16_t* sectorEnd = (uint16_t*)(record)+wordsPerSector - 1;
+
+    uint32_t s = 0;
+    while (s < sectorsCnt)
+    {
+        assert(checkValue == *sectorEnd);
+        if (checkValue != *sectorEnd)
+        {
+            GET_LOGGER;
+            logger.Error("[FixupUSA1] Error: looks like data is corrupted in the sector");
+            return TErrorCode::CorruptedData; // looks like data is corrupted in this sector
+        }
+
+        *sectorEnd = fixupArr[s]; // restore data
+
+        sectorEnd += wordsPerSector;
+        s++;
+    }
+
+    return TErrorCode::Success;
+}
+
+std::expected<uint32_t, TErrorCode> IRecordLoader::ReadMetaFilesCount(TMFTParserBase& parser)
+{
+    if (!IsOpened()) return std::unexpected(TErrorCode::IOError);
+    assert(FRecordsCount > 0);
+
+    uint8_t* mftRecBuf = (uint8_t*)alloca(DEFAULT_BYTES_PER_MFT_REC);
+    MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
+    MFT_REF mftRef{ 0 };
+    TErrorCode res;
+
+    while (mftRef.sId.low < FRecordsCount)
+    {
+        res = LoadMFTRecord(mftRef, mftRecBuf); // function checks signature (should be 'FILE'), returns NotInUse error when signature <>'FILE'
+        if ((res == TErrorCode::MFTRecordNotInUse) || (mftRec->Flags & MFT_FLAG_IN_USE) == 0)
+        {
+            // MFT record does not contain 'FILE' signature (consider it as NotInUse)
+            // OR
+            // MFT record contains 'FILE' signature, but field Flags tell us that this record is NOT In Use.
+
+            // nothing to do
+        }
+        else if (res != TErrorCode::Success)
+        {
+            return std::unexpected(res);
+        }
+        else
+        {
+            TAttrCollection coll;
+            res = parser.FillAttrCollection(mftRec, MakeAttrBitmask(ATTR_FILENAME), coll); // MFTRecordNotInUse is valid return value
+            assert(res == TErrorCode::Success);
+
+            auto& afn = coll.Get(ATTR_FILENAME);
+
+            ATTR_FILE_NAME* fn{ nullptr };
+            // sometimes there are 'system' MFT records without ATTR_FILENAME attribute (ids #12-#15)
+            if (afn.Count() > 0)
+            {
+                // some disk images contain system files like $TxfLogContainer0000000000000000001 which have two names (DOS and WIN), both names start from '$'
+                //ASSERT_EQ(1ul, afn.Count());
+                auto attr = afn[0];
+                assert(nullptr != attr);
+                fn = (ATTR_FILE_NAME*)Add2Ptr(attr, attr->res.DataOffset);
+            }
+
+            if ((fn != nullptr) && (fn->FileNameLen > 0) && (GetFName(fn)[0] != L'$'))
+                if ((fn->FileNameLen > 1) || GetFName(fn)[0] != L'.')
+                    break;
+        }
+
+        mftRef.sId.low++;
+    }
+
+    return mftRef.sId.low;
+}
+
+void TMFTRecordLoader::Open(const string_t& vol)
+{
+    if (IsOpened()) Close();
+
     string_t vol2 = NormalizeVolume(vol);
 
     GET_LOGGER;
 
     // closing previously opened volume
-    if (FVolumeData.hVolume != INVALID_HANDLE_VALUE) CloseVolume();
+    if (IsOpened()) Close();
+    assert(FVolumeData.hVolume == INVALID_HANDLE_VALUE);
 
     logger.DebugFmt("Opening volume: {}", wtos(vol2));
 
@@ -55,13 +154,24 @@ void TMFTRecordLoader::OpenVolume(const string_t& vol)
 
     FVolumeData.hVolume = hVolume;
     FVolumeData.Name = convert_string<wchar_t>(vol2.substr(4)); // remove \\.\ from \\.\C:
+
+    FRecordsCount = FVolumeData.MftValidDataLength.QuadPart / FVolumeData.BytesPerMFTRec;
+
+    SetOpened(true); // must be before ReadMetaFilesCount() call
+
+    TMFTParserBase parser(*this);
+    auto expct =  ReadMetaFilesCount(parser);
+    assert(expct);
+    FMetaFilesCount = expct.value();
+
 }
 
 
 // mftRec should be a buffer with volData.BytesPerMFTRec size
 TErrorCode TMFTRecordLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
 {
-    assert(GetVolumeData().hVolume != INVALID_HANDLE_VALUE);
+    assert(IsOpened());
+    assert(FVolumeData.hVolume != INVALID_HANDLE_VALUE);
 
     NTFS_FILE_RECORD_INPUT_BUFFER nfrib{ 0 };
     nfrib.FileReferenceNumber.LowPart = mftRecRef.sId.low;
@@ -128,6 +238,8 @@ TErrorCode TMFTRecordLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecDat
 **/
 TErrorCode TMFTRecordLoader::ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf)
 {
+    assert(IsOpened());
+
     LARGE_INTEGER offset{ 0 };
     DWORD bytesToRead, bytesRead;
 
