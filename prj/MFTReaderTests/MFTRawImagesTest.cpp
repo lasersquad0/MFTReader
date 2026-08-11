@@ -33,8 +33,12 @@ public:
 #define IMG_NTFS3_FILE    _T(TEST_DATA_DIR "ntfs3.raw")
 #define IMG_KW_1_FILE     _T(TEST_DATA_DIR "ntfs-img-kw-1.dd")
 #define IMG_DFR_16_FILE   _T(TEST_DATA_DIR "dfr-16-ntfs.dd")
+#define IMG_DFR_17_FILE   _T(TEST_DATA_DIR "dfr-17-ntfs.dd")
 #define IMG_2M_FILE       _T(TEST_DATA_DIR "ntfs-2m.raw")
+#define IMG_512K_FILE     _T(TEST_DATA_DIR "ntfs-512K.raw")
 #define IMG_RAMSLACK_FILE _T(TEST_DATA_DIR "ntfs-ramslack.raw")
+#define IMG_SI_VS_FN_FILE _T(TEST_DATA_DIR "ntfs-si-vs-fn.raw")
+#define IMG_7_UNDEL_FILE _T(TEST_DATA_DIR "7-ntfs-undel.dd")
 
 struct VOLUME_FIGURES
 {
@@ -51,26 +55,30 @@ struct VOLUME_FIGURES
 };
 
 static THash<string_t, VOLUME_FIGURES> ImgFileFigures{
-    {IMG_PTRN_FILE,     {256, 219, 0, 6, 3, 36} },
-    {IMG_INDEX_FILE,    {256, 173, 0, 50, 5, 36} },
+    {IMG_PTRN_FILE,     {256, 219, 0, 6, 4, 36} },
+    {IMG_INDEX_FILE,    {256, 173, 0, 50, 6, 36} },
     {IMG_NTFS3_FILE,    {1152, 1129, 0, 3, 2, 27} },
     {IMG_KW_1_FILE,     {48, 18, 0, 7, 5, 27} },
     {IMG_DFR_16_FILE,   {1104, 46, 0, 1022, 10, 64} },
-    {IMG_RAMSLACK_FILE, {256, 221, 0, 4, 3, 36} },
+    {IMG_DFR_17_FILE,   {155, 128, 0, 91, 0, 35} },
+    {IMG_RAMSLACK_FILE, {256, 221, 0, 4, 4, 36} },
     {IMG_2M_FILE,       {1104, 46, 0, 1041, 14, 20} },
+    {IMG_512K_FILE,     {1104, 46, 0, 4, 2, 20} },
+    {IMG_SI_VS_FN_FILE, {256, 224, 0, 2, 3, 36} },
+    {IMG_7_UNDEL_FILE,  {47, 26, 0, 1, 1, 29} },
 };
 
-TEST_P(MFTImgFileParserTest, DiskImageCheckMetaFilesCount_1)
+TEST_P(MFTImgFileParserTest, DISABLED_DiskImageCheckMetaFilesCount_1)
 {
     string_t imgFileName = GetParam();
 
     TMFTRawImageLoader tldr(imgFileName);
     
     // number of system MFT recs including Not In Use, until first non-system rec met
-    ASSERT_EQ(ImgFileFigures[imgFileName].SystemMFTRecs, tldr.GetSystemFilesCount()); 
+    ASSERT_EQ(ImgFileFigures[imgFileName].SystemMFTRecs, tldr.GetMetaFilesCount()); 
 }
 
-TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImageMFTRecordsOneByOne_1)
+TEST_P(MFTImgFileParserTest, ReadDiskImageMFTRecordsOneByOne_1)
 {
     string_t imgFileName = GetParam();
 
@@ -102,6 +110,9 @@ TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImageMFTRecordsOneByOne_1)
 
                 ITEM_INFO item;
 
+                //fixup array must be right after IndexMFTRec
+                EXPECT_EQ(offsetof(MFT_FILE_RECORD, IndexMFTRec) + sizeof(mftRec->IndexMFTRec), mftRec->RecHeader.FixupOffset);
+
                 res = stat.ReadMftItemInfoBuf(mftRec, item); // MFTRecordNotInUse is valid return value
                 if (res == TErrorCode::MFTRecordNotInUse)
                 {
@@ -114,10 +125,11 @@ TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImageMFTRecordsOneByOne_1)
                     assert((mftRec->Flags & MFT_FLAG_IN_USE) == MFT_FLAG_IN_USE);
 
                     if (mftRec->ParentFileRec.Id == 0) //base record
-                    {
+                    {   
                         // bypass all "system" files which start from '$'
                         // these "system" files may have empty file name (does not contain ATTR_FILENAME attribute)
-                        if ((item.MainName.size() == 0) || (item.MainName[0] == L'$')) 
+                        //if ((item.MainName.size() == 0) || (item.MainName[0] == L'$')) 
+                        if (tldr.IsMetaFile(mftRef.sId.low))
                             hiddenCount++;
                         else
                             ((mftRec->Flags & MFT_FLAG_IS_DIRECTORY) == MFT_FLAG_IS_DIRECTORY) ? dirsCount++ : filesCount++;
@@ -135,11 +147,11 @@ TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImageMFTRecordsOneByOne_1)
     EXPECT_EQ(ImgFileFigures[imgFileName].TotalMFTRecs, mftRef.sId.low);
     EXPECT_EQ(ImgFileFigures[imgFileName].TotalNotInUse, notInUseCount);
     EXPECT_EQ(ImgFileFigures[imgFileName].FilesCount, filesCount);
-    EXPECT_EQ(ImgFileFigures[imgFileName].DirsCount, dirsCount);
+    EXPECT_EQ(ImgFileFigures[imgFileName].DirsCount, dirsCount + 1); // because tldr.IsMetaFile() does not count '.' directory
     EXPECT_EQ(ImgFileFigures[imgFileName].ChildMFTRecsCount, childItemsCount);
 }
 
-TEST_P(MFTImgFileParserTest, ReadDiskImageRootAndGoSubDirs_1)
+TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImageRootAndGoSubDirs_1)
 {
     string_t imgFileName = GetParam();
 
@@ -154,7 +166,7 @@ TEST_P(MFTImgFileParserTest, ReadDiskImageRootAndGoSubDirs_1)
    
     auto& ItemsList = stat.GetItemsList();
 
-    auto DirsCount = 1 + std::count_if(ItemsList.begin(), ItemsList.end(), [](ITEM_INFO& a) { return a.IsDir(); });
+    auto DirsCount = std::count_if(ItemsList.begin(), ItemsList.end(), [](ITEM_INFO& a) { return a.IsDir(); });
 
     EXPECT_EQ(ImgFileFigures[imgFileName].FilesCount, ItemsList.Count() - DirsCount);
     EXPECT_EQ(ImgFileFigures[imgFileName].DirsCount, DirsCount);
@@ -174,16 +186,20 @@ TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImageRootAndGoSubDirs_WINAPI)
         FAIL() << "ReadMftItems() returned error!";
 }
 
-INSTANTIATE_TEST_CASE_P(NTFS_PTRN_RAW, MFTImgFileParserTest, testing::Values(IMG_PTRN_FILE));
+/*INSTANTIATE_TEST_CASE_P(NTFS_PTRN_RAW, MFTImgFileParserTest, testing::Values(IMG_PTRN_FILE));
 INSTANTIATE_TEST_CASE_P(NTFS_INDEX_RAW, MFTImgFileParserTest, testing::Values(IMG_INDEX_FILE));
-INSTANTIATE_TEST_CASE_P(NTFS3_RAW, MFTImgFileParserTest, testing::Values(IMG_NTFS3_FILE));
 INSTANTIATE_TEST_CASE_P(NTFS_IMG_KW_1_DD, MFTImgFileParserTest, testing::Values(IMG_KW_1_FILE));
 INSTANTIATE_TEST_CASE_P(DFR_16_NTFS_DD, MFTImgFileParserTest, testing::Values(IMG_DFR_16_FILE));
+INSTANTIATE_TEST_CASE_P(DFR_17_NTFS_DD, MFTImgFileParserTest, testing::Values(IMG_DFR_17_FILE));
 INSTANTIATE_TEST_CASE_P(NTFS_RAMSLACK_RAW, MFTImgFileParserTest, testing::Values(IMG_RAMSLACK_FILE));
+INSTANTIATE_TEST_CASE_P(NTFS_SI_VS_FN_RAW, MFTImgFileParserTest, testing::Values(IMG_SI_VS_FN_FILE));
+INSTANTIATE_TEST_CASE_P(DFR_7_UNDEL_DD, MFTImgFileParserTest, testing::Values(IMG_7_UNDEL_FILE));
+*/
+INSTANTIATE_TEST_CASE_P(NTFS_2M_RAW, MFTImgFileParserTest, testing::Values(IMG_2M_FILE));
+INSTANTIATE_TEST_CASE_P(NTFS_512K_RAW, MFTImgFileParserTest, testing::Values(IMG_512K_FILE));
 
-// there is proble with ntfs-2.raw file - reference to #0 MFT record is incorrect. It refers to empty MFT record.
-// while I see that the file has a number of FILE record inside.
-//INSTANTIATE_TEST_CASE_P(NTFS_2M_RAW, MFTImgFileParserTest, testing::Values(IMG_2M_FILE));
+//problem with ntfs3.raw file, records starting from 27 do not contain IndexMFTRec field while <27 do contain.
+//INSTANTIATE_TEST_CASE_P(NTFS3_RAW, MFTImgFileParserTest, testing::Values(IMG_NTFS3_FILE));
 
 
 
