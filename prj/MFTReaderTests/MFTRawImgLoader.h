@@ -109,9 +109,6 @@ public:
         DWORD bytesRead = 0;
         NTFS_BOOT_SECTOR partNTFS{ 0 };
 
-        //if (SetFilePointer(FHFile, 0, 0, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
-        //    FAIL() << std::format(L"Error setting file pointer for file '{}', Error code: {}", imgFileName, GetLastError());
-
         if (!(ReadFile(FHFile, &partNTFS, sizeof(partNTFS), &bytesRead, nullptr) && (bytesRead == sizeof(partNTFS))))
             FAIL() << std::format(_T("Error reading file '{}', Error code: {}"), imgFileName, GetLastError());
 
@@ -125,12 +122,12 @@ public:
             //TODO extended partitions are not supported yet, need to add support.
 
             MBR_PARTITION_ENTRY mbr{ 0 };
-            DWORD off = 0x1BE; // fixed offset to first partition entry
+            DWORD mbrOff = 0x1BE; // fixed offset to first partition entry
 
             // look at list of partitions and find NTFS partition. 4 is max number of standard partitions.
             for (size_t i = 0; i < 4; i++)
             {
-                if (SetFilePointer(FHFile, off, 0, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+                if (SetFilePointer(FHFile, mbrOff, 0, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
                     FAIL() << std::format(_T("Error setting file pointer for file '{}', Error code: {}"), imgFileName, GetLastError());
 
                 bytesRead = 0;
@@ -144,21 +141,28 @@ public:
                 if (!(ReadFile(FHFile, &partNTFS, sizeof(partNTFS), &bytesRead, nullptr) && (bytesRead == sizeof(partNTFS))))
                     FAIL() << std::format(_T("Error reading file '{}', Error code: {}"), imgFileName, GetLastError());
 
+                ASSERT_EQ(DEFAULT_SECTOR_SIZE, partNTFS.BytesPerSector);
+                ASSERT_EQ(mbr.SectorCount, partNTFS.TotalSectors + 1);
+
                 if (memcmp(partNTFS.OemId, NTFS_LABEL, 8) == 0)
                 {
+                    EXPECT_EQ(0x07, mbr.Type); // additional check for NTFS volume type
                     FPartitionOffset = mbr.FirstLBA * (uint64_t)DEFAULT_SECTOR_SIZE;
                     break;
                 }
 
-                off += sizeof(NTFS_BOOT_SECTOR);
+                mbrOff += sizeof(NTFS_BOOT_SECTOR);
             }
 
             ASSERT_NE(0, FPartitionOffset); // check that we've found NTFS partition
         }
         
+       // EXPECT_EQ(0, partNTFS.TotalSectors % partNTFS.SectorsPerCluster);
+        uint16_t RealSectorsPerCluster = (((signed char)partNTFS.SectorsPerCluster) >= 0)? partNTFS.SectorsPerCluster: 1u << (256 - partNTFS.SectorsPerCluster);
         FVolumeData.BytesPerSector = partNTFS.BytesPerSector;
-        FVolumeData.TotalClusters.QuadPart = partNTFS.TotalSectors;
-        FVolumeData.BytesPerCluster = partNTFS.BytesPerSector * partNTFS.SectorsPerCluster;
+        FVolumeData.TotalClusters.QuadPart = partNTFS.TotalSectors / RealSectorsPerCluster;
+        FVolumeData.NumberSectors.QuadPart = partNTFS.TotalSectors;
+        FVolumeData.BytesPerCluster = partNTFS.BytesPerSector * RealSectorsPerCluster;
         FVolumeData.BytesPerMFTRec = (partNTFS.ClustersPerFileRecord >= 0) ? partNTFS.ClustersPerFileRecord * FVolumeData.BytesPerCluster : 1u << (-partNTFS.ClustersPerFileRecord);
         FVolumeData.ClustersPerFileRecordSegment = FVolumeData.BytesPerMFTRec / FVolumeData.BytesPerCluster;
         FVolumeData.MftStartLcn.QuadPart  = partNTFS.MftStartLcn;
@@ -166,9 +170,11 @@ public:
         FVolumeData.Mft2StartLcn.QuadPart = partNTFS.MftMirrorStartLcn;
         FVolumeData.hVolume = INVALID_HANDLE_VALUE;// FHFile;
         FVolumeData.Name = convert_string<wchar_t>(GetVolumeName(imgFileName));
-
+        
         EXPECT_EQ(DEFAULT_SECTOR_SIZE, FVolumeData.BytesPerSector);
         EXPECT_EQ(DEFAULT_BYTES_PER_MFT_REC, FVolumeData.BytesPerMFTRec);
+
+        SetOpened(true); // needs to be before LoadMFTRecord
 
         // reading MFT record #0, getting $MFT LCNs
         uint8_t* mftRecData = (uint8_t*)alloca(FVolumeData.BytesPerMFTRec);
@@ -217,8 +223,6 @@ public:
         auto expct = ReadMetaFilesCount(prsr);
         ASSERT_TRUE(expct);
         FMetaFilesCount = expct.value();
-
-        SetOpened(true);
     }
 
     void Close() override
@@ -227,7 +231,6 @@ public:
 
         CloseHandle(FHFile);
         FHFile = INVALID_HANDLE_VALUE;
-
         FMFTDataRuns.Clear();
         FPartitionOffset = 0;
 
