@@ -4,10 +4,16 @@ void TMFTAllRecordsLoader::Open(const string_t& vol)
 {
     if (IsOpened()) Close();
 
-    TMFTRecordLoader::Open(vol);
+    TMFTRecordLoader::InternalOpen(vol);
 
     ReadAllMftRecords();
-    SetOpened(true);
+
+    TMFTParserBase parser(*this);
+    auto expct = ReadMetaFilesCount(parser); // need to be places after ReadAllMftRecords
+    assert(expct);
+    FMetaFilesCount = expct.value();
+
+    SetOpened(true); //TODO may be not needed since InternalOpen sert Opened to true
 
    /* MFT_REF mftRecRef{0};
 
@@ -53,6 +59,7 @@ void TMFTAllRecordsLoader::Open(const string_t& vol)
 TErrorCode TMFTAllRecordsLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
 {
     if(!IsOpened()) return TErrorCode::IOError;
+    assert(mftRecRef.sId.low < FRecordsCount);
 
     if (FBitmap.Test(mftRecRef.sId.low))
     {
@@ -61,7 +68,7 @@ TErrorCode TMFTAllRecordsLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRe
         return TErrorCode::Success;
     }
     else
-        return TErrorCode::NotFound;
+        return TErrorCode::MFTRecordNotInUse; // Not In USe because mftRecRef.sId.low < FRecordsCount
     
 }
 
@@ -116,7 +123,7 @@ TErrorCode TMFTAllRecordsLoader::ReadAllMftRecords()
 
         inputBuf.FileReferenceNumber.QuadPart = pOutputBuf->FileReferenceNumber.QuadPart - 1;
 
-    } while (inputBuf.FileReferenceNumber.QuadPart > 0); // do not read builtin metafiles
+    } while (inputBuf.FileReferenceNumber.QuadPart >= 0); // do not read builtin metafiles
 
     return TErrorCode::Success;
 }
