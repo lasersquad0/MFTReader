@@ -84,10 +84,13 @@ public:
 
 class TMFTRecordLoader : public IRecordLoader
 {
+protected:
+	void InternalOpen(const string_t& vol);
 public:
 	TMFTRecordLoader() { }
 	TMFTRecordLoader(const string_t& vol) { Open(vol); }
 	void Open(const string_t& vol) override;
+	void Close() override;
 	TErrorCode ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf) override;
 	TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override;
 };
