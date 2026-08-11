@@ -114,17 +114,14 @@ std::expected<uint32_t, TErrorCode> IRecordLoader::ReadMetaFilesCount(TMFTParser
     return mftRef.sId.low;
 }
 
-void TMFTRecordLoader::Open(const string_t& vol)
+void TMFTRecordLoader::InternalOpen(const string_t& vol)
 {
     if (IsOpened()) Close();
+    assert(FVolumeData.hVolume == INVALID_HANDLE_VALUE);
 
     string_t vol2 = NormalizeVolume(vol);
 
     GET_LOGGER;
-
-    // closing previously opened volume
-    if (IsOpened()) Close();
-    assert(FVolumeData.hVolume == INVALID_HANDLE_VALUE);
 
     logger.DebugFmt("Opening volume: {}", wtos(vol2));
 
@@ -144,8 +141,7 @@ void TMFTRecordLoader::Open(const string_t& vol)
     if (!DeviceIoControl(hVolume, FSCTL_GET_NTFS_VOLUME_DATA, 0, 0, &FVolumeData, sizeof(NTFS_VOLUME_DATA_BUFFER), &bytesReturned, nullptr))
     {
         DWORD err = GetLastError();
-
-        std::string errMsg = GetErrorMessageTextA(err, "DeviceIoControl"); 
+        std::string errMsg = GetErrorMessageTextA(err, "DeviceIoControl");
         //logger.Error(errMsg);
         throw std::system_error(std::error_code(err, std::system_category()), errMsg);
     }
@@ -158,12 +154,22 @@ void TMFTRecordLoader::Open(const string_t& vol)
     FRecordsCount = FVolumeData.MftValidDataLength.QuadPart / FVolumeData.BytesPerMFTRec;
 
     SetOpened(true); // must be before ReadMetaFilesCount() call
+}
+
+void TMFTRecordLoader::Open(const string_t& vol)
+{
+    InternalOpen(vol);
 
     TMFTParserBase parser(*this);
     auto expct =  ReadMetaFilesCount(parser);
     assert(expct);
     FMetaFilesCount = expct.value();
+}
 
+void TMFTRecordLoader::Close()
+{
+    IRecordLoader::Close();
+    FVolumeData.hVolume = INVALID_HANDLE_VALUE;
 }
 
 
@@ -172,6 +178,7 @@ TErrorCode TMFTRecordLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecDat
 {
     assert(IsOpened());
     assert(FVolumeData.hVolume != INVALID_HANDLE_VALUE);
+    assert(mftRecRef.sId.low < FRecordsCount);
 
     NTFS_FILE_RECORD_INPUT_BUFFER nfrib{ 0 };
     nfrib.FileReferenceNumber.LowPart = mftRecRef.sId.low;
