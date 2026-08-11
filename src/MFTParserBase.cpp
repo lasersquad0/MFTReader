@@ -20,9 +20,12 @@ TErrorCode TMFTParserBase::ProcessAllocDataRuns(DIR_NODE& node, ProcessiBlocksPr
     logger.Debug("---------- START PROCESSING ATTR_ALLOC Data Runs ---------");
 
     assert(node.IndexBlockSize > 0);
-    assert(node.IndexBlockSize >= getVolData().BytesPerCluster); // AI told that this rule should always be true
-    assert((node.IndexBlockSize % getVolData().BytesPerCluster) == 0); // AI told this rule should always be true
-
+    uint32_t BytesPerCluster = getVolData().BytesPerCluster;
+    if (node.IndexBlockSize >= BytesPerCluster)
+        assert((node.IndexBlockSize % BytesPerCluster) == 0);
+    else
+        assert((BytesPerCluster % node.IndexBlockSize) == 0);
+    
     int64_t lastBit = node.Bitmap.LastBit();
     
     if (lastBit == -1)
@@ -42,7 +45,7 @@ TErrorCode TMFTParserBase::ProcessAllocDataRuns(DIR_NODE& node, ProcessiBlocksPr
     int64_t iblockCounter = 0; // counter in Index Blocks (Index Block size may differ from cluster size)
     uint8_t* dataBuf = nullptr;
     uint64_t dataBufSize = 0;
-    uint64_t dataBufLen = 0; // dataBuf size in clusters (in LCNs)
+    //uint64_t dataBufLen = 0; // dataBuf size in clusters (in LCNs)
     uint32_t currRun = 0;
     TErrorCode result = TErrorCode::Success;
 
@@ -58,30 +61,33 @@ TErrorCode TMFTParserBase::ProcessAllocDataRuns(DIR_NODE& node, ProcessiBlocksPr
         assert(rli.len < (uint64_t)getVolData().TotalClusters.QuadPart);
         assert(rli.lcn < (uint64_t)getVolData().TotalClusters.QuadPart);
 
-        uint32_t k = node.IndexBlockSize / getVolData().BytesPerCluster;
-        assert(k > 0);
+        //uint32_t k = node.IndexBlockSize / getVolData().BytesPerCluster;
+        //assert(k > 0);
 
-        CLST rlilen = valuemin((CLST)(lastBit + 1 - iblockCounter)*k, rli.len);
-        assert((rlilen % k) == 0);
+        assert(lastBit + 1 - iblockCounter > 0);
+        //TODO return to this optimization later because assert((rliBufSize % getVolData().BytesPerCluster) == 0) fails for some reason
+        uint64_t rliBufSize = rli.len * getVolData().BytesPerCluster; //valuemin((uint64_t)(lastBit + 1 - iblockCounter) * node.IndexBlockSize, rli.len * getVolData().BytesPerCluster);
+        assert((rliBufSize % node.IndexBlockSize) == 0);
+        assert((rliBufSize % getVolData().BytesPerCluster) == 0);
 
-        if (rlilen > dataBufLen)
+        if (rliBufSize > dataBufSize)
         {
             delete[] dataBuf;
-            dataBufSize = rlilen * getVolData().BytesPerCluster;
+            dataBufSize = rliBufSize; //rlilen * getVolData().BytesPerCluster;
             dataBuf = DBG_NEW uint8_t[dataBufSize]; 
-            dataBufLen = rlilen;
+            assert(dataBuf);
+            //dataBufLen = rlilen;
         }
 
-        assert(dataBuf);
-
-        result = FLoader.ReadClusters(rli.lcn, rlilen, dataBuf);
+        result = FLoader.ReadClusters(rli.lcn, rliBufSize / getVolData().BytesPerCluster, dataBuf);
         if (result != TErrorCode::Success) // ReadClusters wrties error message to log file in case of an error
         {
             //result = res;
             break;
         }
 
-        CLST iblocksCount = rlilen / k;
+        // how many Index Blocks we've read by recent ReadClusters call
+        CLST iblocksCount = rliBufSize / node.IndexBlockSize;
 
         NTFS_RECORD_HEADER* indexRec = (NTFS_RECORD_HEADER*)dataBuf;
 
@@ -94,7 +100,7 @@ TErrorCode TMFTParserBase::ProcessAllocDataRuns(DIR_NODE& node, ProcessiBlocksPr
                     // Not sure if this is correct situation when list of LCNs in one data run has "holes" for which Bitmap attribute has 1 in appropriate cluster.
                    
                     uint8_t* sign = indexRec->Signature;
-                    logger.WarnFmt("[ProcessAllocDataRuns] Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", rli.lcn + i*k, sign[0], sign[1], sign[2], sign[3]);
+                    logger.WarnFmt("[ProcessAllocDataRuns] Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", rli.lcn + i* node.IndexBlockSize / getVolData().BytesPerCluster, sign[0], sign[1], sign[2], sign[3]);
 
                  //   continue;
                 }
@@ -110,11 +116,11 @@ TErrorCode TMFTParserBase::ProcessAllocDataRuns(DIR_NODE& node, ProcessiBlocksPr
                 }
 
                 //process particular Index Block, either add to list of blocks in cache or get list of files from this record, depending on predicate
-                processIndexBlockPred(dataBuf + i * node.IndexBlockSize, rli.vcn + i*k, rli.lcn + i*k);
+                processIndexBlockPred(dataBuf + i * node.IndexBlockSize, rli.vcn + i*node.IndexBlockSize/getVolData().BytesPerCluster, rli.lcn + i*node.IndexBlockSize/getVolData().BytesPerCluster);
             }
             else
             {
-                logger.DebugFmt("[ProcessAllocDataRuns] Bitmap bit {}th is zero. LastBit: {}. Bypassing Index Block# {}.", iblockCounter, lastBit, rli.lcn + i*k);
+                logger.DebugFmt("[ProcessAllocDataRuns] Bitmap bit {}th is zero. LastBit: {}. Bypassing Index Block# {}.", iblockCounter, lastBit, rli.lcn + i* node.IndexBlockSize / getVolData().BytesPerCluster);
                 if (iblockCounter > lastBit) // no more valid LCNs 
                     break;
             }
