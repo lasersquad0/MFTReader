@@ -96,6 +96,8 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_I
         return TErrorCode::MFTRecordNotInUse;
     }
 
+    //fixup array must go right after IndexMFTRec
+    assert(offsetof(MFT_FILE_RECORD, IndexMFTRec) + sizeof(mftRec->IndexMFTRec) == mftRec->RecHeader.FixupOffset);
     assert(ntfs_is_file_recp(mftRec->RecHeader.Signature));
     assert(mftRec->FileRecSize > mftRec->FirstAttrOffset);
     assert(mftRec->FileRecSize <= mftRec->AllocFileRecSize);
@@ -261,9 +263,18 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_I
                 // $SDH INDEX_ROOT attribute name is related to storing and searching security descriptors (usually in MFT=0x09 $Secure).
 
                 ATTR_INDEX_ROOT* indexR = (ATTR_INDEX_ROOT*)attrValue;
-                assert(indexR->IndexBlockSize >= getVolData().BytesPerCluster); // AI told that this rule should always be true
-                assert((indexR->IndexBlockSize % getVolData().BytesPerCluster) == 0); // AI told that this rule should always be true
-                assert(indexR->IndexBlockClst == indexR->IndexBlockSize/getVolData().BytesPerCluster); 
+                uint32_t BytesPerCluster = getVolData().BytesPerCluster;
+                if (indexR->IndexBlockSize >= BytesPerCluster)
+                {
+                    assert((indexR->IndexBlockSize % BytesPerCluster) == 0); 
+                    assert(indexR->IndexBlockClst == indexR->IndexBlockSize / BytesPerCluster);
+                }
+                else
+                {
+                    assert((BytesPerCluster % indexR->IndexBlockSize) == 0); 
+                    assert(indexR->IndexBlockClst == indexR->IndexBlockSize / getVolData().BytesPerSector); // (*) here should be BytesPerSector
+                }
+                
                 assert(indexR->ihdr.Flags < 2); // 0 - Small Dir, 1- Big Dir
 
                 itemInfo.Node.IndexBlockSize = indexR->IndexBlockSize; // need this value for further processing ALLOC Data Runs
@@ -736,9 +747,9 @@ TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF startMftRecRef, uint32_t dirL
     return TErrorCode::Success;
 }
 
-int32_t PrintProgress(const string_t& data)
+static int32_t PrintProgress(const string_t& data)
 {
-    cout_t << data /*<< " [" <<item.Attr.dup.FileSize << "]"*/ << std::endl;
+    cout_t << data << std::endl;
     return 1; // not used at the moment
 }
 
@@ -956,7 +967,7 @@ TErrorCode TMFTStatCollector::CollectVolumeStat()
 
     Ticks::Finish(_T("Calc statistic"));
 
-    std::cout << std::endl << "Freeing memory..." << std::endl;
+    //std::cout << std::endl << "Freeing memory..." << std::endl;
     FItemsList.ClearMem();
     //std::cout << "Freed" << std::endl << std::endl;
 
