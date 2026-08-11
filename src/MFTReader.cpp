@@ -167,7 +167,7 @@ int _tmain(int argc, TCHAR* argv[])
         else if (cmd.HasOption(OPT_T))
         {
             TMFTAllRecordsLoader ldr;
-            ldr.OpenVolume(_T("C:\\"));
+            ldr.Open(_T("C:\\"));
         }
         else
         {
@@ -197,7 +197,7 @@ int _tmain(int argc, TCHAR* argv[])
 
 void PrintUsage(COptionsList& options)
 {
-    std::cout << wtos(CHelpFormatter::Format(_T("MFTReader"), &options));
+    cout_t << CHelpFormatter::Format(_T("MFTReader"), &options);
 }
 
 void DefineOptions(COptionsList& options)
