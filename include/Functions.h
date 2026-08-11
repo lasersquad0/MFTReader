@@ -215,9 +215,6 @@ class TAttrCollection
 private:
     typedef THArray<MFT_ATTR_HEADER*> THArrayAttrHeader;
     THArray<THArrayAttrHeader> FAttrList;
-    //THArrayAttrHeader FFileNames;
-    //THArrayAttrHeader FDataStreams;
-    //THArrayAttrHeader FLUS;
 public:
     TAttrCollection()
     {
@@ -229,45 +226,19 @@ public:
     {
         assert(attr->AttrType <= ATTR_LOGGED_UTILITY_STREAM); // this is last attribute in list of attr types
 
-        /*if (attr->AttrType == ATTR_FILENAME)
-        {
-            assert(FFileNames.IndexOf(attr) == -1);
-            FFileNames.AddValue(attr);
-        }
-        else if (attr->AttrType == ATTR_DATA)
-        {
-            assert(FDataStreams.IndexOf(attr) == -1);
-            FDataStreams.AddValue(attr);
-        }
-        else if (attr->AttrType == ATTR_LOGGED_UTILITY_STREAM)
-        {
-            assert(FLUS.IndexOf(attr) == -1);
-            FLUS.AddValue(attr);
-        }
-        else*/
-        {
-            //assert(FAttrList[MATI(attr->AttrType)] == nullptr);
-            FAttrList[MATI(attr->AttrType)].AddValue(attr);
-        }
+        // check that single attributes are single
+        if (SingleAttributes[MATI(attr->AttrType)]) 
+            assert(FAttrList[MATI(attr->AttrType)].Count() == 0);
+
+        FAttrList[MATI(attr->AttrType)].AddValue(attr);
     }
 
-    /*MFT_ATTR_HEADER* */THArrayAttrHeader& Get(ATTR_TYPE attrType)
+    THArrayAttrHeader& Get(ATTR_TYPE attrType)
     {
         //assert((attrType != ATTR_FILENAME) && (attrType != ATTR_DATA) && (attrType != ATTR_LOGGED_UTILITY_STREAM));
         return FAttrList[MATI(attrType)];
     }
 
-    /*THArrayAttrHeader& Get2(ATTR_TYPE attrType)
-    {
-        assert( (attrType == ATTR_FILENAME) || (attrType == ATTR_DATA) || (attrType == ATTR_LOGGED_UTILITY_STREAM) );
-      
-        if (attrType == ATTR_FILENAME)
-            return FFileNames;
-        else if (attrType == ATTR_DATA)
-            return FDataStreams;
-        else
-            return FLUS;
-    }*/
 };
 
 LogEngine::Logger& GetLoggerFunc();
