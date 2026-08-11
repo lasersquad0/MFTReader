@@ -362,10 +362,9 @@ protected:
 	uint	FCapacity; // number of element for which memory is allocated in the array, FCapacity >= FCount always
 	T*		FMemory;   // pointer to the allocated memory, in most cases - to the first element in the array
 	T*		FBegin;    // pointer to the first element in the array, may differ from FMemory in some cases
+	
 	uint	GetGrowDelta();
-
-	// Increase capacity to the next level (usually adding 25% to existing capacity)
-	void	Grow();
+	void	Grow(); // Increase capacity to the next level (usually adding 25% to existing capacity)
 	virtual void Error(const uint Value, const uint vmax) const { if (Value >= vmax) throw THArrayException("Element with index " + std::to_string(Value) + " not found!"); }
 	inline bool	EnoughCapacity(const uint numItems) { return FBegin + numItems <= FMemory + FCapacity; }
 	inline void	EnsureCapacity(const uint numItems) { if(!EnoughCapacity(numItems)) GrowTo(numItems); }
