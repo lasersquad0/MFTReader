@@ -51,47 +51,7 @@ public:
         if (sumBytes <= MFTRecIDBytes) return -1;
 
         return (rli.lcn + rli.len) * BytesPerCluster - (sumBytes - MFTRecIDBytes);
-
-
-        /*if (BytesPerCluster >= BytesPerMFTRec)
-        {
-            uint32_t k = BytesPerCluster / BytesPerMFTRec;
-            EXPECT_GT(k, 0ul); // k>0
-
-            for (uint i = 0; i < runs.Count(); i++)
-            {
-                rli = runs[i];
-                EXPECT_GT(rli.len, 0ul); // len>0
-                sum += rli.len * k;
-                if (sum > MFTRecID) break;
-            }
-        }
-        else
-        {
-            uint32_t k = BytesPerMFTRec / BytesPerCluster;
-            EXPECT_GT(k, 0ul); // k>0
-
-            for (uint i = 0; i < runs.Count(); i++)
-            {
-                rli = runs[i];
-                EXPECT_GT(rli.len, 0ul); // len>0
-                EXPECT_EQ(0, rli.len % k);
-                sum += rli.len / k;
-                if (sum > MFTRecID) break;
-            }
-        }
-
-        if (sum <= MFTRecID) return -1;
-
-        
-
-        EXPECT_GT(rli.len, 0ul); // len>0
-        return (rli.lcn + rli.len) * BytesPerCluster - (sum - MFTRecID) * BytesPerMFTRec;
-        */
-
     }
-
-
 
     // finds first NTFS partition in the file, then finds first MFT record in this partition.
     // results are stored in FPartitionOffset, FMFTDataRuns, FMFTRecordsCount fields 
@@ -157,8 +117,8 @@ public:
             ASSERT_NE(0, FPartitionOffset); // check that we've found NTFS partition
         }
         
-       // EXPECT_EQ(0, partNTFS.TotalSectors % partNTFS.SectorsPerCluster);
         uint16_t RealSectorsPerCluster = (((signed char)partNTFS.SectorsPerCluster) >= 0)? partNTFS.SectorsPerCluster: 1u << (256 - partNTFS.SectorsPerCluster);
+        // EXPECT_EQ(0, partNTFS.TotalSectors % partNTFS.SectorsPerCluster);
         FVolumeData.BytesPerSector = partNTFS.BytesPerSector;
         FVolumeData.TotalClusters.QuadPart = partNTFS.TotalSectors / RealSectorsPerCluster;
         FVolumeData.NumberSectors.QuadPart = partNTFS.TotalSectors;
