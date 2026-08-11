@@ -60,10 +60,10 @@ static THash<string_t, VOLUME_FIGURES> ImgFileFigures{
     {IMG_NTFS3_FILE,    {1152, 1129, 0, 3, 2, 27} },
     {IMG_KW_1_FILE,     {48, 18, 0, 7, 5, 27} },
     {IMG_DFR_16_FILE,   {1104, 46, 0, 1022, 10, 64} },
-    {IMG_DFR_17_FILE,   {155, 128, 0, 91, 0, 35} },
+    {IMG_DFR_17_FILE,   {160, 43, 0, 45, 46, 35} },
     {IMG_RAMSLACK_FILE, {256, 221, 0, 4, 4, 36} },
-    {IMG_2M_FILE,       {1104, 46, 0, 1041, 14, 20} },
-    {IMG_512K_FILE,     {1104, 46, 0, 4, 2, 20} },
+    {IMG_2M_FILE,       {2048, 2017, 0, 2, 2, 20} },
+    {IMG_512K_FILE,     {512, 479, 0, 4, 2, 20} },
     {IMG_SI_VS_FN_FILE, {256, 224, 0, 2, 3, 36} },
     {IMG_7_UNDEL_FILE,  {47, 26, 0, 1, 1, 29} },
 };
@@ -186,7 +186,7 @@ TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImageRootAndGoSubDirs_WINAPI)
         FAIL() << "ReadMftItems() returned error!";
 }
 
-/*INSTANTIATE_TEST_CASE_P(NTFS_PTRN_RAW, MFTImgFileParserTest, testing::Values(IMG_PTRN_FILE));
+INSTANTIATE_TEST_CASE_P(NTFS_PTRN_RAW, MFTImgFileParserTest, testing::Values(IMG_PTRN_FILE));
 INSTANTIATE_TEST_CASE_P(NTFS_INDEX_RAW, MFTImgFileParserTest, testing::Values(IMG_INDEX_FILE));
 INSTANTIATE_TEST_CASE_P(NTFS_IMG_KW_1_DD, MFTImgFileParserTest, testing::Values(IMG_KW_1_FILE));
 INSTANTIATE_TEST_CASE_P(DFR_16_NTFS_DD, MFTImgFileParserTest, testing::Values(IMG_DFR_16_FILE));
@@ -194,7 +194,6 @@ INSTANTIATE_TEST_CASE_P(DFR_17_NTFS_DD, MFTImgFileParserTest, testing::Values(IM
 INSTANTIATE_TEST_CASE_P(NTFS_RAMSLACK_RAW, MFTImgFileParserTest, testing::Values(IMG_RAMSLACK_FILE));
 INSTANTIATE_TEST_CASE_P(NTFS_SI_VS_FN_RAW, MFTImgFileParserTest, testing::Values(IMG_SI_VS_FN_FILE));
 INSTANTIATE_TEST_CASE_P(DFR_7_UNDEL_DD, MFTImgFileParserTest, testing::Values(IMG_7_UNDEL_FILE));
-*/
 INSTANTIATE_TEST_CASE_P(NTFS_2M_RAW, MFTImgFileParserTest, testing::Values(IMG_2M_FILE));
 INSTANTIATE_TEST_CASE_P(NTFS_512K_RAW, MFTImgFileParserTest, testing::Values(IMG_512K_FILE));
 
