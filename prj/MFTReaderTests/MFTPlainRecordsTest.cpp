@@ -37,6 +37,8 @@ public:
         FVolumeData.MftZoneEnd.QuadPart = 1000;
         FVolumeData.Name = convert_string<wchar_t>(GetVolumeName(fileName));
 
+        SetOpened(true); // needed for LoadMFTRecord
+
         // reading MFT record #0, getting $MFT LCNs
         uint8_t* mftRecBuf = (uint8_t*)alloca(FVolumeData.BytesPerMFTRec);
         MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
@@ -71,8 +73,6 @@ public:
         auto expct = ReadMetaFilesCount(prsr);
         ASSERT_TRUE(expct);
         FMetaFilesCount = expct.value();
-
-        SetOpened(true);
     }
 
     void Close() override
