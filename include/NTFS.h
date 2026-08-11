@@ -205,7 +205,7 @@ struct MFT_FILE_RECORD
 
 static_assert(sizeof(MFT_FILE_RECORD) == 0x30);
 
-#define ATTR_TYPE_CNT 18  // includes ATTR_ZERO but does NOT include ATTR_END
+#define ATTR_TYPE_CNT 18  // includes ATTR_ZERO but does NOT include ATTR_END and ATTR_FIRST_USER_DEFINED_ATTRIBUTE
 #define ALL_ATTRS_FILTER 0xFFFFFFFF
 
 enum ATTR_TYPE : uint32_t
@@ -233,6 +233,9 @@ enum ATTR_TYPE : uint32_t
 
 static_assert(sizeof(enum ATTR_TYPE) == 4);
 
+const bool SingleAttributes[ATTR_TYPE_CNT]{ true,true,true,false,true,true,true,true,false,true,false,false,true,true,true,true,false };
+
+// offsets in this structure shown from beginning of MFT_ATTR_HEADER structure 
 struct MFT_ATTR_RESIDENT
 {
     uint32_t DataSize;      //0x10 Byte size of attribute value. 
