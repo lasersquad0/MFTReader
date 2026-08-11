@@ -654,15 +654,23 @@ TErrorCode TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* par
     return TErrorCode::Success;
 }
 
+static int32_t PrintV1Progress(int32_t progress)
+{
+    UNREFERENCED_PARAMETER(progress);
+
+    //do nothing at the moment
+    //cout_t << progress << std::endl;
+    return 1; // not used at the moment
+}
+
 void TMFTSearchReader::ReadDirsV1()
 {
-    //TFileCache fileCache;
     uint64_t rootDirSize{0};
 
     std::wcout << _T("Reading volume: ") << getVolData().Name << std::endl;
 
     Ticks::Start(_T("Loading time"));
-    if (TErrorCode::Success != ReadDirectoryV1(0, nullptr, rootDirSize, nullptr))
+    if (TErrorCode::Success != ReadDirectoryV1(0, nullptr, rootDirSize, PrintV1Progress))
     {
         throw std::runtime_error("ReadDirectoryV1 finished with error.");
     }
