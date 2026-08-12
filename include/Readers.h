@@ -10,7 +10,7 @@
 
 class TMFTParserBase;
 
-class IRecordLoader
+class IRecordsLoader
 {
 protected:
 	bool FOpened{ false };
@@ -82,20 +82,20 @@ public:
 
 };
 
-class TMFTRecordLoader : public IRecordLoader
+class TWinAPIRecordsLoader : public IRecordsLoader
 {
 protected:
 	void InternalOpen(const string_t& vol);
 public:
-	TMFTRecordLoader() { }
-	TMFTRecordLoader(const string_t& vol) { Open(vol); }
+	TWinAPIRecordsLoader() { }
+	TWinAPIRecordsLoader(const string_t& vol) { Open(vol); }
 	void Open(const string_t& vol) override;
 	void Close() override;
 	TErrorCode ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf) override;
 	TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override;
 };
 
-class TMFTAllRecordsLoader : public TMFTRecordLoader
+class TWinAPICacheRecordsLoader : public TWinAPIRecordsLoader
 {
 protected:
 	THArrayRaw FRecs;
@@ -103,8 +103,8 @@ protected:
 
 	TErrorCode ReadAllMftRecords();
 public:
-	TMFTAllRecordsLoader() {}
-	TMFTAllRecordsLoader(const string_t& vol) { Open(vol); }
+	TWinAPICacheRecordsLoader() {}
+	TWinAPICacheRecordsLoader(const string_t& vol) { Open(vol); }
 	void Open(const string_t& vol) override;
 	TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override;
 	ret_expected LoadMFTRecordCache(MFT_REF mftRecRef) override 
@@ -115,13 +115,59 @@ public:
 };
 
 
+class TFileImageRecordsLoader : public IRecordsLoader
+{
+private:
+    HANDLE FHFile = INVALID_HANDLE_VALUE;
+    uint64_t FPartitionOffset{ 0 }; // offset from beginning of the file where NTFS partition starts 
+    //uint64_t FMFTRecordsCount{ 0 }; // total number of MFT records in $MFT file
+    //uint32_t FSystemFilesCount{ 0 }; // number of first "system" hidden files till first non-system file met
+    TDataRuns FMFTDataRuns; // Data Runs of $MFT file, used to properly calc offsets for MFT records
+
+public:
+    TFileImageRecordsLoader() {}
+    TFileImageRecordsLoader(const string_t& imgFileName) { Open(imgFileName); }
+    ~TFileImageRecordsLoader() { Close(); }
+
+    bool Eof(MFTRecIndex id) const { return id >= FRecordsCount; }
+
+	int64_t MFTRecIdToOffset(MFTRecIndex MFTRecID);
+
+    // MFT table may be fragmented. Fragments can be found in Data Runs in the first MFT record (file with name '$MFT', MFT rec #0)
+    // This function calculates offset of MFT record MFTRecID taking into account MFT table fragmentation. 
+    // This offset starts from first byte of NTFS partition. 
+	static int64_t MFTRecIdToOffset(MFTRecIndex MFTRecID, TDataRuns& runs, uint32_t BytesPerCluster, uint32_t BytesPerMFTRec);
+
+    // finds first NTFS partition in the file, then finds first MFT record in this partition.
+    // results are stored in FPartitionOffset, FMFTDataRuns, FMFTRecordsCount fields 
+	void Open(const string_t& imgFileName) override;
+
+    void Close() override;
+
+    // returns error code WrongMFTRecID when: 
+    //   - incorrect record ID specified (out of range) 
+    // IOError when
+    //   - attemt to read outside of a file
+    //   - cannot read needed BytesPerMFTRec bytes from a file
+    // MFTRecordNotInUse when 
+    //   - requested rec ID is inside of range but record does not contain 'FILE' signature
+    // CorruptedData when
+    //   - FixupUSA call failed
+    TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override;
+
+    TErrorCode ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf) override;
+
+    // Applies Update Sequence Array (USA) to MFT record refered by dataBuf
+    TErrorCode FixupUsaMFTRec(NTFS_RECORD_HEADER* mftRec);
+};
+
 class TMFTParserBase
 {
 protected:
-	IRecordLoader& FLoader;
+	IRecordsLoader& FLoader;
 	const VOLUME_DATA& getVolData() const { return FLoader.GetVolumeData(); }
 public:
-	TMFTParserBase(IRecordLoader& loader) : FLoader(loader) {};
+	TMFTParserBase(IRecordsLoader& loader) : FLoader(loader) {};
 
 	//bool FixupUSA(uint8_t* dataBuf, CLST startLCN, uint64_t iblocksCount, uint32_t indexBlockSize);
 	//void FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues);
@@ -164,7 +210,7 @@ private:
 	THashUnordered<std::wstring, std::wstring> FStatistics;
 	bool FProcessNonResAttr; // whether to process non-resident attrs. for some tests it is not needed to process non-res attrs
 public:
-	TMFTStatCollector(IRecordLoader& loader, bool processNonRes = true) : TMFTParserBase(loader), FProcessNonResAttr(processNonRes) {};
+	TMFTStatCollector(IRecordsLoader& loader, bool processNonRes = true) : TMFTParserBase(loader), FProcessNonResAttr(processNonRes) {};
 	
 	TItemInfoList& GetItemsList() { return FItemsList; }
 
@@ -182,7 +228,7 @@ class TMFTSearchReader: public TMFTParserBase
 public:
 	TFileCache FFileList;
 
-	TMFTSearchReader(IRecordLoader& loader) : TMFTParserBase(loader) { }
+	TMFTSearchReader(IRecordsLoader& loader) : TMFTParserBase(loader) { }
 	TErrorCode ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node, AddFileAttrPred addToFileListPred /*uint32_t parentIdx, TFileCache::TLevel* level*/);
 
 	TErrorCode ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* parentItem, uint64_t& dirSize, ProgressCallbackPtr callback);
@@ -194,7 +240,7 @@ class TMFTSearchReaderV2 : public TMFTParserBase
 private:
 	TFileList FDirList;
 public:
-	TMFTSearchReaderV2(IRecordLoader& loader) : TMFTParserBase(loader) { } 
+	TMFTSearchReaderV2(IRecordsLoader& loader) : TMFTParserBase(loader) { } 
 
 	TErrorCode ReadDirectoryV2(MFT_REF parentMftRecID, uint32_t dirLevel);
 	void ReadDirsV2();
