@@ -127,12 +127,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\include\external\strutils\src\string_utils.cpp" />
+    <ClCompile Include="..\..\src\FileImgRecordsLoader.cpp" />
     <ClCompile Include="..\..\src\Functions.cpp" />
     <ClCompile Include="..\..\src\MFTParserBase.cpp" />
-    <ClCompile Include="..\..\src\MFTRecordLoader.cpp" />
     <ClCompile Include="..\..\src\MFTSearchReader.cpp" />
     <ClCompile Include="..\..\src\MFTStatReader.cpp" />
     <ClCompile Include="..\..\src\Utils.cpp" />
+    <ClCompile Include="..\..\src\WinAPIRecordsLoader.cpp" />
     <ClCompile Include="MFTDataRunsTest.cpp" />
     <ClCompile Include="MFTParserBaseTests.cpp" />
     <ClCompile Include="MFTPlainRecordsTest.cpp" />
@@ -143,7 +144,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="MFTBaseParamTest.h" />
-    <ClInclude Include="MFTRawImgLoader.h" />
     <ClInclude Include="TestUtils.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

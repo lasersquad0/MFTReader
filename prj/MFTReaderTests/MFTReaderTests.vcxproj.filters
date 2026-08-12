@@ -16,9 +16,6 @@
     <ClCompile Include="..\..\src\MFTStatReader.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\MFTRecordLoader.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\src\MFTParserBase.cpp">
       <Filter>Source</Filter>
     </ClCompile>
@@ -33,6 +30,12 @@
     </ClCompile>
     <ClCompile Include="MFTRawImagesTest.cpp">
       <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\FileImgRecordsLoader.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\WinAPIRecordsLoader.cpp">
+      <Filter>Source</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -51,9 +54,6 @@
       <Filter>Tests</Filter>
     </ClInclude>
     <ClInclude Include="TestUtils.h">
-      <Filter>Tests</Filter>
-    </ClInclude>
-    <ClInclude Include="MFTRawImgLoader.h">
       <Filter>Tests</Filter>
     </ClInclude>
   </ItemGroup>
