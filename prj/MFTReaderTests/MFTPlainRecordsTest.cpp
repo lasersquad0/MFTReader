@@ -7,7 +7,7 @@
 // reads files containing just MFT records (.mft)
 // these are files where first bytes in a file are first bytes of first MFT record
 // such files do not have internal structure, just MFT records one-by-one
-class TMFTPlainRecordsLoader : public IRecordLoader
+class TMFTPlainRecordsLoader : public IRecordsLoader
 {
 private:
     std::ifstream FFile;
@@ -78,7 +78,7 @@ public:
     void Close() override
     {
         FFile.close();
-        IRecordLoader::Close();
+        IRecordsLoader::Close();
         SetOpened(false);
     }
 
