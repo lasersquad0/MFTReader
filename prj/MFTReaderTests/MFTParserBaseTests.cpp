@@ -33,33 +33,33 @@ protected:
 
 TEST_F(MFTParserBaseTests, ParseVolume_1)
 {
-    EXPECT_EQ(_T(""), IRecordLoader::NormalizeVolume(_T(""))); // no default value here, empty string indicates an error.
-    EXPECT_EQ(_T("\\\\.\\C:"), IRecordLoader::NormalizeVolume(_T("C")));
-    EXPECT_EQ(_T("\\\\.\\c:"), IRecordLoader::NormalizeVolume(_T("c")));
-    EXPECT_EQ(_T("\\\\.\\C:"), IRecordLoader::NormalizeVolume(_T("C:")));
-    EXPECT_EQ(_T("\\\\.\\c:"), IRecordLoader::NormalizeVolume(_T("c:")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T(""))); // no default value here, empty string indicates an error.
+    EXPECT_EQ(_T("\\\\.\\C:"), IRecordsLoader::NormalizeVolume(_T("C")));
+    EXPECT_EQ(_T("\\\\.\\c:"), IRecordsLoader::NormalizeVolume(_T("c")));
+    EXPECT_EQ(_T("\\\\.\\C:"), IRecordsLoader::NormalizeVolume(_T("C:")));
+    EXPECT_EQ(_T("\\\\.\\c:"), IRecordsLoader::NormalizeVolume(_T("c:")));
 
-    EXPECT_EQ(_T("\\\\.\\D:"), IRecordLoader::NormalizeVolume(_T("D")));
-    EXPECT_EQ(_T("\\\\.\\d:"), IRecordLoader::NormalizeVolume(_T("d")));
-    EXPECT_EQ(_T("\\\\.\\D:"), IRecordLoader::NormalizeVolume(_T("D:")));
-    EXPECT_EQ(_T("\\\\.\\d:"), IRecordLoader::NormalizeVolume(_T("d:")));
+    EXPECT_EQ(_T("\\\\.\\D:"), IRecordsLoader::NormalizeVolume(_T("D")));
+    EXPECT_EQ(_T("\\\\.\\d:"), IRecordsLoader::NormalizeVolume(_T("d")));
+    EXPECT_EQ(_T("\\\\.\\D:"), IRecordsLoader::NormalizeVolume(_T("D:")));
+    EXPECT_EQ(_T("\\\\.\\d:"), IRecordsLoader::NormalizeVolume(_T("d:")));
 
-    EXPECT_EQ(_T("\\\\.\\ :"), IRecordLoader::NormalizeVolume(_T(" "))); // it does not check that disk letter is correct disk letter
-    EXPECT_EQ(_T("\\\\.\\1:"), IRecordLoader::NormalizeVolume(_T("1")));
-    EXPECT_EQ(_T("\\\\.\\*:"), IRecordLoader::NormalizeVolume(_T("*")));
+    EXPECT_EQ(_T("\\\\.\\ :"), IRecordsLoader::NormalizeVolume(_T(" "))); // it does not check that disk letter is correct disk letter
+    EXPECT_EQ(_T("\\\\.\\1:"), IRecordsLoader::NormalizeVolume(_T("1")));
+    EXPECT_EQ(_T("\\\\.\\*:"), IRecordsLoader::NormalizeVolume(_T("*")));
 
-    EXPECT_EQ(_T(""), IRecordLoader::NormalizeVolume(_T("\\\\.\\")));
-    EXPECT_EQ(_T("\\\\.\\e:"), IRecordLoader::NormalizeVolume(_T("\\\\.\\e")));
-    EXPECT_EQ(_T("\\\\.\\e:"), IRecordLoader::NormalizeVolume(_T("\\\\.\\e:")));
-    EXPECT_EQ(_T("\\\\.\\e:"), IRecordLoader::NormalizeVolume(_T("\\\\.\\e:filename1")));
-    EXPECT_EQ(_T("\\\\.\\fi"), IRecordLoader::NormalizeVolume(_T("\\\\.\\filename1")));//TODO not sure this is correct test
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("\\\\.\\")));
+    EXPECT_EQ(_T("\\\\.\\e:"), IRecordsLoader::NormalizeVolume(_T("\\\\.\\e")));
+    EXPECT_EQ(_T("\\\\.\\e:"), IRecordsLoader::NormalizeVolume(_T("\\\\.\\e:")));
+    EXPECT_EQ(_T("\\\\.\\e:"), IRecordsLoader::NormalizeVolume(_T("\\\\.\\e:filename1")));
+    EXPECT_EQ(_T("\\\\.\\fi"), IRecordsLoader::NormalizeVolume(_T("\\\\.\\filename1")));//TODO not sure this is correct test
 
     EXPECT_TRUE(true);
 }
 
 TEST_F(MFTParserBaseTests, OpenVolume_1)
 {
-    TMFTRecordLoader ldr;
+    TWinAPIRecordsLoader ldr;
     ldr.Open(_T("c:")); // generates an exception if not run as Admin
     ldr.Open(_T("c"));
     ldr.Open(_T("c:\testfile"));
@@ -67,7 +67,7 @@ TEST_F(MFTParserBaseTests, OpenVolume_1)
 
 TEST_F(MFTParserBaseTests, OpenVolume_2)
 {
-    TMFTRecordLoader ldr;
+    TWinAPIRecordsLoader ldr;
 
     EXPECT_THROW(ldr.Open(_T("d:")), std::system_error); 
     EXPECT_THROW(ldr.Open(_T("f")), std::system_error);
@@ -88,7 +88,7 @@ TEST_F(MFTParserBaseTests, OpenVolume_2)
 
 TEST_F(MFTParserBaseTests, OpenVolumeCloseVolume_1)
 {
-    TMFTRecordLoader ldr;
+    TWinAPIRecordsLoader ldr;
 
     ldr.Close();
 
@@ -108,7 +108,7 @@ TEST_F(MFTParserBaseTests, OpenVolumeCloseVolume_1)
 // MFT IDs will be different for different disks, this test linked to one disk only
 TEST_F(MFTParserBaseTests, GetMFTRecIdByPath_1)
 {
-    TMFTRecordLoader ldr(_T("c:")); // assume that all path are on C:
+    TWinAPIRecordsLoader ldr(_T("c:")); // assume that all path are on C:
     TMFTParserBase ps(ldr);
 
     THArray<std::pair<uint32_t, ci_string>> testData{
@@ -148,7 +148,7 @@ TEST_F(MFTParserBaseTests, GetMFTRecIdByPath_1)
 // MFT IDs will be different for different disks, this test linked to disk C: only
 TEST_F(MFTParserBaseTests, GetPathByMFTRecId_1)
 {
-    TMFTRecordLoader ldr(_T("c:")); // assume that all path are on C:
+    TWinAPIRecordsLoader ldr(_T("c:")); // assume that all path are on C:
     TMFTParserBase ps(ldr);
 
     THArray<std::pair<uint32_t, ci_string>> testData
