@@ -1,10 +1,10 @@
 #include "Readers.h"
 
-void TMFTAllRecordsLoader::Open(const string_t& vol)
+void TWinAPICacheRecordsLoader::Open(const string_t& vol)
 {
     if (IsOpened()) Close();
 
-    TMFTRecordLoader::InternalOpen(vol);
+    TWinAPIRecordsLoader::InternalOpen(vol);
 
     ReadAllMftRecords();
 
@@ -56,7 +56,7 @@ void TMFTAllRecordsLoader::Open(const string_t& vol)
 
 }
 
-TErrorCode TMFTAllRecordsLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
+TErrorCode TWinAPICacheRecordsLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
 {
     if(!IsOpened()) return TErrorCode::IOError;
     assert(mftRecRef.sId.low < FRecordsCount);
@@ -72,7 +72,7 @@ TErrorCode TMFTAllRecordsLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRe
     
 }
 
-TErrorCode TMFTAllRecordsLoader::ReadAllMftRecords()
+TErrorCode TWinAPICacheRecordsLoader::ReadAllMftRecords()
 {
     assert(FVolumeData.hVolume != INVALID_HANDLE_VALUE);
 
