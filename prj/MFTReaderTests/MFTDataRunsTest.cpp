@@ -32,7 +32,7 @@ public:
 // Inside a test, access the test parameter with the GetParam() method of the TestWithParam<T> class:
 TEST_P(MFTDataRunDecodeTest, DecodeDataRuns_1)
 {
-    TMFTRecordLoader ldr;
+    TWinAPIRecordsLoader ldr;
     TMFTParserBase parser(ldr);
 
     string_t fileName = GetParam();
