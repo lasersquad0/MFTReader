@@ -100,3 +100,23 @@ string_t FileDateToString(const string_t& str, uint64_t dateTime)
     SHFormatDateTime(&ft, &dateTimeFlags, buf, BUF_SZ);
     return std::format(_T("{}{}"), str, convert_string<string_t::value_type>(buf));
 }
+
+
+string_t GetVolumeName(const string_t& path)
+{
+    string_t vol;
+    vol.resize(MAX_PATH);
+
+    BOOL r = GetVolumePathName(path.c_str(), vol.data(), MAX_PATH);
+    UNREFERENCED_PARAMETER(r);
+    assert(r != 0);
+
+    vol.resize(vol.find(_T('\0')));
+    if (vol[vol.size() - 1] == '\\')
+    {
+        vol[vol.size() - 1] = _T('\0');
+        vol.resize(vol.size() - 1);
+    }
+
+    return vol;
+}
