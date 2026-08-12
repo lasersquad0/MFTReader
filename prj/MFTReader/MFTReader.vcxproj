@@ -182,14 +182,15 @@
     <ClCompile Include="..\..\include\external\cli\Option.cpp" />
     <ClCompile Include="..\..\include\external\cli\OptionsList.cpp" />
     <ClCompile Include="..\..\include\external\strutils\src\string_utils.cpp" />
-    <ClCompile Include="..\..\src\MFTAllRecordsLoader.cpp" />
+    <ClCompile Include="..\..\src\FileImgRecordsLoader.cpp" />
     <ClCompile Include="..\..\src\MFTParserBase.cpp" />
-    <ClCompile Include="..\..\src\MFTRecordLoader.cpp" />
     <ClCompile Include="..\..\src\MFTStatReader.cpp" />
     <ClCompile Include="..\..\src\Functions.cpp" />
     <ClCompile Include="..\..\src\MFTReader.cpp" />
     <ClCompile Include="..\..\src\MFTSearchReader.cpp" />
     <ClCompile Include="..\..\src\Utils.cpp" />
+    <ClCompile Include="..\..\src\WinAPICacheRecordsLoader.cpp" />
+    <ClCompile Include="..\..\src\WinAPIRecordsLoader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\BitField.h" />

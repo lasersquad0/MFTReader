@@ -54,13 +54,16 @@
     <ClCompile Include="..\..\include\external\cli\OptionsList.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\MFTRecordLoader.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\src\MFTParserBase.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\MFTAllRecordsLoader.cpp">
+    <ClCompile Include="..\..\src\FileImgRecordsLoader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\WinAPICacheRecordsLoader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\WinAPIRecordsLoader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
