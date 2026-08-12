@@ -2,7 +2,7 @@
 #include "Readers.h"
 
 // make volume look like \\.\\C: 
-string_t IRecordLoader::NormalizeVolume(const string_t& vol)
+string_t IRecordsLoader::NormalizeVolume(const string_t& vol)
 {
     if (vol.starts_with(_T("\\\\.\\")))
     {
@@ -24,7 +24,7 @@ string_t IRecordLoader::NormalizeVolume(const string_t& vol)
 // BytesPerBlock value is usually defined in ATTR_ROOT attr (field IndexBlockSize) and it may differ from filesystem's ClusterSize.
 // For MFT records BytesPerBlock is standard MFT record size (BytesPerMFTRec)
 // record buffer should be at least BytesPerBlock size
-TErrorCode  IRecordLoader::FixupUSA1(NTFS_RECORD_HEADER* record, uint32_t BytesPerBlock, uint32_t BytesPerSector)
+TErrorCode  IRecordsLoader::FixupUSA1(NTFS_RECORD_HEADER* record, uint32_t BytesPerBlock, uint32_t BytesPerSector)
 {
     UNREFERENCED_PARAMETER(BytesPerBlock);
 
@@ -59,7 +59,7 @@ TErrorCode  IRecordLoader::FixupUSA1(NTFS_RECORD_HEADER* record, uint32_t BytesP
     return TErrorCode::Success;
 }
 
-std::expected<uint32_t, TErrorCode> IRecordLoader::ReadMetaFilesCount(TMFTParserBase& parser)
+std::expected<uint32_t, TErrorCode> IRecordsLoader::ReadMetaFilesCount(TMFTParserBase& parser)
 {
     if (!IsOpened()) return std::unexpected(TErrorCode::IOError);
     assert(FRecordsCount > 0);
@@ -114,7 +114,7 @@ std::expected<uint32_t, TErrorCode> IRecordLoader::ReadMetaFilesCount(TMFTParser
     return mftRef.sId.low;
 }
 
-void TMFTRecordLoader::InternalOpen(const string_t& vol)
+void TWinAPIRecordsLoader::InternalOpen(const string_t& vol)
 {
     if (IsOpened()) Close();
     assert(FVolumeData.hVolume == INVALID_HANDLE_VALUE);
@@ -156,7 +156,7 @@ void TMFTRecordLoader::InternalOpen(const string_t& vol)
     SetOpened(true); // must be before ReadMetaFilesCount() call
 }
 
-void TMFTRecordLoader::Open(const string_t& vol)
+void TWinAPIRecordsLoader::Open(const string_t& vol)
 {
     InternalOpen(vol);
 
@@ -166,15 +166,15 @@ void TMFTRecordLoader::Open(const string_t& vol)
     FMetaFilesCount = expct.value();
 }
 
-void TMFTRecordLoader::Close()
+void TWinAPIRecordsLoader::Close()
 {
-    IRecordLoader::Close();
+    IRecordsLoader::Close();
     FVolumeData.hVolume = INVALID_HANDLE_VALUE;
 }
 
 
 // mftRec should be a buffer with volData.BytesPerMFTRec size
-TErrorCode TMFTRecordLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
+TErrorCode TWinAPIRecordsLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
 {
     assert(IsOpened());
     assert(FVolumeData.hVolume != INVALID_HANDLE_VALUE);
@@ -243,7 +243,7 @@ TErrorCode TMFTRecordLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecDat
 * @param lcnCnt Count of sequential clusters to be read
 * @param dataBuf Buffer where all clusters will be read. Should be at least size lcnCnt*VolumeClusterSize
 **/
-TErrorCode TMFTRecordLoader::ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf)
+TErrorCode TWinAPIRecordsLoader::ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf)
 {
     assert(IsOpened());
 
