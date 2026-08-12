@@ -620,6 +620,51 @@ struct ATTR_BITMAP_ATTR
     uint8_t bitmap[1];	// Array of bits. 
 };
 
+constexpr uint32_t DEFAULT_SECTOR_SIZE = 512;
+constexpr char NTFS_LABEL[] = "NTFS    ";
+
+struct MBR_PARTITION_ENTRY
+{
+    uint8_t  BootFlag;     // 0x00 0x08 -  bootable partition, 0x00 - non-bootable
+    uint8_t  StartCHS[3];  // 0x01 old and unused
+    uint8_t  Type;         // 0x04 0x07 - NTFS partition, 0x0C - FAT, 0x83 - Linux, etc.
+    uint8_t  EndCHS[3];    // 0x05 old and unused
+    uint32_t FirstLBA;     // 0x08 First sector of partition. Counted from beginning of physical disk
+    uint32_t SectorCount;  // 0x0C total number of sectors occupied by partition starting from FirstLBA.
+}; //0x10
+
+static_assert(sizeof(MBR_PARTITION_ENTRY) == 16);
+
+
+struct NTFS_BOOT_SECTOR {
+    uint8_t     Jump[3];         // 0x00 jump to boot code
+    uint8_t     OemId[8];        // 0x03 Magic "NTFS    "
+    uint16_t    BytesPerSector;  // 0x0B Size of a sector in bytes. 
+    uint8_t     SectorsPerCluster; // 0x0D
+    uint8_t     Reserved[7];
+    uint8_t     MediaDescriptor; // 0x15 0xf8 = hard disk
+    uint16_t    Reserved2;
+    uint16_t    SectorsPerTrack; // 0x18 Required to boot Windows.
+    uint16_t    NumberOfHeads;   // 0x1A Required to boot Windows.
+    uint32_t    HiddenSectors;   // 0x1C
+    uint32_t    Unused1;         // zero, NTFS diskedit.exe states that this is actually :
+    // u8 physical_drive;		// 0x80
+    // u8 current_head;		// zero
+    // u8 extended_boot_signature;	// 0x80
+    //u8 unused;			// zero
+    uint32_t    Unused2;
+    uint64_t    TotalSectors;        // 0x28 Number of sectors in volume.Gives maximum volume size of 2 ^ 63 sectors.
+    // Assuming standard sector size of 512 bytes, the maximum byte size is approx. 4.7x10 ^ 21 bytes. (-;
+    uint64_t    MftStartLcn;         // 0x30 Cluster location of mft data
+    uint64_t    MftMirrorStartLcn;   // 0x38 Cluster location of copy of mft.
+    int8_t      ClustersPerFileRecord;// 0x40 Mft record size in clusters.
+    uint8_t     Reserved3[3];
+    int8_t      ClustersPerIndexBlock;// 0x44 Index block size in clusters
+    uint8_t     Reserved4[3];
+    uint64_t    VolumeSerialNumber;  // 0x48
+    uint32_t    Checksum;            // 0x50 Boot sector checksum
+}; // 0x54
+
+static_assert(sizeof(NTFS_BOOT_SECTOR) == 84);
+
 #pragma pack(pop)
-
-
