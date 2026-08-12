@@ -9,7 +9,7 @@
 
 // this cache variable needs to be global because cache needs to exist after ReadVolume call has finished
 // because cache is returned to outer function. 
-TMFTRecordLoader ldr;
+TWinAPIRecordsLoader ldr;
 TMFTSearchReader srdr(ldr);
 
 // volume parameter can be any of these: C, C:, c:\, c:\folder
