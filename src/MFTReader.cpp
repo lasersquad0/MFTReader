@@ -80,7 +80,7 @@ int _tmain(int argc, TCHAR* argv[])
         {
             string_t volume = cmd.GetOptionValue(OPT_M, 1, _T(DEFAULT_VOLUME));
             
-            TMFTRecordLoader ldr(volume);
+            TWinAPIRecordsLoader ldr(volume);
             TMFTStatCollector rdr(ldr);
 
             auto mftRecID = StringToMFTRecID(cmd.GetOptionValue(OPT_M, 0));
@@ -112,7 +112,7 @@ int _tmain(int argc, TCHAR* argv[])
         else if (cmd.HasOption(OPT_P)) // info about one item (file or dir) specified by path is requested
         {         
             string_t path = cmd.GetOptionValue(OPT_P, 0);
-            TMFTRecordLoader ldr(path);
+            TWinAPIRecordsLoader ldr(path);
             TMFTStatCollector rdr(ldr);
             
             auto MFTRecID = rdr.MFTRecIdByPath(path.c_str());
@@ -141,7 +141,7 @@ int _tmain(int argc, TCHAR* argv[])
             string_t volume = cmd.GetOptionValue(OPT_S, 0, _T(DEFAULT_VOLUME));
 
             //TMFTRecordLoader ldr(volume);
-            TMFTAllRecordsLoader ldr(volume);
+            TWinAPICacheRecordsLoader ldr(volume);
             TMFTStatCollector srdr(ldr);
             auto res = srdr.CollectVolumeStat();
             if (res != TErrorCode::Success)
@@ -158,7 +158,7 @@ int _tmain(int argc, TCHAR* argv[])
             Ticks::Start(_T("FSReadingTime"));
             string_t volume = cmd.GetOptionValue(OPT_C, 0, _T(DEFAULT_VOLUME));
 
-            TMFTRecordLoader ldr(volume);
+            TWinAPIRecordsLoader ldr(volume);
             TMFTSearchReader srchrdr(ldr);
             srchrdr.ReadDirsV1();
 
@@ -166,7 +166,7 @@ int _tmain(int argc, TCHAR* argv[])
         }
         else if (cmd.HasOption(OPT_T))
         {
-            TMFTAllRecordsLoader ldr;
+            TWinAPICacheRecordsLoader ldr;
             ldr.Open(_T("C:\\"));
         }
         else
