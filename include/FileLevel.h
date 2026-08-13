@@ -20,7 +20,7 @@ struct CACHE_ITEM
 	uint32_t FParent;
 	uint32_t FLevel;
 	int32_t FFilesCount;
-	MFT_REF FMFTRecRef; // MFT Rec ID of this file
+	MFT_REF FMFTRecID; // MFT Rec ID of this file
 	ATTR_FILE_NAME FileAttr; // 66 bytes. must be last field in CACHE_ITEM because it has variable size
 
 	//uint32_t FileAttrSize() const { return sizeof(ATTR_FILE_NAME) + FileAttr.FileNameLen * sizeof(wchar_t); } // size in bytes of current item instance 
@@ -53,7 +53,7 @@ public:
 	}
 
 	// checks if there is enough allocated memory to add structure of addBytes size 
-    // in case not enough memory EnsureCapacity allocates additional memory, and copies content there  
+    // in case not enough memory EnsureCapacity re-allocates larger piece of memory (25% increase), and copies content there  
 	void EnsureCapacity(uint32_t addBytes)
 	{
 		if (FHead + addBytes >= FEnd)
@@ -124,7 +124,7 @@ public:
 		((CACHE_ITEM*)FHead)->FParent = parent;
 		((CACHE_ITEM*)FHead)->FLevel = FLevel;
 		((CACHE_ITEM*)FHead)->FFilesCount = -1;  // -1 is to differ from empty folders where FFilesCount=0
-		((CACHE_ITEM*)FHead)->FMFTRecRef = MFTRecID; //TODO may be we could store MFTRectID as uint32_t (4 bytes) here instead of 8 bytes structure
+		((CACHE_ITEM*)FHead)->FMFTRecID = MFTRecID; //TODO may be we could store MFTRectID as uint32_t (4 bytes) here instead of 8 bytes structure
 
 		uint32_t dataSize = CalcFileAttrSize(data); // this is size of ATTR_FILE_NAME + filename size, needed only for memcpy
 		auto res = memcpy_s(FHead + offsetof(CACHE_ITEM, FileAttr), dataSize, data, dataSize);
