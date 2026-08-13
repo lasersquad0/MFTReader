@@ -14,7 +14,7 @@ private:
    // uint64_t FMFTRecordsCount = 0;
 public:
     TMFTPlainRecordsLoader(const string_t& fileName) { Open(fileName); }
-    ~TMFTPlainRecordsLoader() { Close(); }
+    //~TMFTPlainRecordsLoader() { Close(); }
 
     bool Eof() { return FFile.eof(); }
 
@@ -82,8 +82,9 @@ public:
         SetOpened(false);
     }
 
-    TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override
+    TErrorCode InternalLoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData, bool internalCall) override
     {
+        UNREFERENCED_PARAMETER(internalCall);
         EXPECT_TRUE(IsOpened());
 
         assert(!FFile.fail());
@@ -247,7 +248,7 @@ TEST_P(MFTPlainRecordsTest, ReadMftItemInfoBuf_1)
     EXPECT_EQ(NotInUseCounts[fileName], notInUseCount);
 }
 
-TEST_P(MFTPlainRecordsTest, ReadMftItemInfo_1)
+TEST_P(MFTPlainRecordsTest, ReadMftItemInfoOneByOne_1)
 {
     auto& fileName = GetParam();
     TMFTPlainRecordsLoader ldr(fileName);
