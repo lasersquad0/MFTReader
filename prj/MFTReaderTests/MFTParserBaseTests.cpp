@@ -31,62 +31,123 @@ protected:
     }*/
 };
 
-TEST_F(MFTParserBaseTests, ParseVolume_1)
+TEST_F(MFTParserBaseTests, NormalizeVolume_1)
 {
     EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T(""))); // no default value here, empty string indicates an error.
     EXPECT_EQ(_T("\\\\.\\C:"), IRecordsLoader::NormalizeVolume(_T("C")));
     EXPECT_EQ(_T("\\\\.\\c:"), IRecordsLoader::NormalizeVolume(_T("c")));
     EXPECT_EQ(_T("\\\\.\\C:"), IRecordsLoader::NormalizeVolume(_T("C:")));
     EXPECT_EQ(_T("\\\\.\\c:"), IRecordsLoader::NormalizeVolume(_T("c:")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("cc:")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("1")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("5:")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("$")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("-")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T(":")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("*")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T(" ")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T(".")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("..")));
 
     EXPECT_EQ(_T("\\\\.\\D:"), IRecordsLoader::NormalizeVolume(_T("D")));
     EXPECT_EQ(_T("\\\\.\\d:"), IRecordsLoader::NormalizeVolume(_T("d")));
     EXPECT_EQ(_T("\\\\.\\D:"), IRecordsLoader::NormalizeVolume(_T("D:")));
     EXPECT_EQ(_T("\\\\.\\d:"), IRecordsLoader::NormalizeVolume(_T("d:")));
-
-    EXPECT_EQ(_T("\\\\.\\ :"), IRecordsLoader::NormalizeVolume(_T(" "))); // it does not check that disk letter is correct disk letter
-    EXPECT_EQ(_T("\\\\.\\1:"), IRecordsLoader::NormalizeVolume(_T("1")));
-    EXPECT_EQ(_T("\\\\.\\*:"), IRecordsLoader::NormalizeVolume(_T("*")));
-
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("dd")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("dd:")));
+    
     EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("\\\\.\\")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("\\\\.\\cc")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("\\\\.\\CC:")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("\\\\.\\1")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("\\\\.\\*")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("\\\\.\\ ")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("\\\\.\\ :")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("\\\\.\\-")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("\\\\.\\$:")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("\\\\.\\:")));
+
     EXPECT_EQ(_T("\\\\.\\e:"), IRecordsLoader::NormalizeVolume(_T("\\\\.\\e")));
     EXPECT_EQ(_T("\\\\.\\e:"), IRecordsLoader::NormalizeVolume(_T("\\\\.\\e:")));
+    EXPECT_EQ(_T("\\\\.\\e:"), IRecordsLoader::NormalizeVolume(_T("\\\\.\\e:\\")));
     EXPECT_EQ(_T("\\\\.\\e:"), IRecordsLoader::NormalizeVolume(_T("\\\\.\\e:filename1")));
-    EXPECT_EQ(_T("\\\\.\\fi"), IRecordsLoader::NormalizeVolume(_T("\\\\.\\filename1")));//TODO not sure this is correct test
+    EXPECT_EQ(_T("\\\\.\\x:"), IRecordsLoader::NormalizeVolume(_T("\\\\.\\x:folder\\filename1")));
+    EXPECT_EQ(_T("\\\\.\\X:"), IRecordsLoader::NormalizeVolume(_T("\\\\.\\X:filename1")));
+    EXPECT_EQ(_T("\\\\.\\e:"), IRecordsLoader::NormalizeVolume(_T("\\\\.\\e:\\folder\\filename1")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("\\\\.\\filename1")));
+    EXPECT_EQ(_T(""), IRecordsLoader::NormalizeVolume(_T("\\\\.\\cc")));
 
     EXPECT_TRUE(true);
 }
 
-TEST_F(MFTParserBaseTests, OpenVolume_1)
+TEST_F(MFTParserBaseTests, AbsPath_1)
+{
+    auto curr = std::filesystem::current_path();
+
+    EXPECT_EQ(_T(""), IRecordsLoader::AbsPath(_T(""))); 
+    EXPECT_EQ(_T(" "), IRecordsLoader::AbsPath(_T(" ")));
+    EXPECT_EQ(_T("  "), IRecordsLoader::AbsPath(_T("  ")));
+    EXPECT_EQ(_T("C:\\"), IRecordsLoader::AbsPath(_T("C")));
+    EXPECT_EQ(_T("c:\\"), IRecordsLoader::AbsPath(_T("c")));
+    EXPECT_EQ(_T("f:\\"), IRecordsLoader::AbsPath(_T("f")));
+    EXPECT_EQ(_T("c:\\"), IRecordsLoader::AbsPath(_T("c:")));
+    EXPECT_EQ(_T("x:\\"), IRecordsLoader::AbsPath(_T("x:")));
+    EXPECT_EQ(_T("c:\\"), IRecordsLoader::AbsPath(_T("c:\\")));
+    EXPECT_EQ(_T("f:\\"), IRecordsLoader::AbsPath(_T("f:\\")));
+    EXPECT_EQ(_T("c:\\"), IRecordsLoader::AbsPath(_T("c:\\\\")));
+    EXPECT_EQ(_T("c:\\"), IRecordsLoader::AbsPath(_T("c:\\\\\\")));
+    EXPECT_EQ(_T("f:\\folder"), IRecordsLoader::AbsPath(_T("f:\\folder")));
+    EXPECT_EQ(_T("c:\\folder\\file"), IRecordsLoader::AbsPath(_T("c:\\folder\\\\file")));
+
+    EXPECT_EQ(_T("c:\\"), IRecordsLoader::AbsPath(_T("c:/")));
+    EXPECT_EQ(_T("f:\\"), IRecordsLoader::AbsPath(_T("f:/")));
+    EXPECT_EQ(_T("c:\\"), IRecordsLoader::AbsPath(_T("c://")));
+    EXPECT_EQ(_T("c:\\"), IRecordsLoader::AbsPath(_T("c:///")));
+    EXPECT_EQ(_T("f:\\folder"), IRecordsLoader::AbsPath(_T("f://folder")));
+    EXPECT_EQ(_T("c:\\folder\\file"), IRecordsLoader::AbsPath(_T("c:/folder/file")));
+
+    string_t val = string_t(curr) + _T("\\1");
+    EXPECT_EQ(val, IRecordsLoader::AbsPath(_T("1")));
+    val = string_t(curr) + _T("\\:");
+    EXPECT_EQ(val, IRecordsLoader::AbsPath(_T(":")));
+    val = string_t(curr) + _T("\\$");
+    EXPECT_EQ(val, IRecordsLoader::AbsPath(_T("$")));
+    val = string_t(curr) + _T("\\^");
+    EXPECT_EQ(val, IRecordsLoader::AbsPath(_T("^")));
+    EXPECT_EQ(curr, IRecordsLoader::AbsPath(_T(".")));
+    EXPECT_EQ(curr, IRecordsLoader::AbsPath(_T("..")));
+}
+
+TEST_F(MFTParserBaseTests, Open_1)
 {
     TWinAPIRecordsLoader ldr;
     ldr.Open(_T("c:")); // generates an exception if not run as Admin
     ldr.Open(_T("c"));
-    ldr.Open(_T("c:\testfile"));
+    ldr.Open(_T("c:\\testfile"));
 }
 
-TEST_F(MFTParserBaseTests, OpenVolume_2)
+TEST_F(MFTParserBaseTests, Open_2)
 {
     TWinAPIRecordsLoader ldr;
 
     EXPECT_THROW(ldr.Open(_T("d:")), std::system_error); 
     EXPECT_THROW(ldr.Open(_T("f")), std::system_error);
 
-    EXPECT_THROW(ldr.Open(_T(":")), std::system_error);
-    EXPECT_THROW(ldr.Open(_T("\\")), std::system_error);
-    EXPECT_THROW(ldr.Open(_T("/")), std::system_error);
+    EXPECT_THROW(ldr.Open(_T(":")), std::runtime_error);
+    EXPECT_THROW(ldr.Open(_T("\\")), std::runtime_error); // first symbol should be alfa sym
+    EXPECT_THROW(ldr.Open(_T("/")), std::runtime_error);
 
-    EXPECT_THROW(ldr.Open(_T("::")), std::system_error);
-    EXPECT_THROW(ldr.Open(_T("\\\\")), std::system_error);
-    EXPECT_THROW(ldr.Open(_T("//")), std::system_error);
+    EXPECT_THROW(ldr.Open(_T("::")), std::runtime_error);
+    EXPECT_THROW(ldr.Open(_T("\\\\")), std::runtime_error);
+    EXPECT_THROW(ldr.Open(_T("//")), std::runtime_error);
 
-    EXPECT_THROW(ldr.Open(_T("\\.\\")), std::system_error);
-    EXPECT_THROW(ldr.Open(_T("\\\\.\\")), std::system_error);
-    EXPECT_THROW(ldr.Open(_T("\\\\.\\\\")), std::system_error);
+    EXPECT_THROW(ldr.Open(_T("\\.\\")), std::runtime_error);
+    EXPECT_THROW(ldr.Open(_T("\\\\.\\")), std::runtime_error);
+    EXPECT_THROW(ldr.Open(_T("\\\\.\\\\")), std::runtime_error);
 
 }
 
-TEST_F(MFTParserBaseTests, OpenVolumeCloseVolume_1)
+TEST_F(MFTParserBaseTests, OpenClose_1)
 {
     TWinAPIRecordsLoader ldr;
 
@@ -101,12 +162,12 @@ TEST_F(MFTParserBaseTests, OpenVolumeCloseVolume_1)
     ldr.Close();
 
     ldr.Open(_T("c"));
-    EXPECT_THROW(ldr.Open(_T("//")), std::system_error);
+    EXPECT_THROW(ldr.Open(_T("//")), std::runtime_error);
     ldr.Close();
 }
 
 // MFT IDs will be different for different disks, this test linked to one disk only
-TEST_F(MFTParserBaseTests, GetMFTRecIdByPath_1)
+TEST_F(MFTParserBaseTests, MFTRecIdByPath_1)
 {
     TWinAPIRecordsLoader ldr(_T("c:")); // assume that all path are on C:
     TMFTParserBase ps(ldr);
@@ -146,7 +207,7 @@ TEST_F(MFTParserBaseTests, GetMFTRecIdByPath_1)
 
 
 // MFT IDs will be different for different disks, this test linked to disk C: only
-TEST_F(MFTParserBaseTests, GetPathByMFTRecId_1)
+TEST_F(MFTParserBaseTests, PathByMFTRecId_1)
 {
     TWinAPIRecordsLoader ldr(_T("c:")); // assume that all path are on C:
     TMFTParserBase ps(ldr);
