@@ -54,10 +54,10 @@ static const char* CollationRuleNames[]{ "BINARY",  "FILENAME", "UINT", "SID",  
 struct FILE_NAME
 {
     ci_string ciName;
-    struct ATTR_FILE_NAME Attr{0};
-    struct MFT_REF MFTRef{0}; // MFT Rec ID of this file
+    struct ATTR_FILE_NAME Attr { 0 };
+    struct MFT_REF MFTRecID{0}; // MFT Rec ID of this file
 
-    //bool operator>(const FILE_NAME& other) const { return ciName > other.ciName; }
+    // we need these two operators for THArray<> storage and for std::lower_bound in MFTRecIdByPath method.
     bool operator<(const FILE_NAME& other) const { return ciName < other.ciName; }
     bool operator==(const FILE_NAME& other) const { return ciName == other.ciName; }
 
@@ -110,7 +110,7 @@ struct DIR_NODE
 
 struct ITEM_INFO
 {
-    MFT_REF RecID{ 0 };
+    MFT_REF MFTRecID{ 0 };
     uint16_t AttrCounters[ATTR_TYPE_CNT]{ 0 };
     std::optional<bool> NonResidentAttrList = std::nullopt; // rare case. has an ATTR_LIST attribute that is non-resident
     std::optional<bool> NonResidentBitmap = std::nullopt;   // rare case. has an BITMAP attribute that is non-resident  
@@ -133,7 +133,7 @@ struct ITEM_INFO
         return MainName < other.MainName;
     }*/
 
-    bool operator==(const ITEM_INFO& other) const { return RecID.Id == other.RecID.Id; }
+    bool operator==(const ITEM_INFO& other) const { return MFTRecID.Id == other.MFTRecID.Id; }
 
     bool IsDir() const { return (FileAttrib & (uint32_t)FILE_ATTR_FLAGS::DIRECTORY) > 0; }
     //bool IsMetaFile() const { return (RecID.sId.low == MFT_ROOT_REC_ID) && (ciName[0] == L'$'); }
