@@ -1,26 +1,26 @@
 
 #include "Debug.h"
 #include "NTFS.h"
-//#include "Functions.h" // for TErrorCode
-//#include "Caches.h"
+#include "Functions.h" // for TErrorCode
 #include "Readers.h"
 
 /**
-* @brief Function for reading list of LCNs from Data Runs
-* @details Reads all LCNs from all Data Runs present in node.DataRuns. For each LCN it calls predicate processIndexBlockPred for processing each Index Block.
-* Predicate can either extract list of files from LCN or add the LCN to cache of LCN for further processing.
-* When used to extract list of files from LCN, files are extracted in random order (in order of LCNs in Data Runs) and does not go to sub-nodes.
-* node.Bitmap is used to select which LCNs in Data Runs are valid. Predicate processLCNPred is called only for valid LCNs.
-* @param node Contains Data Runs to be processed, and Bitmap that tells us what LCNs are valid.
-* @param processIndexBlockPred Predicate used for processing each LCN.
+* @brief Function for reading Index Blocks from Data Runs and passing them into predicate (second param) for processing
+* @details Reads all LCNs from Data Runs in node.DataRuns. For each LCN it calls predicate processIndexBlockPred for processing each Index Block.
+* Predicate can either extract list of files from LCN or add the LCN to cache for further processing, or do anything else.
+* When used to extract list of files from LCNs, files are extracted in random order (in order of LCNs in Data Runs) and does not go to sub-nodes.
+* node.Bitmap is used to select which Index Blocks are valid. Predicate processIndexBlockPred is called only for valid Index Blocks.
+* @param node Contains Data Runs to be processed, and Bitmap that tells us what Index Blocks are valid.
+* @param processIndexBlockPred Predicate used for processing each Index Block.
 */
 TErrorCode TMFTParserBase::ProcessAllocDataRuns(DIR_NODE& node, ProcessiBlocksPred processIndexBlockPred)
 {
     GET_LOGGER;
     logger.Debug("---------- START PROCESSING ATTR_ALLOC Data Runs ---------");
 
-    assert(node.IndexBlockSize > 0);
     uint32_t BytesPerCluster = getVolData().BytesPerCluster;
+
+    assert(node.IndexBlockSize > 0);
     if (node.IndexBlockSize >= BytesPerCluster)
         assert((node.IndexBlockSize % BytesPerCluster) == 0);
     else
@@ -45,7 +45,6 @@ TErrorCode TMFTParserBase::ProcessAllocDataRuns(DIR_NODE& node, ProcessiBlocksPr
     int64_t iblockCounter = 0; // counter in Index Blocks (Index Block size may differ from cluster size)
     uint8_t* dataBuf = nullptr;
     uint64_t dataBufSize = 0;
-    //uint64_t dataBufLen = 0; // dataBuf size in clusters (in LCNs)
     uint32_t currRun = 0;
     TErrorCode result = TErrorCode::Success;
 
@@ -100,7 +99,8 @@ TErrorCode TMFTParserBase::ProcessAllocDataRuns(DIR_NODE& node, ProcessiBlocksPr
                     // Not sure if this is correct situation when list of LCNs in one data run has "holes" for which Bitmap attribute has 1 in appropriate cluster.
                    
                     uint8_t* sign = indexRec->Signature;
-                    logger.WarnFmt("[ProcessAllocDataRuns] Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", rli.lcn + i* node.IndexBlockSize / getVolData().BytesPerCluster, sign[0], sign[1], sign[2], sign[3]);
+                    logger.WarnFmt("[ProcessAllocDataRuns] Signature 'INDX' has not been found in LCN cluster {}. Signature found: {}{}{}{}", 
+                        rli.lcn + i* node.IndexBlockSize / getVolData().BytesPerCluster, sign[0], sign[1], sign[2], sign[3]);
 
                  //   continue;
                 }
@@ -120,7 +120,9 @@ TErrorCode TMFTParserBase::ProcessAllocDataRuns(DIR_NODE& node, ProcessiBlocksPr
             }
             else
             {
-                logger.DebugFmt("[ProcessAllocDataRuns] Bitmap bit {}th is zero. LastBit: {}. Bypassing Index Block# {}.", iblockCounter, lastBit, rli.lcn + i* node.IndexBlockSize / getVolData().BytesPerCluster);
+                logger.DebugFmt("[ProcessAllocDataRuns] Bitmap bit {}th is zero. LastBit: {}. Bypassing Index Block# {}.", 
+                    iblockCounter, lastBit, rli.lcn + i* node.IndexBlockSize / getVolData().BytesPerCluster);
+                
                 if (iblockCounter > lastBit) // no more valid LCNs 
                     break;
             }
@@ -220,6 +222,8 @@ TErrorCode TMFTParserBase::DecodeDataRuns(MFT_ATTR_HEADER* attr, TDataRuns& runs
 void TMFTParserBase::GetFileList(INDEX_HDR* ihdr, AddFileAttrPred pred)
 {
     GET_LOGGER;
+
+    assert(ihdr->Used <= ihdr->Allocated);
 
     uint32_t off = ihdr->DEOffset; // offset of 1st dir entry
 
@@ -1105,22 +1109,6 @@ void TMFTParserBase::ParseIndexRoot(MFT_ATTR_HEADER* attr, TLCNRecs& lcns, TFile
     GetFileListFromNode(pihdr, lcns, fileList);
 }
 
-//TOOD very short function. May be we do not need it?
-/*bool TMFTParserBase::ParseAlloc(MFT_ATTR_HEADER* attr, TDataRuns& dataRuns)
-{
-    // sometimes one ATTR_LIST list may contain two ATTR_ALLOC attributes for some reason
-    // it means we come here two times during parsing one MFT record with such ATTR_LIST 
-    //assert(dataRuns.Count() == 0);
-
-    if (!attr) return true; // attr==NULL means that ALLOC attribute is not present in MFT rec. Usually ALLOC is not needed in MFT record for empty directories
-
-    assert(attr->AttrType == ATTR_ALLOC);
-    assert(attr->NonResidentFlag == ATTR_FLAG_NONRESIDENT);
-
-    return DecodeDataRuns(attr, dataRuns); // DataRunDecode writes message to log in case of an error
-}*/
-
-
 /** 
 * @brief Reads three required attributes from mftRec (INDEX_ROOT, ALLOC and BITMAP)
 * and then loads list of files from them in SORTED order starting from IndexRoot, goes to subnodes when needed
@@ -1128,7 +1116,7 @@ void TMFTParserBase::ParseIndexRoot(MFT_ATTR_HEADER* attr, TLCNRecs& lcns, TFile
 * mftRec record must be a directory type
 * @param mftRec pointer to MFT record buffer of directory type
 * @param node parameter is for returning back list of files only (in node.Filelist field).
-* @return Number of files read or TErrorCode code in case of error
+* @return TErrorCode code. List of loaded files stored in node.FileList
 */
 TErrorCode TMFTParserBase::GetFileListFromMFTRec(MFT_FILE_RECORD* mftRec, DIR_NODE& node)
 {
@@ -1370,11 +1358,11 @@ std::expected<MFTRecIndex, TErrorCode> TMFTParserBase::MFTRecIdByPath(const ci_s
 
         FILE_NAME fn;
         fn.ciName = arr[i];
-        // binary search in sorted array
+        // binary search in sorted array (assume that GetFileListFromMFTRec has read items in SORTED order)
         auto iter = std::lower_bound(node.FileList.begin(), node.FileList.end(), fn); // fn has overrided operators < and ==
         if (iter != node.FileList.end() && (*iter).ciName == fn.ciName)
         {
-            mftRecID = iter->MFTRef;
+            mftRecID = iter->MFTRecID;
         }
         else
         {
