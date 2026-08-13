@@ -1,21 +1,53 @@
 
 #include "Readers.h"
 
-// make volume look like \\.\\C: 
+// make volume look like \\.\C:
+// vol should contain volume letter ('c','d', etc) and symbol ':' after it.
+// also vol string can start from \\.\ followed by volume letter and then symbol ':', rest of the string is not checked and cut off
 string_t IRecordsLoader::NormalizeVolume(const string_t& vol)
 {
     if (vol.starts_with(_T("\\\\.\\")))
     {
         if (vol.size() == 4) return _T(""); // no default value, return "" as an error 
+        if (!std::isalpha(vol[4])) return _T(""); // indicates error, no default value 
         if (vol.size() == 5) return vol + _T(':');
+        if (vol[5] != ':') return _T(""); // indicates error, no default value
         return vol.substr(0, 6);
     }
     else
     {
         if (vol.size() == 0) return _T(""); // indicates error, no default value
+        if (!std::isalpha(vol[0])) return _T(""); // indicates error, no default value 
         if (vol.size() == 1) return string_t{ _T("\\\\.\\") } + vol[0] + _T(':'); // extract C, append ':'
+        if (vol[1] != ':') return _T(""); // indicates error, no default value
         return string_t{ _T("\\\\.\\") } + vol[0] + vol[1]; // extract 'C:' from vol
     }
+}
+
+// translate c and c: into "c:\" 
+string_t IRecordsLoader::PreNormalize(const string_t& str)
+{
+    if (str.size() == 1 && std::isalpha(str[0])) return str + _T(":\\");
+    if (str.size() == 2 && std::isalpha(str[0]) && str[1] == ':') return str + _T("\\");
+    return str;
+}
+
+string_t IRecordsLoader::AbsPath(const string_t& str)
+{
+    std::error_code ec;
+    std::filesystem::path relPath(IRecordsLoader::PreNormalize(str));
+    std::filesystem::path absPath = std::filesystem::absolute(relPath, ec);
+    if (ec) return str;
+    return convert_string<string_t::value_type>(absPath.wstring());
+}
+
+bool IRecordsLoader::IsPath(const string_t& str)
+{
+    if (str.size() < 4) return false; // str must contain at least 4 symbols 'c:\f' to look like a path
+    if (!std::isalpha(str[0])) return false;
+    if (str[1] != ':') return false;
+    if (str[2] != '\\') return false;
+    return true;
 }
 
 // FixupUSA1 makes USA fixes in buffer refered by record param.
@@ -59,7 +91,51 @@ TErrorCode  IRecordsLoader::FixupUSA1(NTFS_RECORD_HEADER* record, uint32_t Bytes
     return TErrorCode::Success;
 }
 
-std::expected<uint32_t, TErrorCode> IRecordsLoader::ReadMetaFilesCount(TMFTParserBase& parser)
+expected_uintptr IRecordsLoader::LoadMFTRecordCache(MFT_REF mftRecRef) // returns NULL if error occurred during loading MFT record
+{
+    assert(IsOpened());
+
+    uint8_t** result = FMFTRecCache.GetValuePointer(mftRecRef.sId.low);
+
+    if (result == nullptr) // no value in cache, load MFT record from disk
+    {
+        uint8_t* mftRecBuf = DBG_NEW uint8_t[FVolumeData.BytesPerMFTRec];
+        TErrorCode res = LoadMFTRecord(mftRecRef, mftRecBuf);
+        if (res != TErrorCode::Success)
+            return std::unexpected(res); // error loading MFT record
+
+        //we use mftRecRef.sId.low here because high part of mftRecRef.Id may change when MFT record is modified
+        FMFTRecCache.SetValue(mftRecRef.sId.low, mftRecBuf); // update cache
+
+        return mftRecBuf;
+    }
+
+    GET_LOGGER;
+    logger.Warn("[LoadMFTRecordCache] Record is loaded from cache!");
+
+    return *result; // return MFT record from cache
+}
+
+void IRecordsLoader::Close()
+{
+    if (!IsOpened()) return;
+
+    GET_LOGGER;
+    logger.DebugFmt("Closing volume: {}", wtos(FVolumeData.Name));
+
+    // clears data about volume, clears caches
+
+    //CloseHandle(FVolumeData.hVolume);
+    auto& volDataBuf = (NTFS_VOLUME_DATA_BUFFER&)FVolumeData;
+    ZeroMemory(&volDataBuf, sizeof(NTFS_VOLUME_DATA_BUFFER));
+    //FVolumeData.hVolume = INVALID_HANDLE_VALUE;
+    FVolumeData.Name.clear();
+    FMFTRecCache.Clear();
+    FRecordsCount = 0;
+    FMetaFilesCount = 0;
+}
+
+expected_uint32 IRecordsLoader::ReadMetaFilesCount(TMFTParserBase& parser)
 {
     if (!IsOpened()) return std::unexpected(TErrorCode::IOError);
     assert(FRecordsCount > 0);
@@ -71,7 +147,7 @@ std::expected<uint32_t, TErrorCode> IRecordsLoader::ReadMetaFilesCount(TMFTParse
 
     while (mftRef.sId.low < FRecordsCount)
     {
-        res = LoadMFTRecord(mftRef, mftRecBuf); // function checks signature (should be 'FILE'), returns NotInUse error when signature <>'FILE'
+        res = InternalLoadMFTRecord(mftRef, mftRecBuf, true); // function checks signature (should be 'FILE'), returns NotInUse error when signature <>'FILE'
         if ((res == TErrorCode::MFTRecordNotInUse) || (mftRec->Flags & MFT_FLAG_IN_USE) == 0)
         {
             // MFT record does not contain 'FILE' signature (consider it as NotInUse)
@@ -114,15 +190,24 @@ std::expected<uint32_t, TErrorCode> IRecordsLoader::ReadMetaFilesCount(TMFTParse
     return mftRef.sId.low;
 }
 
+TErrorCode IRecordsLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
+{
+    return InternalLoadMFTRecord(mftRecRef, mftRecData, false);
+}
+
+
+
 void TWinAPIRecordsLoader::InternalOpen(const string_t& vol)
 {
     if (IsOpened()) Close();
     assert(FVolumeData.hVolume == INVALID_HANDLE_VALUE);
 
-    string_t vol2 = NormalizeVolume(vol);
+    string_t vol2 = NormalizeVolume(vol); // returns empty string in case of an error
+
+    if (vol2.size() == 0)
+        throw std::runtime_error(std::format("Incorrect volume name specitied: '{}'. Exiting.", convert_string<char>(vol)));
 
     GET_LOGGER;
-
     logger.DebugFmt("Opening volume: {}", wtos(vol2));
 
     HANDLE hVolume = CreateFile(vol2.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -169,12 +254,13 @@ void TWinAPIRecordsLoader::Open(const string_t& vol)
 void TWinAPIRecordsLoader::Close()
 {
     IRecordsLoader::Close();
+    CloseHandle(FVolumeData.hVolume);
     FVolumeData.hVolume = INVALID_HANDLE_VALUE;
 }
 
 
 // mftRec should be a buffer with volData.BytesPerMFTRec size
-TErrorCode TWinAPIRecordsLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
+TErrorCode TWinAPIRecordsLoader::InternalLoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData, bool internalCall)
 {
     assert(IsOpened());
     assert(FVolumeData.hVolume != INVALID_HANDLE_VALUE);
@@ -198,12 +284,16 @@ TErrorCode TWinAPIRecordsLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRe
 
     // DeviceIoControl may return other MFT record than we requested.
     // This may happen when requested MFT record has been deleted while we were parsing MFT structures and navigating, that happens not so rarely
-    // just exit from LoadMFTRecord in that case.
+    // Or we requested record that is Not In Use e.g. during calculating number of meta files
+    // Just exit from LoadMFTRecord in that case.
     if (nfrib.FileReferenceNumber.LowPart != pnfrob->FileReferenceNumber.LowPart) // we compare LowPart here to avoid diff by Seq Nums which is checked below
     {
-        GET_LOGGER;
-        logger.WarnFmt("Requested MFT Rec ID differs from returned. Looks like requested MFT record is deleted. Requested: {}, returned: {}",
+        if (!internalCall)
+        {
+            GET_LOGGER;
+            logger.WarnFmt("Requested MFT Rec ID differs from returned. Looks like requested MFT record is deleted. Requested: {}, returned: {}",
                 nfrib.FileReferenceNumber.LowPart, pnfrob->FileReferenceNumber.LowPart);
+        }
         return TErrorCode::MFTRecordNotInUse;
     }
 
