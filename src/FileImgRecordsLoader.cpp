@@ -52,7 +52,8 @@ void TFileImageRecordsLoader::Open(const string_t& imgFileName)
 
     FHFile = CreateFile(imgFileName.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 
-    assert(INVALID_HANDLE_VALUE != FHFile); // << "Error opening file '" << imgFileName << "'";;
+    if (FHFile == INVALID_HANDLE_VALUE)
+        throw_winapi_exception("TFileImageRecordsLoader.CreateFile");
 
     // try to find "NTFS   " in the beginning of the file (offset 3).
     // if found - file contain only NTFS partition without MBR
@@ -60,7 +61,7 @@ void TFileImageRecordsLoader::Open(const string_t& imgFileName)
     NTFS_BOOT_SECTOR partNTFS{ 0 };
 
     if (!(ReadFile(FHFile, &partNTFS, sizeof(partNTFS), &bytesRead, nullptr) && (bytesRead == sizeof(partNTFS))))
-        throw_winapi_exception("ReadFile");
+        throw_winapi_exception("TFileImageRecordsLoader.ReadFile");
         //FAIL() << std::format(_T("Error reading file '{}', Error code: {}"), imgFileName, GetLastError());
 
     FPartitionOffset = 0;
@@ -79,21 +80,24 @@ void TFileImageRecordsLoader::Open(const string_t& imgFileName)
         for (size_t i = 0; i < 4; i++)
         {
             if (SetFilePointer(FHFile, mbrOff, 0, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
-                throw_winapi_exception("SetFilePointer");
+                throw_winapi_exception("TFileImageRecordsLoader.SetFilePointer");
                 //FAIL() << std::format(_T("Error setting file pointer for file '{}', Error code: {}"), imgFileName, GetLastError());
 
             bytesRead = 0;
 
             if (!(ReadFile(FHFile, &mbr, sizeof(mbr), &bytesRead, nullptr) && (bytesRead == sizeof(mbr))))
-                throw_winapi_exception("ReadFile");
+                throw_winapi_exception("TFileImageRecordsLoader.ReadFile");
                 //FAIL() << std::format(_T("Error reading file '{}', Error code: {}"), imgFileName, GetLastError());
 
+            if (mbr.FirstLBA == 0)
+                throw std::runtime_error("Disk image file format is incorrect");
+
             if (SetFilePointer(FHFile, mbr.FirstLBA * DEFAULT_SECTOR_SIZE, 0, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
-                throw_winapi_exception("SetFilePointer");
+                throw_winapi_exception("TFileImageRecordsLoader.SetFilePointer");
                  //FAIL() << std::format(_T("Error setting file pointer for file '{}', Error code: {}"), imgFileName, GetLastError());
 
             if (!(ReadFile(FHFile, &partNTFS, sizeof(partNTFS), &bytesRead, nullptr) && (bytesRead == sizeof(partNTFS))))
-                throw_winapi_exception("ReadFile");
+                throw_winapi_exception("TFileImageRecordsLoader.ReadFile");
                 //FAIL() << std::format(_T("Error reading file '{}', Error code: {}"), imgFileName, GetLastError());
 
             assert(DEFAULT_SECTOR_SIZE == partNTFS.BytesPerSector);
@@ -124,7 +128,7 @@ void TFileImageRecordsLoader::Open(const string_t& imgFileName)
     FVolumeData.MftZoneStart.QuadPart = partNTFS.MftStartLcn;
     FVolumeData.Mft2StartLcn.QuadPart = partNTFS.MftMirrorStartLcn;
     FVolumeData.hVolume = INVALID_HANDLE_VALUE;// FHFile;
-    FVolumeData.Name = convert_string<wchar_t>(GetVolumeName(imgFileName));
+    FVolumeData.Name = convert_string<wchar_t>(imgFileName);
 
     assert(DEFAULT_SECTOR_SIZE == FVolumeData.BytesPerSector);
     assert(DEFAULT_BYTES_PER_MFT_REC == FVolumeData.BytesPerMFTRec);
@@ -202,7 +206,7 @@ void TFileImageRecordsLoader::Close()
     //   - requested rec ID is inside of range but record does not contain 'FILE' signature
     // CorruptedData when
     //   - FixupUSA call failed
-TErrorCode TFileImageRecordsLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
+TErrorCode TFileImageRecordsLoader::InternalLoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData, bool internalCall)
 {
     assert(IsOpened());
     assert(FRecordsCount > 0);
@@ -227,11 +231,13 @@ TErrorCode TFileImageRecordsLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mf
     NTFS_RECORD_HEADER* mftRec = (NTFS_RECORD_HEADER*)mftRecData;
     if (!ntfs_is_file_recp(mftRec->Signature)) // MFT rec must contain 'FILE' signature
     {
-        GET_LOGGER;
-        uint8_t* sign = mftRec->Signature;
-        logger.WarnFmt("[LoadMFTRecord] Signature 'FILE' has not been found in MFT record {}. Signature found: {}{}{}{}",
-            mftRecRef.sId.low, sign[0], sign[1], sign[2], sign[3]);
-
+        if (!internalCall)
+        {
+            GET_LOGGER;
+            uint8_t* sign = mftRec->Signature;
+            logger.WarnFmt("[LoadMFTRecord] Signature 'FILE' has not been found in MFT record {}. Signature found: {}{}{}{}",
+                mftRecRef.sId.low, sign[0], sign[1], sign[2], sign[3]);
+        }
         //record is inside MFT table but it does not contain 'FILE' signature - consider it as Not In Use
         return TErrorCode::MFTRecordNotInUse;
     }
