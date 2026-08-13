@@ -36,7 +36,7 @@ int _tmain(int argc, TCHAR* argv[])
     std::wcout.imbue(std::locale());
     //std::cout.imbue(std::locale());
 
-    std::wcout << std::endl << "MFTReader is a tool that shows various information about your NTFS file system." << std::endl << std::endl;
+    std::wcout << std::endl << "MFTReader shows various information about your NTFS file system." << std::endl << std::endl;
 
     InitLogger();
     LogEngine::Logger& logger = LogEngine::GetLogger(MFT_LOGGER_NAME);
@@ -79,12 +79,18 @@ int _tmain(int argc, TCHAR* argv[])
         if (cmd.HasOption(OPT_M)) // info about one MFT record requested
         {
             string_t volume = cmd.GetOptionValue(OPT_M, 1, _T(DEFAULT_VOLUME));
-            
-            TWinAPIRecordsLoader ldr(volume);
-            TMFTStatCollector rdr(ldr);
-
             auto mftRecID = StringToMFTRecID(cmd.GetOptionValue(OPT_M, 0));
 
+            auto absPath = IRecordsLoader::AbsPath(volume);
+
+            IRecordsLoader* ldr{ nullptr };
+            if(IRecordsLoader::IsPath(absPath)) //TODO shall we check here that path refered by absPath really exist?
+                ldr = new TFileImageRecordsLoader(absPath);
+            else
+                ldr = new TWinAPIRecordsLoader(absPath);
+
+            TMFTStatCollector rdr(*ldr);
+            
             MFT_REF MFTRef{ mftRecID };
             THArray<std::wstring> paths;
             
@@ -108,6 +114,8 @@ int _tmain(int argc, TCHAR* argv[])
             if (res != TErrorCode::Success)
                 logger.Error("Error reading info about specified MFT record ID");
 
+            delete ldr;
+
         }
         else if (cmd.HasOption(OPT_P)) // info about one item (file or dir) specified by path is requested
         {         
@@ -123,7 +131,6 @@ int _tmain(int argc, TCHAR* argv[])
                 cout_t << "Path: " << path << std::endl;
 
                 MFT_REF MFTRef{ MFTRecID.value()};
-               
                 ITEM_INFO info{ 0 };
 
                 auto res = rdr.ReadMftItemInfo(MFTRef, info);
@@ -140,9 +147,16 @@ int _tmain(int argc, TCHAR* argv[])
             Ticks::Start(_T("FSReadingTime"));
             string_t volume = cmd.GetOptionValue(OPT_S, 0, _T(DEFAULT_VOLUME));
 
-            //TMFTRecordLoader ldr(volume);
-            TWinAPICacheRecordsLoader ldr(volume);
-            TMFTStatCollector srdr(ldr);
+            auto absPath = IRecordsLoader::AbsPath(volume);
+            
+            IRecordsLoader* ldr{ nullptr };
+            if (IRecordsLoader::IsPath(absPath)) //TODO shall we check here that path refered by volume really exist?
+                ldr = new TFileImageRecordsLoader(absPath);
+            else
+                ldr = new TWinAPIRecordsLoader(absPath); // TWinAPICacheRecordsLoader ldr(absPath);
+
+            TMFTStatCollector srdr(*ldr);
+
             auto res = srdr.CollectVolumeStat();
             if (res != TErrorCode::Success)
                 logger.Error("Error reading volume files statistics.");
@@ -152,17 +166,28 @@ int _tmain(int argc, TCHAR* argv[])
             //ReadDirsV2(vol);
 
             logger.InfoFmt("File System reading time : {}", MillisecToStr<std::string>(Ticks::Finish(_T("FSReadingTime"))));
+
+            delete ldr;
         }
         else if (cmd.HasOption(OPT_C)) // volume statistics requested.
         {
             Ticks::Start(_T("FSReadingTime"));
             string_t volume = cmd.GetOptionValue(OPT_C, 0, _T(DEFAULT_VOLUME));
 
-            TWinAPIRecordsLoader ldr(volume);
-            TMFTSearchReader srchrdr(ldr);
+            auto absPath = IRecordsLoader::AbsPath(volume);
+
+            IRecordsLoader* ldr{ nullptr };
+            if (IRecordsLoader::IsPath(absPath)) //TODO shall we check here that path refered by volume really exist?
+                ldr = new TFileImageRecordsLoader(absPath);
+            else
+                ldr = new TWinAPIRecordsLoader(absPath); // TWinAPICacheRecordsLoader ldr(absPath);
+
+            TMFTSearchReader srchrdr(*ldr);
             srchrdr.ReadDirsV1();
 
             logger.InfoFmt("File System reading time : {}", MillisecToStr<std::string>(Ticks::Finish(_T("FSReadingTime"))));
+
+            delete ldr;
         }
         else if (cmd.HasOption(OPT_T))
         {
@@ -178,15 +203,16 @@ int _tmain(int argc, TCHAR* argv[])
         LogEngine::ShutdownLoggers();
 
         _CrtMemCheckpoint(&s2); // Take a snapshot at the end of main()
+        _CrtMemCheckpoint(&s2); // Take a snapshot at the end of main()
         if (_CrtMemDifference(&s3, &s1, &s2)) _CrtMemDumpStatistics(&s3); // Dump memory statistics excluding global variables
     }
     catch (std::runtime_error& ex)
     {
-        logger.ErrorFmt("MFTReader runtime_error. {}", ex.what());
+        logger.ErrorFmt("MFTReader Error: {}", ex.what());
     }
     catch (std::exception& ex)
     {
-        logger.ErrorFmt("MFTReader std::exception. {}", ex.what());
+        logger.ErrorFmt("MFTReader Error: {}", ex.what());
     }
     catch (...)
     {
