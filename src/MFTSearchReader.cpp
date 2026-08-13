@@ -306,7 +306,7 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
             case ATTR_ALLOC: // NON-resident. ATTR_ALLOC is always non-resident.
             {
                 // sometimes one ATTR_LIST_ATTR list may contain two ATTR_ALLOC attributes
-                // it means we come here two times during parsing one MFT record with such ATTR_LIST_ATTR 
+                // it means we come here two times during parsing one MFT BASE record with such ATTR_LIST_ATTR 
                 if (node.DataRuns.Count() > 0)
                 {
                     assert(!IsBASERec); // base record cannot contain two ATTR_ALLOC attributes, while child records referred by ATTR_LIST can
@@ -478,21 +478,20 @@ TErrorCode TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* par
 
     uint8_t* mftRecBuf = (uint8_t*)alloca(getVolData().BytesPerMFTRec);
 
-    MFT_REF MFTRec{0};
+    MFT_REF MFTRef{0};
     if (parentItem == nullptr)
-        MFTRec.Id = MFT_ROOT_REC_ID;
+        MFTRef.Id = MFT_ROOT_REC_ID;
     else
-        MFTRec = parentItem->FMFTRecRef;
+        MFTRef = parentItem->FMFTRecID;
 
-    auto res = FLoader.LoadMFTRecord(MFTRec, mftRecBuf);
+    auto res = FLoader.LoadMFTRecord(MFTRef, mftRecBuf);
     if (res != TErrorCode::Success)
     {
         logger.Error("LoadMFTRecord finished with error.");
         return res;
     }
 
-
-    // if we are on the root dir - add root item into gFileList
+    // if we are on the root dir - add root item into FFileList
     // then change levelIdx to 1 to properly read root dirs/files into level 1 instead of 0
     if (parentItem == nullptr)
     {
@@ -510,13 +509,14 @@ TErrorCode TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* par
         ATTR_FILE_NAME* fattr = (ATTR_FILE_NAME*)alloca(fattrSize);
         ZeroMemory(fattr, fattrSize);
 
-        fattr->FileNameLen = (uint8_t)getVolData().Name.size(); //name of disk (C:, D:, etc)
-        fattr->NameType    = FILE_NAME_UNICODE_AND_DOS;
-        fattr->ParentDir   = MFTRec;
+        fattr->FileNameLen        = (uint8_t)getVolData().Name.size(); //name of disk (C:, D:, etc)
+        fattr->NameType           = FILE_NAME_UNICODE_AND_DOS;
+        fattr->ParentDir          = MFTRef;
         fattr->dup.CreateTime     = stdinfo->CreateTime;
         fattr->dup.ModifyTime     = stdinfo->ModifyTime;
         fattr->dup.ModifyAttrTime = stdinfo->ModifyAttrTime;
         fattr->dup.LastAccessTime = stdinfo->LastAccessTime;
+
         // this is HACK because STD attr does not contain dir flag for '.' directory for some reason. while FILENAME attr for '.' does contain dir flag.
         // many articles about NTFS tell us that STD attr does not contain DIR flag while FILENAME does 
         fattr->dup.FileAttrib = stdinfo->FileAttrib | (uint32_t)FILE_ATTR_FLAGS::DIRECTORY; 
@@ -525,7 +525,7 @@ TErrorCode TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* par
         UNREFERENCED_PARAMETER(res2);
         assert(!res2);
 
-        level0->AddValue(0, MFTRec, fattr);
+        level0->AddValue(0, MFTRef, fattr);
 
         //IMPORTANT: change parentItem to new parent to proper read files from root dir into level 1 (level 0 is a root dir like C: or D:) 
         parentItem = level0->GetValue(0);
@@ -535,18 +535,20 @@ TErrorCode TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* par
 
     auto level = FFileList.GetLevel(parentItem->FLevel + 1);
     assert(level->Level() == parentItem->FLevel + 1);
+
     uint32_t startPos = level->Count(); // remember start position for newly added items
     CACHE_ITEM* startItem = level->Last(); // NOTE! Last() returns pointer to item that WILL BE added next. Also startItem may become invalid if realloc happened in the level duing adding new items
 
-    AddFileAttrPred addToFileListPred = [parentIdx, &level](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
+    AddFileAttrPred addToFileListPred = [parentIdx, &level, this](const ATTR_FILE_NAME* attr, const MFT_REF& ref)
         {
-            // do not add NTFS internal files that are in root dir and start from $
-            //if (!AttrIsNtfsInt(attr))
-            level->AddValue(parentIdx, ref, attr);
+            // we need this check here to do NOT add NTFS internal files in to list
+            if (!FLoader.IsMetaFile(ref.sId.low))
+                level->AddValue(parentIdx, ref, attr);
         };
 
     DIR_NODE node;
-    res = ParseMFTRecord(mftRecBuf, node, addToFileListPred/*parentIdx, level */ );
+    // ParseMFTRecord may add several files into level from INDEX_ROOT attr using addToFileListPred predicate
+    res = ParseMFTRecord(mftRecBuf, node, addToFileListPred/*parentIdx, level */ ); 
     if (res != TErrorCode::Success)
     {
         logger.Error("ParseMFTRecord finished with error.");
@@ -576,7 +578,7 @@ TErrorCode TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* par
             }
         };
 
-    if (node.DataRuns.Count() > 0)
+    if (node.DataRuns.Count() > 0) // this is only true when ALLOC attribute(s) present in MFT record
     {
         if (TErrorCode::Success != ProcessAllocDataRuns(node, processAllocPred) )
         {
@@ -599,7 +601,7 @@ TErrorCode TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* par
         }
         else
         {
-            item = level->GetValue(startPos);
+            item = level->GetValue(startPos); // this is long operation
             assert(item->FLevel == parentItem->FLevel + 1);
             assert(item->FParent == parentIdx);
         }
@@ -615,36 +617,34 @@ TErrorCode TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* par
     for (uint32_t i = startPos; i < newcnt; i++)
     {
         assert(item);
-        
         //if (!item->NtfsInternal())
-        if (!FLoader.IsMetaFile(item->FMFTRecRef.sId.low))
+        assert(!FLoader.IsMetaFile(item->FMFTRecID.sId.low)); // meta files should not present in the list
+
+        if (item->IsDir())
         {
-            if (item->IsDir())
+            if (!item->IsReparse()) //bypass reparse items
             {
-                if (!item->IsReparse()) //bypass reparse items
-                {
-                    uint64_t childDirSize{ 0 };
-                    if (TErrorCode::Success != ReadDirectoryV1(i, item, childDirSize, callback))
-                        logger.ErrorFmt("ReadDirectoryV1 finished with error for MFT Rec ID: {}", item->FMFTRecRef.toHexString());
-                    dirSize += childDirSize;
-                }
+                uint64_t childDirSize{ 0 };
+                if (TErrorCode::Success != ReadDirectoryV1(i, item, childDirSize, callback))
+                    logger.ErrorFmt("ReadDirectoryV1 finished with error for MFT Rec ID: {}", item->FMFTRecID.toHexString());
+                dirSize += childDirSize;
             }
-            else // file, not a directory
-            {
-                dirSize += item->FileAttr.dup.FileSize;
-            }
-
-            // print only dirs of first level.
-            if (parentItem->FLevel == 0)
-            {
-                // callback can be NULL
-                if (callback) callback(ProgressCounter++); //call callback only for items from root directory
-                logger.InfoFmt("{}  [{}]", wtos(std::wstring(item->Name(), item->FileAttr.FileNameLen)), toStringSepA(item->FileAttr.dup.FileSize));
-            }
-
-            //if (parentItem->FLevel == 1) 
-            //    logger.InfoFmt("\t{} [{}]", wtos(std::wstring(item->Name(), item->FileAttr.FileNameLen)), toStringSepA(item->FileAttr.dup.FileSize));
         }
+        else // file, not a directory
+        {
+            dirSize += item->FileAttr.dup.FileSize;
+        }
+
+        // print only dirs of first level.
+        if (parentItem->FLevel == 0)
+        {
+            // callback can be NULL
+            if (callback) callback(ProgressCounter++); //call callback only for items from root directory
+            logger.InfoFmt("{:<25}  [{}]", wtos(std::wstring(item->Name(), item->FileAttr.FileNameLen)), toStringSepA(item->FileAttr.dup.FileSize));
+        }
+
+        //if (parentItem->FLevel == 1) 
+        //    logger.InfoFmt("\t{} [{}]", wtos(std::wstring(item->Name(), item->FileAttr.FileNameLen)), toStringSepA(item->FileAttr.dup.FileSize));
 
         item = level->Next(item);
     }
@@ -667,7 +667,7 @@ void TMFTSearchReader::ReadDirsV1()
 {
     uint64_t rootDirSize{0};
 
-    std::wcout << _T("Reading volume: ") << getVolData().Name << std::endl;
+    std::wcout << _T("Reading volume: '") << getVolData().Name << "'" << std::endl << std::endl;
 
     Ticks::Start(_T("Loading time"));
     if (TErrorCode::Success != ReadDirectoryV1(0, nullptr, rootDirSize, PrintV1Progress))
@@ -680,45 +680,47 @@ void TMFTSearchReader::ReadDirsV1()
     std::cout << std::endl << "Volume root dir size: " << toStringSepA(rootDirSize) << " bytes" << std::endl;
     std::cout << "Total Items Count: " << FFileList.TotalCount() << std::endl;
 
-    //fileCache.SaveTo("MFTReader_items.txt");
-
     FFileList.PrintLevelsStat();
-    
-   /* std::cout << "Converting to plain array... " << std::endl;
-  
+
+    SaveToFile(_T("ListMFTFile_SearchReader.log"));
+
+    Ticks::PrintTime();
+}
+
+void TMFTSearchReader::SaveToFile(string_t fileName)
+{
+    cout_t << "Converting to plain array... " << std::endl;
+
     Ticks::Start(_T("Converting time"));
-    THArray<ci_string> arr;
-    arr.SetCapacity(fileCache.TotalCount() + 1); // 1 is just in case
-    fileCache.ToArray(arr);
+    THArray<string_t> arr;
+    arr.SetCapacity(FFileList.TotalCount() + 1); // 1 is just in case
+    FFileList.ToArray(arr);
     Ticks::Finish(_T("Converting time"));
 
-    std::cout << "Sorting... " << std::endl;
-    
+    cout_t << "Sorting... " << std::endl;
+
     Ticks::Start(_T("Sorting time"));
     std::sort(std::execution::par, arr.begin(), arr.end());
     Ticks::Finish(_T("Sorting time"));
 
-    std::string filename = "ListMFTFile_sortedV1.log";
-    LogEngine::TFileStream ff(filename);
+    //std::string filename = "ListMFTFile_SearchReader.log";
+    LogEngine::TFileStream ff(wtos(fileName));
 
     string_t fendl;
     BUILD_ENDL(fendl);
-    ff << _T("Total Items Count: ") << toStringSep<uint,string_t>(arr.Count()) << fendl;
 
-    std::cout << "Saving list of files to '" << filename << "'..." << std::endl;
-    
+    ff << _T("Total Items Count: ") << toStringSep<uint, string_t>(arr.Count()) << fendl;
+
+    cout_t << "Saving list of files to '" << fileName << "'..." << std::endl;
+
     Ticks::Start(_T("Saving time"));
     for (auto& item : arr)
     {
         ff << item << fendl;
     }
     Ticks::Finish(_T("Saving time"));
-    */
-    Ticks::PrintCon(1);
-    
-     
-}
 
+}
 
 
 // reads list of files in already sorted order
@@ -747,7 +749,7 @@ TErrorCode TMFTSearchReaderV2::ReadDirectoryV2(MFT_REF parentMftRecID, uint32_t 
     for (auto& item : node.FileList)
     {
         //if (!item.NtfsInternal()) // do not add hidden metafiles into file list
-        if (!FLoader.IsMetaFile(item.MFTRef.sId.low)) 
+        if (!FLoader.IsMetaFile(item.MFTRecID.sId.low)) 
         {
             if (dirLevel == 0) std::wcout << item.ciName.c_str() << std::endl;
             //if (dirLevel == 1) std::wcout << "      " << item.ciName.c_str() << std::endl;
@@ -758,8 +760,8 @@ TErrorCode TMFTSearchReaderV2::ReadDirectoryV2(MFT_REF parentMftRecID, uint32_t 
             {
                 if (!item.IsReparse())
                 {
-                    if (TErrorCode::Success != ReadDirectoryV2(item.MFTRef, dirLevel + 1))
-                        logger.ErrorFmt("ReadDirectoryV2 finished with error for MFT rec: {}", item.MFTRef.sId.low);
+                    if (TErrorCode::Success != ReadDirectoryV2(item.MFTRecID, dirLevel + 1))
+                        logger.ErrorFmt("ReadDirectoryV2 finished with error for MFT rec: {}", item.MFTRecID.sId.low);
                 }
             }
         }
