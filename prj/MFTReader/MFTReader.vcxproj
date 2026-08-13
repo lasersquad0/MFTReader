@@ -206,6 +206,7 @@
     <ClInclude Include="..\..\include\FileCache.h" />
     <ClInclude Include="..\..\include\FileLevel.h" />
     <ClInclude Include="..\..\include\Functions.h" />
+    <ClInclude Include="..\..\include\Loaders.h" />
     <ClInclude Include="..\..\include\MFTReader.h" />
     <ClInclude Include="..\..\include\NTFS.h" />
     <ClInclude Include="..\..\include\Readers.h" />
