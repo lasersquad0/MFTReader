@@ -56,8 +56,10 @@ void TWinAPICacheRecordsLoader::Open(const string_t& vol)
 
 }
 
-TErrorCode TWinAPICacheRecordsLoader::LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData)
+TErrorCode TWinAPICacheRecordsLoader::InternalLoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData, bool internalCall)
 {
+    UNREFERENCED_PARAMETER(internalCall);
+
     if(!IsOpened()) return TErrorCode::IOError;
     assert(mftRecRef.sId.low < FRecordsCount);
 
