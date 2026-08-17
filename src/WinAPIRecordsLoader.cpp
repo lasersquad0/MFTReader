@@ -38,7 +38,7 @@ string_t IRecordsLoader::AbsPath(const string_t& str)
     std::filesystem::path relPath(IRecordsLoader::PreNormalize(str));
     std::filesystem::path absPath = std::filesystem::absolute(relPath, ec);
     if (ec) return str;
-    return convert_string<string_t::value_type>(absPath.wstring());
+    return convert_string<char_t>(absPath.wstring());
 }
 
 bool IRecordsLoader::IsPath(const string_t& str)
@@ -135,7 +135,7 @@ void IRecordsLoader::Close()
     FMetaFilesCount = 0;
 }
 
-expected_uint32 IRecordsLoader::ReadMetaFilesCount(TMFTParserBase& parser)
+expected_uint32 IRecordsLoader::ReadMetaFilesCount(TMFTBaseReader& parser)
 {
     if (!IsOpened()) return std::unexpected(TErrorCode::IOError);
     assert(FRecordsCount > 0);
@@ -245,7 +245,7 @@ void TWinAPIRecordsLoader::Open(const string_t& vol)
 {
     InternalOpen(vol);
 
-    TMFTParserBase parser(*this);
+    TMFTBaseReader parser(*this);
     auto expct =  ReadMetaFilesCount(parser);
     assert(expct);
     FMetaFilesCount = expct.value();
