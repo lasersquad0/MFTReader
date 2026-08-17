@@ -170,7 +170,7 @@ TEST_F(MFTParserBaseTests, OpenClose_1)
 TEST_F(MFTParserBaseTests, MFTRecIdByPath_1)
 {
     TWinAPIRecordsLoader ldr(_T("c:")); // assume that all path are on C:
-    TMFTParserBase ps(ldr);
+    TMFTBaseReader ps(ldr);
 
     THArray<std::pair<uint32_t, ci_string>> testData{
         {0, _T("c:\\$MFT")},
@@ -210,7 +210,7 @@ TEST_F(MFTParserBaseTests, MFTRecIdByPath_1)
 TEST_F(MFTParserBaseTests, PathByMFTRecId_1)
 {
     TWinAPIRecordsLoader ldr(_T("c:")); // assume that all path are on C:
-    TMFTParserBase ps(ldr);
+    TMFTBaseReader ps(ldr);
 
     THArray<std::pair<uint32_t, ci_string>> testData
     {
