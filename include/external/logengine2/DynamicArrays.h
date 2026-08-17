@@ -896,7 +896,7 @@ void THArray<T>::SetCapacity(const uint Value)
 	{
 		newMemory = new T[Value]; //TODO here is default constructor is called for each item in array. May be time consuming.
 		for (uint i = 0; i < valuemin(Value, FCount); i++)
-			newMemory[i] = FBegin[i]; 
+			newMemory[i] = FBegin[i]; //TODO we create new objects by calling def constructors and then we owerwrite them with data from 'old' array
 	}
 
 	delete[] FMemory;
