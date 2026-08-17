@@ -77,6 +77,7 @@
       <LanguageStandard>stdcpp23</LanguageStandard>
       <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
       <SDLCheck>true</SDLCheck>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -115,6 +116,7 @@
       <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
       <SDLCheck>true</SDLCheck>
       <Optimization>Disabled</Optimization>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -129,7 +131,7 @@
     <ClCompile Include="..\..\include\external\strutils\src\string_utils.cpp" />
     <ClCompile Include="..\..\src\FileImgRecordsLoader.cpp" />
     <ClCompile Include="..\..\src\Functions.cpp" />
-    <ClCompile Include="..\..\src\MFTParserBase.cpp" />
+    <ClCompile Include="..\..\src\MFTBaseReader.cpp" />
     <ClCompile Include="..\..\src\MFTSearchReader.cpp" />
     <ClCompile Include="..\..\src\MFTStatReader.cpp" />
     <ClCompile Include="..\..\src\Utils.cpp" />
