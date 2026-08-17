@@ -10,7 +10,7 @@ typedef uint8_t* puint8_t;
 typedef std::expected<puint8_t, TErrorCode> expected_uintptr;
 typedef std::expected<uint32_t, TErrorCode> expected_uint32;
 
-class TMFTParserBase;
+class TMFTBaseReader;
 
 class IRecordsLoader
 {
@@ -22,7 +22,7 @@ protected:
 	TMFTRecCache FMFTRecCache;
 
 	virtual TErrorCode InternalLoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData, bool internalCall) = 0;
-	virtual expected_uint32 ReadMetaFilesCount(TMFTParserBase& parser);
+	virtual expected_uint32 ReadMetaFilesCount(TMFTBaseReader& parser);
 public:
 	virtual ~IRecordsLoader() { Close(); }
 	static string_t NormalizeVolume(const string_t& vol);
