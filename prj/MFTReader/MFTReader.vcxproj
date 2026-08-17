@@ -137,6 +137,7 @@
       <ExceptionHandling>Async</ExceptionHandling>
       <SmallerTypeCheck>false</SmallerTypeCheck>
       <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -163,6 +164,7 @@
       <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
       <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
       <Optimization>Disabled</Optimization>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -183,7 +185,7 @@
     <ClCompile Include="..\..\include\external\cli\OptionsList.cpp" />
     <ClCompile Include="..\..\include\external\strutils\src\string_utils.cpp" />
     <ClCompile Include="..\..\src\FileImgRecordsLoader.cpp" />
-    <ClCompile Include="..\..\src\MFTParserBase.cpp" />
+    <ClCompile Include="..\..\src\MFTBaseReader.cpp" />
     <ClCompile Include="..\..\src\MFTStatReader.cpp" />
     <ClCompile Include="..\..\src\Functions.cpp" />
     <ClCompile Include="..\..\src\MFTReader.cpp" />

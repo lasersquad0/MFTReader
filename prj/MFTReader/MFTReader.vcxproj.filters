@@ -54,7 +54,7 @@
     <ClCompile Include="..\..\include\external\cli\OptionsList.cpp">
       <Filter>Source Files\CLI</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\MFTParserBase.cpp">
+    <ClCompile Include="..\..\src\MFTBaseReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\FileImgRecordsLoader.cpp">
