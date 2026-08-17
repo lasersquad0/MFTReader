@@ -16,9 +16,6 @@
     <ClCompile Include="..\..\src\MFTStatReader.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\MFTParserBase.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
     <ClCompile Include="MFTDataRunsTest.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -35,6 +32,9 @@
       <Filter>Source</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\WinAPIRecordsLoader.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\MFTBaseReader.cpp">
       <Filter>Source</Filter>
     </ClCompile>
   </ItemGroup>
