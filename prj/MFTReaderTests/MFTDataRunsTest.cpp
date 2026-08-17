@@ -33,7 +33,7 @@ public:
 TEST_P(MFTDataRunDecodeTest, DecodeDataRuns_1)
 {
     TWinAPIRecordsLoader ldr;
-    TMFTParserBase parser(ldr);
+    TMFTBaseReader parser(ldr);
 
     string_t fileName = GetParam();
     std::ifstream file(fileName);
