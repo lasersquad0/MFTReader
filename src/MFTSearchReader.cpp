@@ -789,7 +789,7 @@ void TMFTSearchReaderV2::ReadDirsV2()
     UNREFERENCED_PARAMETER(res);
     assert(res == TErrorCode::Success);
 
-    auto dirCount = std::count_if(FDirList.begin(), FDirList.end(), [](FILE_NAME& a) { return a.IsDir(); });
+    auto dirCount = std::count_if(FDirList.begin(), FDirList.end(), [](IFILE_NAME& a) { return a.IsDir(); });
 
     std::cout << toStringSepA(FDirList.Count()) + " - total" << std::endl;
     std::cout << toStringSepA(FDirList.Count() - dirCount) + " - files" << std::endl; // only files 
