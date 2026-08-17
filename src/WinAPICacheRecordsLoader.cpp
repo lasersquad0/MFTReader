@@ -8,7 +8,7 @@ void TWinAPICacheRecordsLoader::Open(const string_t& vol)
 
     ReadAllMftRecords();
 
-    TMFTParserBase parser(*this);
+    TMFTBaseReader parser(*this);
     auto expct = ReadMetaFilesCount(parser); // need to be places after ReadAllMftRecords
     assert(expct);
     FMetaFilesCount = expct.value();
