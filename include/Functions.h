@@ -9,7 +9,6 @@
 #include "logengine2/LogEngine.h"
 #include "logengine2/DynamicArrays.h"
 #include "NTFS.h"
-//#include "FileCache.h"
 #include "BitField.h"
 
 
@@ -43,23 +42,22 @@ constexpr uint32_t DEFAULT_BYTES_PER_MFT_REC = 1024;
 #define MATI(_) ((_)>>4) 
 #define AttrName(_) (AttrTypeNames[(_)>>4])
 #define MakeAttrBitmask(_) (1<<((_)>>4))
+#define MakeCollationRuleIndex(_) ((_)==0?0:(_)==1?1:(_)==0x10?2:(_)==0x11?3:(_)==0x12?4:(_)==0x13?5:6) 
+#define CollRuleName(_) (CollationRuleNames[MakeCollationRuleIndex(_)])
 
 static const char* AttrTypeNames[ATTR_TYPE_CNT] ATTR_TYPE_NAMES;
 static const char* FileNameTypes[]{ "POSIX", "UNICODE", "DOS", "UNICODE_AND_DOS" };
 static const char* CollationRuleNames[]{ "BINARY",  "FILENAME", "UINT", "SID",  "SECURITY_HASH", "UINTS", "UNKNOWN"};
 
-#define MakeCollationRuleIndex(_) ((_)==0?0:(_)==1?1:(_)==0x10?2:(_)==0x11?3:(_)==0x12?4:(_)==0x13?5:6) 
-#define CollRuleName(_) (CollationRuleNames[MakeCollationRuleIndex(_)])
-
-struct FILE_NAME
+struct IFILE_NAME
 {
     ci_string ciName;
     struct ATTR_FILE_NAME Attr { 0 };
     struct MFT_REF MFTRecID{0}; // MFT Rec ID of this file
 
     // we need these two operators for THArray<> storage and for std::lower_bound in MFTRecIdByPath method.
-    bool operator<(const FILE_NAME& other) const { return ciName < other.ciName; }
-    bool operator==(const FILE_NAME& other) const { return ciName == other.ciName; }
+    bool operator<(const IFILE_NAME& other) const { return ciName < other.ciName; }
+    bool operator==(const IFILE_NAME& other) const { return ciName == other.ciName; }
 
     bool IsDir() const { return (Attr.dup.FileAttrib & (uint32_t)FILE_ATTR_FLAGS::DIRECTORY) > 0; }
     //bool IsMetaFile() const { return (Attr.ParentDir.sId.low == MFT_ROOT_REC_ID) && (ciName[0] == L'$'); } // assumes ciName is not empty
@@ -69,12 +67,12 @@ struct FILE_NAME
 };
 
 #if _DEBUG
-static_assert(sizeof(FILE_NAME) == 120); 
+static_assert(sizeof(IFILE_NAME) == 120); 
 #else
-static_assert(sizeof(FILE_NAME) == 112);
+static_assert(sizeof(IFILE_NAME) == 112);
 #endif
 
-typedef THArray<FILE_NAME> TFileList;
+typedef THArray<IFILE_NAME> TFileList;
 typedef THArray<DATA_RUN_ITEM> TDataRuns;
 
 #define FILE_LIST_DEF_SIZE 100
@@ -111,28 +109,26 @@ struct DIR_NODE
 struct ITEM_INFO
 {
     MFT_REF MFTRecID{ 0 };
+    MFT_REF ParentDir{ 0 };
+    std::wstring MainName;
+    uint32_t FileAttrib{ 0 };
+    uint32_t FilesCount{ 0 }; // valid for directoriy records only. number of dirs/files in a directory.
+    uint16_t HardLinksCount{ 0 };
+    uint64_t DataLCNsCount{ 0 }; // how many LCNs the file uses. filled for non-resident DATA attributes only
+    uint16_t AttrsCount{ 0 };
     uint16_t AttrCounters[ATTR_TYPE_CNT]{ 0 };
+
     std::optional<bool> NonResidentAttrList = std::nullopt; // rare case. has an ATTR_LIST attribute that is non-resident
     std::optional<bool> NonResidentBitmap = std::nullopt;   // rare case. has an BITMAP attribute that is non-resident  
     bool HasResidentDataAttr{ false };      // Has resident DATA attribute. Not so rare case.
     bool HasNonResidentDataAttr{ false }; // Has non-resident DATA attribute
-    uint32_t FileAttrib{ 0 };
 
-    uint16_t HardLinksCount{ 0 };
-    uint16_t AttrsCount{ 0 };
-    uint64_t DataLCNsCount{ 0 }; // how many LCNs the file uses. filled for non-resident data attributes only
-    uint32_t FilesCount{ 0 }; // valid for directoriy records only. number of dirs/files in a directory.
-    std::wstring MainName; 
-    THArray<std::wstring> FileNames; // contains filenames of all types - DOS, WIN and POSIX
+    THArray<IFILE_NAME> FileNames; // contains filenames of all types - DOS, WIN and POSIX
     THash<std::wstring, TDataRuns> DataStreamNames; // data stream name counts groupped by stream name
   
     DIR_NODE Node;
 
-    /*bool operator<(const ITEM_INFO& other) const
-    { 
-        return MainName < other.MainName;
-    }*/
-
+    //operator == is required for storing this structure in THArray<>
     bool operator==(const ITEM_INFO& other) const { return MFTRecID.Id == other.MFTRecID.Id; }
 
     bool IsDir() const { return (FileAttrib & (uint32_t)FILE_ATTR_FLAGS::DIRECTORY) > 0; }
@@ -151,9 +147,9 @@ struct ITEM_INFO
 //static_assert(std::is_nothrow_move_constructible_v<ITEM_INFO>);
 
 #if _DEBUG
-static_assert(sizeof(ITEM_INFO) == 336);
+static_assert(sizeof(ITEM_INFO) == 344);
 #else
-static_assert(sizeof(ITEM_INFO) == 328);
+static_assert(sizeof(ITEM_INFO) == 336);
 #endif
 
 // FixupUSA1 - corrupted data
@@ -182,6 +178,7 @@ enum class TErrorCode
 #define ERROR_CODE_NAMES { "Success", "MFTRecordNotInUse", "WrongMFTRecID", "InvalidArgument", "CorruptedData", "IOError", "NotFound" }
 static const char* ErrorCodeNames[(uint8_t)TErrorCode::TErrorCodeCount] ERROR_CODE_NAMES;
 
+// this is for Google Tests to proper print error codes during running tests
 inline void PrintTo(const TErrorCode& code, std::ostream* os)
 {
     *os << ErrorCodeNames[(uint8_t)code];
@@ -210,18 +207,22 @@ struct VOLUME_DATA : public NTFS_VOLUME_DATA_BUFFER
 
 };
 
+typedef THArray<MFT_ATTR_HEADER*> TAttrHeaderList;
+
 class TAttrCollection
 {
 private:
-    typedef THArray<MFT_ATTR_HEADER*> THArrayAttrHeader;
-    THArray<THArrayAttrHeader> FAttrList;
+    THArray<TAttrHeaderList> FAttrList;
 public:
     TAttrCollection()
     {
         FAttrList.SetCount(ATTR_TYPE_CNT);
-        FAttrList.Zero(); // needed to check which attrs are not present (will be nulls in FAttrList)
+        //FAttrList.Zero(); // needed to check which attrs are not present (will be nulls in FAttrList)
     }
-    
+
+    //auto begin() { return FAttrList.begin(); }
+    //auto end()   { return FAttrList.end(); }
+
     void Set(MFT_ATTR_HEADER* attr)
     {
         assert(attr->AttrType <= ATTR_LOGGED_UTILITY_STREAM); // this is last attribute in list of attr types
@@ -233,7 +234,7 @@ public:
         FAttrList[MATI(attr->AttrType)].AddValue(attr);
     }
 
-    THArrayAttrHeader& Get(ATTR_TYPE attrType)
+    TAttrHeaderList& Get(ATTR_TYPE attrType)
     {
         //assert((attrType != ATTR_FILENAME) && (attrType != ATTR_DATA) && (attrType != ATTR_LOGGED_UTILITY_STREAM));
         return FAttrList[MATI(attrType)];
