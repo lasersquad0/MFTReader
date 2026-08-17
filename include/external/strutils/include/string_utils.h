@@ -20,6 +20,8 @@
 typedef wchar_t char_t;
 typedef std::wstring string_t;
 typedef std::wstringstream stringstream_t;
+typedef std::wostream ostream_t;
+
 #define to_string_t std::to_wstring
 #define cout_t std::wcout
 
@@ -31,7 +33,7 @@ typedef std::string string_t;
 typedef std::stringstream stringstream_t;
 #define to_string_t std::to_string
 #define cout_t std::cout
-
+typedef std::ostream ostream_t;
 
 #endif
 
