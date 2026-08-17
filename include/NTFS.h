@@ -437,13 +437,95 @@ static_assert(sizeof(ATTR_FILE_NAME) == 0x42);
  */
 struct ATTR_REPARSE_POINT
 {
-    uint32_t reparse_tag;		    // Reparse point type (inc. flags).
-    uint16_t reparse_data_length;	// Byte size of reparse data. 
-    uint16_t reserved;		   	    // Align to 8-byte boundary. 
-    //uint8_t  reparse_data[0];		// Meaning depends on reparse_tag. 
-}; //0x08
+    uint32_t ReparseTag;		   // 0x00: Reparse point type (inc. flags).
+    uint16_t ReparseDataLength;  // 0x04: Byte size of reparse data. 
+    uint16_t Reserved;		   	   // 0x06: Align to 8-byte boundary. 
+    GUID Guid;	                  // 0x08: 
 
-static_assert(sizeof(ATTR_REPARSE_POINT) == 0x08);
+    //uint8_t  reparse_data[0];	   // Here GenericReparseBuffer is placed. Meaning depends on reparse_tag. 
+
+}; //0x18
+
+static_assert(sizeof(ATTR_REPARSE_POINT) == 0x18);
+
+/*
+*The reparse tags are a ULONG.The 32 bits are laid out as follows :
+*
+*3 3 2 2 2 2 2 2 2 2 2 2 1 1 1 1 1 1 1 1 1 1
+* 1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0
+* +-+-+-+-+---------------------- - +------------------------------ - +
+*| M | R | N | R | Reserved bits | Reparse Tag Value |
+*+-+-+-+-+---------------------- - +------------------------------ - +
+*
+*M is the Microsoft bit.When set to 1, it denotes a tag owned by Microsoft.
+* All ISVs must use a tag with a 0 in this position.
+* Note: If a Microsoft tag is used by non - Microsoft software, the
+* behavior is not defined.
+*
+* R is reserved.Must be zero for non - Microsoft tags.
+*
+* N is name surrogate.When set to 1, the file represents another named
+* entity in the system.
+*
+* The M and N bits are OR - able.
+* The following macros check for the M and N bit values :
+
+ * WINNT.H file contains various macros to work with reparse tags 
+ * like IsReparseTagMicrosoft(_tag)	or IsReparseTagNameSurrogate(_tag) and others
+ * 
+ * In addition to above winnt.h contains defines for predefined tags used by Microsoft 
+ * like IO_REPARSE_TAG_SYMBOLIC_LINK, IO_REPARSE_TAG_MICROSOFT, IO_REPARSE_TAG_MOUNT_POINT, IO_REPARSE_TAG_SYMLINK and others
+ */
+
+
+
+ /* Microsoft reparse buffer. (see DDK for details) */
+struct REPARSE_DATA_BUFFER {
+    uint32_t ReparseTag;		// 0x00:
+    uint16_t ReparseDataLength;	// 0x04:
+    uint16_t Reserved;
+
+    union {
+        /* If ReparseTag == 0xA0000003 (IO_REPARSE_TAG_MOUNT_POINT) */
+        struct {
+            uint16_t SubstituteNameOffset; // 0x08
+            uint16_t SubstituteNameLength; // 0x0A
+            uint16_t PrintNameOffset;      // 0x0C
+            uint16_t PrintNameLength;      // 0x0E
+            uint16_t PathBuffer[1];	     // 0x10 This is field is of variable size
+        } MountPointReparseBuffer;
+
+        /*
+         * If ReparseTag == 0xA000000C (IO_REPARSE_TAG_SYMLINK)
+         * https://msdn.microsoft.com/en-us/library/cc232006.aspx
+         */
+        struct {
+            uint16_t SubstituteNameOffset; // 0x08
+            uint16_t SubstituteNameLength; // 0x0A
+            uint16_t PrintNameOffset;      // 0x0C
+            uint16_t PrintNameLength;      // 0x0E
+            // 0-absolute path 1- relative path, SYMLINK_FLAG_RELATIVE
+            uint32_t Flags;		           // 0x10
+            uint16_t PathBuffer[1];	       // 0x14 This is field is of variable size
+        } SymbolicLinkReparseBuffer;
+
+        /* If ReparseTag == 0x80000017U */
+        struct {
+            uint32_t WofVersion;  // 0x08 == 1
+            /*
+             * 1 - WIM backing provider ("WIMBoot"),
+             * 2 - System compressed file provider
+             */
+            uint32_t WofProvider; // 0x0C:
+            uint32_t ProviderVer; // 0x10: == 1 WOF_FILE_PROVIDER_CURRENT_VERSION == 1
+            uint32_t CompressionFormat; // 0x14: 0, 1, 2, 3. See WOF_COMPRESSION_XXX
+        } CompressReparseBuffer;
+
+        struct {
+            uint8_t DataBuffer[1];   // 0x08:
+        } GenericReparseBuffer;
+    };
+};
 
 struct fsntfs_mount_point_reparse_data
 {
