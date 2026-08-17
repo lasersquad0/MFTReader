@@ -62,10 +62,10 @@
     <ClCompile Include="..\..\src\MFTSearchReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\MFTParserBase.cpp">
+    <ClCompile Include="..\..\src\WinAPIRecordsLoader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\WinAPIRecordsLoader.cpp">
+    <ClCompile Include="..\..\src\MFTBaseReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
