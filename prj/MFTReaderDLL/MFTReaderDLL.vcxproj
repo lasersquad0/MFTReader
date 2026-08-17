@@ -143,6 +143,7 @@
       <LanguageStandard>stdcpp23</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <ExceptionHandling>Async</ExceptionHandling>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -166,6 +167,7 @@
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <ExceptionHandling>Async</ExceptionHandling>
       <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -190,7 +192,7 @@
   <ItemGroup>
     <ClCompile Include="..\..\include\external\strutils\src\string_utils.cpp" />
     <ClCompile Include="..\..\src\Functions.cpp" />
-    <ClCompile Include="..\..\src\MFTParserBase.cpp" />
+    <ClCompile Include="..\..\src\MFTBaseReader.cpp" />
     <ClCompile Include="..\..\src\MFTSearchReader.cpp" />
     <ClCompile Include="..\..\src\Utils.cpp" />
     <ClCompile Include="..\..\src\WinAPIRecordsLoader.cpp" />
