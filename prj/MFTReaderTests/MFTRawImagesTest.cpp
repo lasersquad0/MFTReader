@@ -112,7 +112,7 @@ TEST_P(MFTImgFileParserTest, ReadDiskImageMFTRecordsOneByOne_1)
                 //fixup array must be right after IndexMFTRec
                 EXPECT_EQ(offsetof(MFT_FILE_RECORD, IndexMFTRec) + sizeof(mftRec->IndexMFTRec), mftRec->RecHeader.FixupOffset);
 
-                res = stat.ReadMftItemInfoBuf(mftRec, item); // MFTRecordNotInUse is valid return value
+                res = stat.ReadMftItemInfoBuf(mftRec, nullptr, item); // MFTRecordNotInUse is valid return value
                 if (res == TErrorCode::MFTRecordNotInUse)
                 {
                     notInUseCount++;
@@ -160,7 +160,7 @@ TEST_P(MFTImgFileParserTest, ReadDiskImageRootAndGoSubDirs_1)
     MFT_REF startId{ 0 };
     startId.Id = MFT_ROOT_REC_ID;
 
-    if (TErrorCode::Success != stat.ReadMftItems(startId, 0, nullptr))
+    if (TErrorCode::Success != stat.ReadMftItems(startId, nullptr, 0, nullptr))
         FAIL() << "ReadMftItems() returned error!";
    
     auto& ItemsList = stat.GetItemsList();
@@ -181,7 +181,7 @@ TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImageRootAndGoSubDirs_WINAPI)
     MFT_REF startId{ 0 };
     startId.Id = MFT_ROOT_REC_ID;
 
-    if (TErrorCode::Success != stat.ReadMftItems(startId, 0, nullptr))
+    if (TErrorCode::Success != stat.ReadMftItems(startId, nullptr, 0, nullptr))
         FAIL() << "ReadMftItems() returned error!";
 }
 
