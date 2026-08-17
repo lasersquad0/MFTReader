@@ -25,18 +25,18 @@
 * @param itemInfo results of reading MFT record
 * @return TErrorCode code.
 */ 
-TErrorCode TMFTStatCollector::ReadMftItemInfo(MFT_REF mftRecRef, ITEM_INFO& itemInfo)
+/*TErrorCode TMFTStatCollector::ReadMftItemInfo(MFT_REF mftRecRef, ITEM_INFO& itemInfo)
 {
-    FILE_NAME fn;
-    fn.MFTRecID = mftRecRef;
-    return ReadMftItemInfo(fn, itemInfo);
-}
+  //  FILE_NAME fn;
+  //  fn.MFTRecID = mftRecRef;
+    return ReadMftItemInfo(mftRecRef, nullptr, itemInfo);
+}*/
 
-TErrorCode TMFTStatCollector::ReadMftItemInfo(FILE_NAME fileItem, /*MFT_REF mftRecRef, MFT_REF parentMFTRecRef,*/ ITEM_INFO& itemInfo)
+TErrorCode TMFTStatCollector::ReadMftItemInfo(MFT_REF mftRecRef, IFILE_NAME* iFileItem, ITEM_INFO& itemInfo)
 {
     uint8_t* mftRecBuf = (uint8_t*)alloca(getVolData().BytesPerMFTRec);
 
-    auto res = FLoader.LoadMFTRecord(fileItem.MFTRecID, mftRecBuf);
+    auto res = FLoader.LoadMFTRecord(mftRecRef, mftRecBuf);
     if (res != TErrorCode::Success)
     {
         GET_LOGGER;
@@ -46,19 +46,25 @@ TErrorCode TMFTStatCollector::ReadMftItemInfo(FILE_NAME fileItem, /*MFT_REF mftR
     else
     {
         auto mftRec = (MFT_FILE_RECORD*)mftRecBuf;
-        assert(fileItem.MFTRecID.sId.low == mftRec->IndexMFTRec);
-        return ReadMftItemInfoBuf(mftRec, fileItem, itemInfo);
+        assert(mftRecRef.sId.low == mftRec->IndexMFTRec);
+
+        // for BASE records assert below should be valid
+        // for CHILD records it is always NOT valid because fileItem->MFTRecID is a base record ID
+        if (iFileItem && (mftRec->ParentFileRec.Id == 0)) 
+            assert(iFileItem->MFTRecID.Id == mftRecRef.Id);
+
+        return ReadMftItemInfoBuf(mftRec, iFileItem, itemInfo);
     }
 }
 
-TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& itemInfo)
+/*TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, ITEM_INFO& itemInfo)
 {
-    FILE_NAME fn;
-    fn.MFTRecID.Id = mftRec->IndexMFTRec;
-    return ReadMftItemInfoBuf(mftRec, fn, itemInfo);
-}
+   // FILE_NAME fn;
+   // fn.MFTRecID.Id = mftRec->IndexMFTRec;
+    return ReadMftItemInfoBuf(mftRec, nullptr, itemInfo);
+}*/
 
-TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, FILE_NAME fileItem /*MFT_REF parentMFTRecRef*/, ITEM_INFO& itemInfo)
+TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_NAME* iFileItem, ITEM_INFO& itemInfo)
 {
     GET_LOGGER;
 
@@ -69,13 +75,13 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, FILE_N
             itemInfo.Node.FileList.AddValue({convert_string<ci_string::value_type>(wnm).c_str(), *attr, ref});
         };
 
-    AttrListPred callReadMftItemInfoPred = [this, &fileItem, &itemInfo](const MFT_REF& ref)
+    AttrListPred callReadMftItemInfoPred = [this, iFileItem, &itemInfo](const MFT_REF& ref)
         {
-            auto tmpFileItem = fileItem;
-            tmpFileItem.MFTRecID = ref;
+            //auto tmpFileItem = fileItem;
+            //tmpFileItem.MFTRecID = ref;
 
             // ref - is a child MFT rec where attr value is located
-            auto res = ReadMftItemInfo(tmpFileItem, itemInfo);
+            auto res = ReadMftItemInfo(ref, iFileItem, itemInfo);
             if (res != TErrorCode::Success) // ReadMftItemInfo writes message to log file in case of an error
             {
                 //do nothing, continue executing
@@ -125,23 +131,25 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, FILE_N
     assert((mftRec->Flags & MFT_FLAG_IN_USE) > 0);
     assert(mftRec->FirstAttrOffset < mftRec->AllocFileRecSize);
 
-    bool isBASERec = itemInfo.MFTRecID.Id == 0;
+    bool isBASERec = mftRec->ParentFileRec.Id == 0;
 
     // whether we are reading base MFT record or child one
     if (isBASERec)
     {
         // we are reading base record
         logger.Debug("\n---------- BASE MFT Record ---------");
-        assert(mftRec->ParentFileRec.Id == 0);
-        itemInfo.MFTRecID.Id = 0;
-        itemInfo.MFTRecID.sId.low = mftRec->IndexMFTRec;
+        assert(itemInfo.MFTRecID.Id == 0);
+        //itemInfo.MFTRecID.Id = 0;
+        itemInfo.MFTRecID.Id = mftRec->IndexMFTRec;
         itemInfo.HardLinksCount = mftRec->HardLinksCnt;
     }
     else
     {
         // we are reading child record refered by ATTR_LIST_ATTR attribute
         logger.Debug("\n---------- CHILD MFT Record ---------");
-        assert(mftRec->ParentFileRec.Id != 0);
+        // in most cases assert below should work without if
+        // the only case when if needed - user asked to show info about certain MFT Rec and this rec is child rec.
+        if(iFileItem) assert(itemInfo.MFTRecID.Id != 0);
     }
 
     if (logger.ShouldLog(LogEngine::Levels::llDebug))
@@ -239,27 +247,34 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, FILE_N
             {
                 ATTR_FILE_NAME* fname = (ATTR_FILE_NAME*)attrValue;
                 std::wstring name(GetFName(fname), fname->FileNameLen);
-                itemInfo.FileNames.AddValue(name);
+                itemInfo.FileNames.AddValue({ name.c_str(), *fname, fname->ParentDir });
 
                 assert(fname->NameType <= FILE_NAME_UNICODE_AND_DOS);
-                // take name that referers exactry to parent directory
-                if (fname->NameType != FILE_NAME_DOS) 
-                    if (itemInfo.MainName.size()  == 0)
-                        if ((fileItem.Attr.ParentDir.sId.low == 0) || (fname->ParentDir.sId.low == fileItem.Attr.ParentDir.sId.low))
-                        {
-                            if (fileItem.ciName.size() > 0)
-                            {
-                                itemInfo.MainName = fileItem.ciName.c_str();
-                                itemInfo.FileAttrib = fileItem.Attr.dup.FileAttrib;
-                            }
-                            else
-                            {
-                                itemInfo.MainName = name;
-                                itemInfo.FileAttrib = fname->dup.FileAttrib;
-                            }
-                            //assert((fileItem.Attr.dup.FileAttrib == 0) || (fileItem.Attr.dup.FileAttrib == fname->dup.FileAttrib));
-                        }
 
+                
+                if (itemInfo.MainName.size() == 0)
+                    if (fname->NameType != FILE_NAME_DOS)
+                        if (iFileItem == nullptr) // take the first name non-DOS name
+                        {
+                            itemInfo.MainName = name;
+                            itemInfo.FileAttrib = fname->dup.FileAttrib;
+                            itemInfo.ParentDir = fname->ParentDir;
+                        }
+                        else
+                        {
+                            // take name that referers exactly to parent directory
+                            //TODO this may not work in some cases e.g. when two hard linked files are in one directory
+                            // they will have equal ParentDir but diff names
+                            if (fname->ParentDir.sId.low == iFileItem->Attr.ParentDir.sId.low)
+                            {
+                                itemInfo.MainName = iFileItem->ciName.c_str();
+                                itemInfo.FileAttrib = iFileItem->Attr.dup.FileAttrib;
+                                itemInfo.ParentDir = iFileItem->Attr.ParentDir;
+                                assert(iFileItem->Attr.ParentDir.Id == fname->ParentDir.Id);
+                            }
+
+                        }
+            
                 assert((fname->dup.FileAttrib & FILE_ATTRIBUTE_NORMAL) == 0);// check that NORMAL bit is always zero
 
                 if (logger.ShouldLog(LogEngine::Levels::llDebug))
@@ -451,7 +466,7 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, FILE_N
             {
                 ATTR_REPARSE_POINT* rp = (ATTR_REPARSE_POINT*)attrValue;
                 logger.DebugFmt("Resident Reparse Point. Tag: {:#x}, Data Length: {}, MFT Rec ID: {}", 
-                         rp->reparse_tag, rp->reparse_data_length, MFT_REF::toHexString(mftRec->IndexMFTRec));
+                         rp->ReparseTag, rp->ReparseDataLength, MFT_REF::toHexString(mftRec->IndexMFTRec));
                 break;
             }
             case ATTR_LABEL:
@@ -701,7 +716,10 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, FILE_N
     if (isBASERec)
     {
         assert(itemInfo.MainName.size() > 0); // check that we've really found MainName
-
+        // against empty file name
+        if (itemInfo.MainName.size() == 0)
+            itemInfo.MainName = iFileItem->ciName.c_str();
+        
         // once we read all attributes we are ready to process ALLOC data runs which exist for Dir type only
         // when DataRuns.Count()==0 it means that all files (small number of files) are fit into INDEX_ROOT attribute
         // or directory does not contain any files
@@ -745,23 +763,25 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, FILE_N
 * @param dirLevel specifies directory hierarchy level, increased by 1 each time when function goes into sub-directory
 * @param callback Callback function that allows showing reading progress, now it called with names of files located in dirLevel=1
 */
-TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF mftRecRef, uint32_t dirLevel, ReadMftItemsCallback callback)
+/*TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF mftRecRef, uint32_t dirLevel, ReadMftItemsCallback callback)
 {
-    FILE_NAME fn;
-    fn.MFTRecID = mftRecRef;
-    return ReadMftItems(fn, dirLevel, callback);
-}
+ //   FILE_NAME fn;
+ //   fn.MFTRecID = mftRecRef;
+    return ReadMftItems(mftRecRef, nullptr, dirLevel, callback);
+}*/
 
-TErrorCode TMFTStatCollector::ReadMftItems(FILE_NAME fileItem,/*MFT_REF mftRecRef, MFT_REF parentMFTRecRef,*/ uint32_t dirLevel, ReadMftItemsCallback callback)
+TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF mftRecRef, IFILE_NAME* fileItem, uint32_t dirLevel, ReadMftItemsCallback callback)
 {
     GET_LOGGER;
 
+    if (fileItem) assert(mftRecRef.Id == fileItem->MFTRecID.Id);
+
     ITEM_INFO itemInfo;
-    auto res = ReadMftItemInfo(fileItem,/*mftRecRef, parentMFTRecRef,*/ itemInfo);
+    auto res = ReadMftItemInfo(mftRecRef, fileItem, itemInfo);
 
     if (res != TErrorCode::Success)
     {
-        logger.ErrorFmt("ReadMftItemInfo() finished with error for MFT Rec ID: {}", fileItem.MFTRecID.toHexString());
+        logger.ErrorFmt("ReadMftItemInfo() finished with error for MFT Rec ID: {}", mftRecRef.toHexString());
         return res;
     }
 
@@ -783,7 +803,7 @@ TErrorCode TMFTStatCollector::ReadMftItems(FILE_NAME fileItem,/*MFT_REF mftRecRe
             //if ((dirLevel == 1) && (callback)) callback(std::wstring(_T("\t")) + item.ciName.c_str()); //cout_t << _T("\t") << item.ciName.c_str() << std::endl;
 
             // reading detailed info about each item (files, directories and reparse points)
-            res = ReadMftItems(item, dirLevel + 1, callback);
+            res = ReadMftItems(item.MFTRecID, &item, dirLevel + 1, callback);
             if (res != TErrorCode::Success)
             {
                 logger.ErrorFmt("ReadMftItems() finished with error for MFT Rec ID: {}", item.MFTRecID.toHexString());
@@ -800,6 +820,21 @@ static int32_t PrintProgress(const string_t& data)
     return 1; // not used at the moment
 }
 
+int64_t TMFTStatCollector::CountFileNamesWithNameType(uint8_t nameType, uint32_t count)
+{
+    return std::count_if(FItemsList.begin(), FItemsList.end(),
+        [nameType, count](ITEM_INFO& x)
+        {
+            int64_t cnt = std::count_if(x.FileNames.begin(), x.FileNames.end(), [nameType](IFILE_NAME& v)
+                {
+                    assert(v.Attr.NameType <= FILE_NAME_UNICODE_AND_DOS);
+                    return v.Attr.NameType == nameType;
+                });
+            return cnt == count;
+        }
+    );
+}
+
 /** 
 * @brief Reads entire disk and prints to console various statistics
 * @details Starts reading from directory defined in FLoader class (usually c: or d:), goes to all subdirs 
@@ -814,14 +849,14 @@ TErrorCode TMFTStatCollector::CollectVolumeStat()
 
     FItemsList.SetCapacity(1'000'000); // Expect 1M files and dirs
 
-    //MFT_REF startId{0};
-    //startId.Id = MFT_ROOT_REC_ID;
+    MFT_REF startMFTRecID{0};
+    startMFTRecID.Id = MFT_ROOT_REC_ID;
 
-    FILE_NAME fn;
-    fn.MFTRecID.Id = MFT_ROOT_REC_ID;
+    //FILE_NAME fn;
+    //fn.MFTRecID.Id = MFT_ROOT_REC_ID;
     
     Ticks::Start(_T("Loading time"));
-    auto res = ReadMftItems(fn, 0, PrintProgress);
+    auto res = ReadMftItems(startMFTRecID, nullptr, 0, PrintProgress);
     if (res != TErrorCode::Success)
     {
         logger.ErrorFmt("Error reading volume {}.", wtos(getVolData().Name));
@@ -837,6 +872,9 @@ TErrorCode TMFTStatCollector::CollectVolumeStat()
                 assert(false);
                 */
 
+
+    //TODO because FItemsList contains "duplicates" (items in list that have the same MFTRecID) statistic may be slightly incorrect
+    // duplicates appear because NTFS system contains hard links.
 
     Ticks::Start(_T("Calc statistic"));
     FStatistics.Clear();
@@ -914,7 +952,23 @@ TErrorCode TMFTStatCollector::CollectVolumeStat()
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.DataStreamNames.Count() > 2; });
     FStatistics.SetValue(L"Data streams Count > 2: ", toStringSepW(value));
+
+    value = CountFileNamesWithNameType(FILE_NAME_DOS, 0);
+    FStatistics.SetValue(L"Files with DOS name count = 0: ", toStringSepW(value));
+
+    value = CountFileNamesWithNameType(FILE_NAME_DOS, 1);
+    FStatistics.SetValue(L"Files with DOS name count = 1: ", toStringSepW(value));
+
+    value = CountFileNamesWithNameType(FILE_NAME_DOS, 2);
+    FStatistics.SetValue(L"Files with DOS name count = 2: ", toStringSepW(value));
+
+    value = CountFileNamesWithNameType(FILE_NAME_UNICODE_AND_DOS, 1);
+    FStatistics.SetValue(L"Files with UNICODE_AND_DOS name count = 1: ", toStringSepW(value));
     
+    value = CountFileNamesWithNameType(FILE_NAME_UNICODE_AND_DOS, 2);
+    FStatistics.SetValue(L"Files with UNICODE_AND_DOS name count = 2: ", toStringSepW(value));
+
+
     auto maxHardLinks = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.HardLinksCount < b.HardLinksCount; });
     FStatistics.SetValue(L"Max Hard Links Count: ", std::format(L"{}, file name: '{}' (mft red id: {})", (*maxHardLinks).HardLinksCount, (*maxHardLinks).MainName, (*maxHardLinks).MFTRecID.sId.low));
    
@@ -937,7 +991,10 @@ TErrorCode TMFTStatCollector::CollectVolumeStat()
         [](uint32_t acc, ITEM_INFO& x) 
         {
             // find average length of all filenames inside one MFT record
-            uint32_t symbols = std::accumulate(x.FileNames.begin(), x.FileNames.end(), (uint32_t)0, [](uint32_t accum, std::wstring& v) { return accum + (uint32_t)v.size(); });
+            uint32_t symbols = std::accumulate(x.FileNames.begin(), x.FileNames.end(), (uint32_t)0, [](uint32_t accum, IFILE_NAME& v) 
+                { 
+                    return accum + (uint32_t)v.ciName.size(); 
+                });
             return acc + symbols/x.FileNames.Count();
         }
     );
