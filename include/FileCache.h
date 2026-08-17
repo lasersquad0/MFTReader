@@ -1,16 +1,9 @@
 #pragma once
 
 #include "Debug.h"
-//#include <windows.h>
-//#include <winver.h>
-//#include <DbgHelp.h>
 #include <iostream>
 #include <cassert>
 #include <cstdint>
-//#include <filesystem>
-//#include <vector>
-//#include <tchar.h>
-//#include <regex>
 #include <string>
 
 #include "strutils/include/string_utils.h"
@@ -20,9 +13,26 @@
 #include "FileLevel.h"
 
 
-#define MAX_DIR_LEVELS 100
-#define MAX_DIRS 100'000
-#define AVG_FILE_LEN 46   //in bytes
+constexpr uint32_t MAX_DIR_LEVELS = 50;
+constexpr uint32_t MAX_DIRS_TINY = 1'000;   // for tiny levels
+constexpr uint32_t MAX_DIRS_SMALL = 10'000; // for average levels
+constexpr uint32_t MAX_DIRS_BIG = 200'000;  // for large levels
+
+// to save memory and minimise reallocation.
+// this is hiw number of files is usually distributes across levels
+// used for initial memory alocation for easch level
+constexpr uint32_t MAX_DIRS[MAX_DIR_LEVELS]{
+						MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY,
+						MAX_DIRS_BIG, MAX_DIRS_BIG, MAX_DIRS_BIG, MAX_DIRS_BIG, MAX_DIRS_BIG, MAX_DIRS_BIG,
+						MAX_DIRS_BIG, MAX_DIRS_BIG, MAX_DIRS_BIG, MAX_DIRS_BIG, MAX_DIRS_BIG, MAX_DIRS_BIG,
+						MAX_DIRS_SMALL, MAX_DIRS_SMALL, MAX_DIRS_SMALL, MAX_DIRS_SMALL, MAX_DIRS_SMALL,
+						MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY,
+						MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY,
+						MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY,
+						MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY,						
+						MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY, MAX_DIRS_TINY };
+
+constexpr uint32_t AVG_FILE_LEN = 46;   //in bytes
 
 struct CacheItemRef
 {
@@ -77,7 +87,7 @@ public:
 		else
 		{
 			assert(level == FCacheData.Count());
-			auto resultLevel = DBG_NEW TLevel(level, MAX_DIRS * (sizeof(CACHE_ITEM) + AVG_FILE_LEN)); // remember that Filename goes in the end of CACHE_ITEM
+			auto resultLevel = DBG_NEW TLevel(level, MAX_DIRS[level] * (sizeof(CACHE_ITEM) + AVG_FILE_LEN)); // remember that Filename goes in the end of CACHE_ITEM
 			FCacheData.AddValue(resultLevel);
 			return resultLevel;
 		}
@@ -164,7 +174,7 @@ public:
 			{
 				std::wstring fn(sitem->Name(), sitem->FileAttr.FileNameLen);
 				
-				array.AddValue(convert_string<string_t::value_type>(fn));
+				array.AddValue(std::format(_T("{} {}"), sitem->FMFTRecID.sId.low, convert_string<char_t>(fn)));
 				/*if (sitem->IsDir())
 					array.AddValue(fn + L"\\");
 				else
@@ -188,7 +198,7 @@ public:
 			{
 				std::wstring fn(sitem->Name(), sitem->FileAttr.FileNameLen);
 
-				array.AddValue(convert_string<string_t::value_type>(fn).c_str());
+				array.AddValue(convert_string<char_t>(fn).c_str());
 
 				sitem = level->Next(sitem);
 
