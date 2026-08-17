@@ -13,7 +13,7 @@
 * @param node Contains Data Runs to be processed, and Bitmap that tells us what Index Blocks are valid.
 * @param processIndexBlockPred Predicate used for processing each Index Block.
 */
-TErrorCode TMFTParserBase::ProcessAllocDataRuns(DIR_NODE& node, ProcessiBlocksPred processIndexBlockPred)
+TErrorCode TMFTBaseReader::ProcessAllocDataRuns(DIR_NODE& node, ProcessiBlocksPred processIndexBlockPred)
 {
     GET_LOGGER;
     logger.Debug("---------- START PROCESSING ATTR_ALLOC Data Runs ---------");
@@ -139,7 +139,7 @@ TErrorCode TMFTParserBase::ProcessAllocDataRuns(DIR_NODE& node, ProcessiBlocksPr
 }
 
 
-TErrorCode TMFTParserBase::DecodeDataRuns(MFT_ATTR_HEADER* attr, TDataRuns& runs)
+TErrorCode TMFTBaseReader::DecodeDataRuns(MFT_ATTR_HEADER* attr, TDataRuns& runs)
 {
     assert(attr->AttrType == ATTR_ALLOC || attr->AttrType == ATTR_BITMAP || attr->AttrType == ATTR_LIST_ATTR || attr->AttrType == ATTR_DATA);
 
@@ -219,7 +219,7 @@ TErrorCode TMFTParserBase::DecodeDataRuns(MFT_ATTR_HEADER* attr, TDataRuns& runs
 
 /// calls predicate pred for all files got from ihdr
 /// DOES NOT go to subnodes
-void TMFTParserBase::GetFileList(INDEX_HDR* ihdr, AddFileAttrPred pred)
+void TMFTBaseReader::GetFileList(INDEX_HDR* ihdr, AddFileAttrPred pred)
 {
     GET_LOGGER;
 
@@ -285,7 +285,7 @@ void TMFTParserBase::GetFileList(INDEX_HDR* ihdr, AddFileAttrPred pred)
 // reads list of files in SORTED order starting from Index Root referred by ihdr
 // goes to subnodes and uses pre-loaded list of LCNs containing ALLOC attribute values
 // DOES NOT add DOS file names into fnames list
-void TMFTParserBase::GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnames)
+void TMFTBaseReader::GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnames)
 {
     GET_LOGGER;
 
@@ -365,9 +365,9 @@ void TMFTParserBase::GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileL
 }
 
 // called for directory MFT records only
-// returns pointer to the first met non-DOS ATTR_FILENAME attribute in mftRec
+// returns pointer to the first non-DOS ATTR_FILENAME attribute in mftRec
 // dir MFT rec can contain either one or two ATTR_FILENAME attributes, in case of two one of them is DOS attribute
-ATTR_FILE_NAME* TMFTParserBase::GetFileNameAttr(MFT_FILE_RECORD* mftRec)
+ATTR_FILE_NAME* TMFTBaseReader::GetFileNameAttr(MFT_FILE_RECORD* mftRec)
 {
     // should be called for dir MFT rec only
     assert(mftRec->Flags == (MFT_FLAG_IN_USE | MFT_FLAG_IS_DIRECTORY));
@@ -387,6 +387,7 @@ ATTR_FILE_NAME* TMFTParserBase::GetFileNameAttr(MFT_FILE_RECORD* mftRec)
     ATTR_FILE_NAME* attrFNameNDOS{ 0 };
 
     auto attr = fileNames[0];
+
     attrFNameNDOS = (ATTR_FILE_NAME*)Add2Ptr(attr, attr->res.DataOffset);
 
     if (fileNames.Count() == 1)
@@ -460,21 +461,21 @@ ATTR_FILE_NAME* TMFTParserBase::GetFileNameAttr(MFT_FILE_RECORD* mftRec)
     return attrFNameNDOS;
 }*/
 
-// fills array attrFileNames with pointers to all ATTR_FILENAME attributes esxcept DOS ones which mftRec contains
+// fills array attrFileNames with pointers to all ATTR_FILENAME attributes which mftRec contains except DOS ones 
 // Goes inside of ATTR_LIST_ATTR attribute if MFT record has it
 // attrFileNames is cleared each time before filling with new values
-TErrorCode TMFTParserBase::GetFileNameAttrPointers(MFT_FILE_RECORD* mftRec, THArray<ATTR_FILE_NAME*>& attrFileNames)
+TErrorCode TMFTBaseReader::GetFileNameAttrPointers(MFT_FILE_RECORD* mftRec, THArray<ATTR_FILE_NAME*>& attrFileNames)
 {
     attrFileNames.Clear();
 
     TAttrCollection collection;
-    TErrorCode res = FillAttrCollection(mftRec, MakeAttrBitmask(ATTR_FILENAME), collection);// fill collection only with ATTR_FILENAME attributes
+    TErrorCode res = FillAttrCollection(mftRec, MakeAttrBitmask(ATTR_FILENAME), collection); // fill collection only with ATTR_FILENAME attributes
     assert(res == TErrorCode::Success);
     if (res != TErrorCode::Success)
         return res;
 
     ATTR_FILE_NAME* attrFName;
-    THash<uint32_t, std::wstring> parents;
+    THash<MFTRecIndex, std::wstring> parents;
 
     for (auto attr : collection.Get(ATTR_FILENAME))
     {
@@ -498,7 +499,7 @@ TErrorCode TMFTParserBase::GetFileNameAttrPointers(MFT_FILE_RECORD* mftRec, THAr
 }
 
 
-std::wstring TMFTParserBase::GetPathByAttrFileName(ATTR_FILE_NAME* attrFileName)
+std::wstring TMFTBaseReader::GetPathByAttrFileName(ATTR_FILE_NAME* attrFileName)
 {
     THArray<std::wstring> arrPath;
     ATTR_FILE_NAME* attrFName = attrFileName;
@@ -543,9 +544,13 @@ std::wstring TMFTParserBase::GetPathByAttrFileName(ATTR_FILE_NAME* attrFileName)
     return result;
 }
 
-// There can be several paths starting from one MFT record, because of hard links.
-// Does NOT clear paths list before adding new ones
-TErrorCode TMFTParserBase::PathByMFTRecID(MFT_REF mftRecRef, THArray<std::wstring>& paths)
+/**
+* @brief Gets full path(s) of a file specified by MFT record Id. 
+* @details There can exist several paths which "start" from one MFT record, because of hard links.
+* @param mftRecRef MFT record ID to build path(s) for
+* @param paths Array where all found paths will be returned back. Function does NOT clear paths array before adding new ones.
+*/
+TErrorCode TMFTBaseReader::PathByMFTRecID(MFT_REF mftRecRef, THArray<std::wstring>& paths)
 {
     // if we are on root dir (C:\), add it and exit
     if (mftRecRef.sId.low == MFT_ROOT_REC_ID)
@@ -576,20 +581,41 @@ TErrorCode TMFTParserBase::PathByMFTRecID(MFT_REF mftRecRef, THArray<std::wstrin
     return TErrorCode::Success;
 }
 
+/*
+TErrorCode TMFTBaseReader::FillAttrCollection(MFT_REF mftRecRef, TAttrCollection& collection)
+{
+    uint8_t* mftRecBuf = (uint8_t*)alloca(getVolData().BytesPerMFTRec);
+
+    auto res = FLoader.LoadMFTRecord(mftRecRef, mftRecBuf);
+    if (res != TErrorCode::Success)
+    {
+        GET_LOGGER;
+        logger.Error("LoadMFTRecord finished with error.");
+        return res;
+    }
+    else
+    {
+        auto mftRec = (MFT_FILE_RECORD*)mftRecBuf;
+        assert(mftRecRef.sId.low == mftRec->IndexMFTRec);
+
+        return FillAttrCollection(mftRec, collection);
+    }
+}*/
+
 /**
 * @brief Fills parameter collection with pointers to all attributes which mftRec contains
 * @details if ATTR_LIST_ATTR is present it goes inside and gets attributes from ATTR_LIST_ATTR.
 * There can be multiple ATTR_FILE_NAME, ATTR_DATA and ATTR_LOGGED_UTILITY_STREAM attributes in one MFT record.
 * FillAttrCollection collects all such attributes into internal arrays.
-* @param mftRec record to be parsed for attributes
+* @param mftRec Pointer to a record to be parsed for attributes
 * @param attrFilter bitwise mask that tells which attrbutes will be added to collection. This is bitwise mask of
 */
-TErrorCode TMFTParserBase::FillAttrCollection(MFT_FILE_RECORD* mftRec, TAttrCollection& collection)
+TErrorCode TMFTBaseReader::FillAttrCollection(MFT_FILE_RECORD* mftRec, TAttrCollection& collection)
 {
     return FillAttrCollection(mftRec, ALL_ATTRS_FILTER, collection);
 }
 
-TErrorCode TMFTParserBase::FillAttrCollection(MFT_FILE_RECORD* mftRec, uint32_t attrFilter, TAttrCollection& collection)
+TErrorCode TMFTBaseReader::FillAttrCollection(MFT_FILE_RECORD* mftRec, uint32_t attrFilter, TAttrCollection& collection)
 {
     AttrListPred callProcessChildMFTRecsPred = [this, &attrFilter, &collection](const MFT_REF& RecRef)
         {
@@ -900,7 +926,7 @@ bool TMFTParserBase::ParseNonresAttrList(MFT_ATTR_HEADER* attrListAttr, ATTR_TYP
 /**
 * @brief Version of function without attrFilter parameter. processChildMFTRecPred will be called for all attributes found in attrListAttr.
 */
-TErrorCode TMFTParserBase::ParseNonresAttrList(MFTRecIndex indexMFTRec, MFT_ATTR_HEADER* attrListAttr, AttrListPred processChildMFTRecPred)
+TErrorCode TMFTBaseReader::ParseNonresAttrList(MFTRecIndex indexMFTRec, MFT_ATTR_HEADER* attrListAttr, AttrListPred processChildMFTRecPred)
 {
     return ParseNonresAttrList(indexMFTRec, ALL_ATTRS_FILTER, attrListAttr, processChildMFTRecPred);
 }
@@ -915,7 +941,7 @@ TErrorCode TMFTParserBase::ParseNonresAttrList(MFTRecIndex indexMFTRec, MFT_ATTR
 * @param attrListAttr Pointer to attribute header containing ATTR_LIST attribute to be parsed
 * @param processChildMFTRecPred predicate of ArrListPRes type that will be called for each attrivute found in attr list (provided that it is included into attrFilter). 
 */
-TErrorCode TMFTParserBase::ParseNonresAttrList(MFTRecIndex indexMFTRec, uint32_t attrFilter, MFT_ATTR_HEADER* attrListAttr, AttrListPred processChildMFTRecPred)
+TErrorCode TMFTBaseReader::ParseNonresAttrList(MFTRecIndex indexMFTRec, uint32_t attrFilter, MFT_ATTR_HEADER* attrListAttr, AttrListPred processChildMFTRecPred)
 {
     GET_LOGGER;
 
@@ -971,7 +997,7 @@ TErrorCode TMFTParserBase::ParseNonresAttrList(MFTRecIndex indexMFTRec, uint32_t
     return TErrorCode::Success;
 }
 
-TErrorCode TMFTParserBase::ParseNonresBitmap(MFT_ATTR_HEADER* attr, TBitField& bitmap)
+TErrorCode TMFTBaseReader::ParseNonresBitmap(MFT_ATTR_HEADER* attr, TBitField& bitmap)
 {
     assert(attr->NonResidentFlag == ATTR_FLAG_NONRESIDENT);
     assert((attr->nonres.RealSize & 0x07) == 0);
@@ -1059,7 +1085,7 @@ TErrorCode TMFTParserBase::ParseNonresBitmap(MFT_ATTR_HEADER* attr, TBitField& b
     return TErrorCode::Success;
 }
 
-TErrorCode TMFTParserBase::ParseBitmap(MFT_ATTR_HEADER* attr, TBitField& bitmap)
+TErrorCode TMFTBaseReader::ParseBitmap(MFT_ATTR_HEADER* attr, TBitField& bitmap)
 {
     if (!attr) return TErrorCode::Success; // attr==nullptr means that no LCNs need to be parsed, usually Bitmap is null for empty directories
 
@@ -1080,7 +1106,7 @@ TErrorCode TMFTParserBase::ParseBitmap(MFT_ATTR_HEADER* attr, TBitField& bitmap)
     }
 }
 
-void TMFTParserBase::ParseIndexRoot(MFT_ATTR_HEADER* attr, TLCNRecs& lcns, TFileList& fileList)
+void TMFTBaseReader::ParseIndexRoot(MFT_ATTR_HEADER* attr, TLCNRecs& lcns, TFileList& fileList)
 {
     GET_LOGGER;
 
@@ -1118,7 +1144,7 @@ void TMFTParserBase::ParseIndexRoot(MFT_ATTR_HEADER* attr, TLCNRecs& lcns, TFile
 * @param node parameter is for returning back list of files only (in node.Filelist field).
 * @return TErrorCode code. List of loaded files stored in node.FileList
 */
-TErrorCode TMFTParserBase::GetFileListFromMFTRec(MFT_FILE_RECORD* mftRec, DIR_NODE& node)
+TErrorCode TMFTBaseReader::GetFileListFromMFTRec(MFT_FILE_RECORD* mftRec, DIR_NODE& node)
 {
     GET_LOGGER;
 
@@ -1223,14 +1249,14 @@ TErrorCode TMFTParserBase::GetFileListFromMFTRec(MFT_FILE_RECORD* mftRec, DIR_NO
 }
 
 //parses either resident or non-resident ATTR_LIST
-TErrorCode TMFTParserBase::ParseAttrList(MFTRecIndex indexMFTRec, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, uint64_t& processedAttrSize, AttrListPred processChildMFTRecPred)
+TErrorCode TMFTBaseReader::ParseAttrList(MFTRecIndex indexMFTRec, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, uint64_t& processedAttrSize, AttrListPred processChildMFTRecPred)
 {
     return ParseAttrList(indexMFTRec, ALL_ATTRS_FILTER, startListItem, attrListEnd, realSize, processedAttrSize, processChildMFTRecPred);
 }
 
 // Parses either resident or non-resident ATTR_LIST
 // Gets only attributes specified by attrFilter parameter (bitwise mask)
-TErrorCode TMFTParserBase::ParseAttrList(MFTRecIndex indexMFTRec, uint32_t attrFilter, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, uint64_t& processedAttrSize, AttrListPred processChildMFTRecPred)
+TErrorCode TMFTBaseReader::ParseAttrList(MFTRecIndex indexMFTRec, uint32_t attrFilter, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, uint64_t& processedAttrSize, AttrListPred processChildMFTRecPred)
 {
     GET_LOGGER;
 
@@ -1324,7 +1350,7 @@ TErrorCode TMFTParserBase::ParseAttrList(MFTRecIndex indexMFTRec, uint32_t attrF
 * @param VolData Volume data. Needed for reading file system.
 * @param path Fully qualified and ABSOLUTE path to file or folder that starts from disk name.
 */
-std::expected<MFTRecIndex, TErrorCode> TMFTParserBase::MFTRecIdByPath(const ci_string& path) // ci_string is for case INsensitive search here
+std::expected<MFTRecIndex, TErrorCode> TMFTBaseReader::MFTRecIdByPath(const ci_string& path) // ci_string is for case INsensitive search here
 {
     if (path.size() == 0) return std::unexpected(TErrorCode::InvalidArgument);
 
@@ -1356,7 +1382,7 @@ std::expected<MFTRecIndex, TErrorCode> TMFTParserBase::MFTRecIdByPath(const ci_s
         res = GetFileListFromMFTRec(mftRec, node);
         assert(res == TErrorCode::Success);
 
-        FILE_NAME fn;
+        IFILE_NAME fn;
         fn.ciName = arr[i];
         // binary search in sorted array (assume that GetFileListFromMFTRec has read items in SORTED order)
         auto iter = std::lower_bound(node.FileList.begin(), node.FileList.end(), fn); // fn has overrided operators < and ==
@@ -1373,4 +1399,167 @@ std::expected<MFTRecIndex, TErrorCode> TMFTParserBase::MFTRecIdByPath(const ci_s
     }
 
     return mftRecID.sId.low;
+}
+
+TErrorCode TMFTBaseReader::PrintSTDInfo(MFT_ATTR_HEADER* attr)
+{
+    assert(attr->AttrType == ATTR_STD_INFO);
+
+    auto stdInfo = (ATTR_STD_INFO5*)Add2Ptr(attr, attr->res.DataOffset);
+    assert((stdInfo->FileAttrib & FILE_ATTRIBUTE_NORMAL) == 0);// check that NORMAL bit is always zero
+
+    FOut << FileDateToString(_T("Created: "), stdInfo->CreateTime);
+    FOut << FileDateToString(_T("Modified: "), stdInfo->ModifyTime);
+    FOut << FileDateToString(_T("Modified Attr: "), stdInfo->ModifyAttrTime);
+    FOut << FileDateToString(_T("Last Access: "), stdInfo->LastAccessTime);
+
+    FOut << std::format(_T("File Attrib:        {:#x} {}"), stdInfo->FileAttrib, convert_string<char_t>(FormatFileAttributes(stdInfo->FileAttrib)));
+    FOut << _T("Version Number:     ") << stdInfo->VersionNum;
+    FOut << _T("Max Version num:    ") << stdInfo->max_ver_num;
+    FOut << _T("Class Id:           ") << stdInfo->class_id;
+    FOut << _T("Owner Id:           ") << stdInfo->owner_id;
+    FOut << std::format(_T("USN:                {:#x}"), stdInfo->usn);
+    FOut << _T("Security ID:        ") << stdInfo->security_id;
+    FOut << _T("Quota Charged:      ") << stdInfo->quota_charged;
+
+    return TErrorCode::Success;
+}
+
+TErrorCode TMFTBaseReader::PrintFileNames(TAttrHeaderList& fileNamesList)
+{
+    for (auto& attr : fileNamesList)
+    {
+        assert(attr->AttrType == ATTR_FILENAME);
+
+        auto fname = (ATTR_FILE_NAME*)Add2Ptr(attr, attr->res.DataOffset);
+        std::wstring name(GetFName(fname), fname->FileNameLen);
+        
+        assert(fname->NameType <= FILE_NAME_UNICODE_AND_DOS);
+        assert((fname->dup.FileAttrib & FILE_ATTRIBUTE_NORMAL) == 0);// check that NORMAL bit is always zero
+
+        FOut << FileDateToString(_T("Created: "), fname->dup.CreateTime);
+        FOut << FileDateToString(_T("Modified: "), fname->dup.ModifyTime);
+        FOut << FileDateToString(_T("Modified Attr: "), fname->dup.ModifyAttrTime);
+        FOut << FileDateToString(_T("LastAccess: "), fname->dup.LastAccessTime);
+
+        FOut << _T("File Parent Rec ID: ") << convert_string<char_t>(fname->ParentDir.toHexString());
+        FOut << std::format(_T("File Name Type:     {:#x} '{}' "), fname->NameType, convert_string< char_t>(FileNameTypes[fname->NameType]));
+        FOut << std::format(_T("File DOS Attrib:    {:#x} {}"), fname->dup.FileAttrib, convert_string<char_t>(FormatFileAttributes(fname->dup.FileAttrib)));
+        FOut << _T("File Name:         '") << convert_string<char_t>(name) << _T("'");
+        FOut << _T("File Size:          ") << fname->dup.FileSize; 
+    }
+
+    return TErrorCode::Success;
+
+}
+TErrorCode TMFTBaseReader::PrintDirectory(TAttrCollection& collection)
+{
+
+    return TErrorCode::Success;
+}
+TErrorCode TMFTBaseReader::PrintObjectID(MFT_ATTR_HEADER* attr)
+{
+    assert(attr->AttrType == ATTR_ID);
+    auto objID = (ATTR_OBJECT_ID*)Add2Ptr(attr, attr->res.DataOffset);
+    
+    constexpr const uint BUF_SZ = 100;
+    std::wstring buf(BUF_SZ, 0);
+
+   // GET_LOGGER;
+
+    if (!StringFromGUID2(objID->ObjId, buf.data(), BUF_SZ))
+        return TErrorCode::CorruptedData;
+        //logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 1.");
+
+    FOut << _T("Attr Object ID:       ") << convert_string<char_t>(buf);
+
+    if (attr->AttrSize > 16) //0x10
+    {
+        if (!StringFromGUID2(objID->BirthVolumeId, buf.data(), BUF_SZ))
+            return TErrorCode::CorruptedData;
+            //logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 2.");
+        
+        FOut << _T("Attr Birth Volume ID: ") << convert_string<char_t>(buf);
+
+        if (attr->AttrSize > 32) //0x20
+        {
+            if (!StringFromGUID2(objID->BirthObjectId, buf.data(), BUF_SZ))
+                return TErrorCode::CorruptedData;
+                //logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 3.");
+            
+            FOut << _T("Attr Birth Object ID: ") << convert_string<char_t>(buf);
+
+            if (attr->AttrSize > 48) //0x30
+            {
+                if (!StringFromGUID2(objID->DomainId, buf.data(), BUF_SZ))
+                    return TErrorCode::CorruptedData;
+                    //logger.Error("Error. ATTR_OBJECT_ID. StringFromGUID2 has failed 4.");
+                FOut << _T("Attr Domain ID:       ") << convert_string<char_t>(buf);
+            }
+        }
+    }
+
+    return TErrorCode::Success;
+}
+TErrorCode TMFTBaseReader::PrintLabel(MFT_ATTR_HEADER* attr)
+{
+    std::wstring label((wchar_t*)Add2Ptr(attr, attr->res.DataOffset), attr->res.DataSize / sizeof(wchar_t));
+    FOut << _T("Label: '") << convert_string<char_t>(label) << _T("'");
+    return TErrorCode::Success;
+}
+TErrorCode TMFTBaseReader::PrintVolumeInfo(MFT_ATTR_HEADER* attr)
+{
+    auto volInfo = (VOLUME_INFO*)Add2Ptr(attr, attr->res.DataOffset);
+    
+    FOut <<_T("Volume Major Ver: {}") << volInfo->MajorVer;
+    FOut << _T("Volume Minor Ver: {}") << volInfo->MinorVer;
+    FOut << _T("Volume Flags:     {}") << volInfo->Flags;
+
+    return TErrorCode::Success;
+}
+TErrorCode TMFTBaseReader::PrintDataInfo(MFT_ATTR_HEADER* attr)
+{
+
+    return TErrorCode::Success;
+}
+
+#define CH_ERR(_res_) \
+if (_res_ != TErrorCode::Success) \
+    return _res_;
+
+TErrorCode TMFTBaseReader::PrintMFTRecord(MFT_FILE_RECORD* mftRec)
+{
+    TAttrCollection collection;
+    CH_ERR(FillAttrCollection(mftRec, collection));
+  
+    // STD_INFO always present in MFT record
+    auto& attrList = collection.Get(ATTR_STD_INFO);
+    if (SingleAttributes[MATI(ATTR_STD_INFO)]) assert(attrList.Count() == 1);
+    CH_ERR(PrintSTDInfo(attrList[0]));
+
+    attrList = collection.Get(ATTR_FILENAME);
+    if (SingleAttributes[MATI(ATTR_FILENAME)]) assert(attrList.Count() < 2);
+    assert(attrList.Count() > 0); // FILENAME attr is always present, at least one name
+    CH_ERR(PrintFileNames(attrList));
+
+    attrList = collection.Get(ATTR_ID);
+    if (SingleAttributes[MATI(ATTR_ID)]) assert(attrList.Count() < 2);
+    if(attrList.Count() > 0) CH_ERR(PrintObjectID(attrList[0]));
+
+    attrList = collection.Get(ATTR_LABEL);
+    if (SingleAttributes[MATI(ATTR_LABEL)]) assert(attrList.Count() < 2);
+    if (attrList.Count() > 0) CH_ERR(PrintLabel(attrList[0]));
+
+    attrList = collection.Get(ATTR_VOL_INFO);
+    if (SingleAttributes[MATI(ATTR_VOL_INFO)]) assert(attrList.Count() < 2);
+    if (attrList.Count() > 0) CH_ERR(PrintVolumeInfo(attrList[0]));
+
+    if (((mftRec->Flags & MFT_FLAG_IS_DIRECTORY) == MFT_FLAG_IS_DIRECTORY))
+    {
+        attrList = collection.Get(ATTR_BITMAP);
+        if (SingleAttributes[MATI(ATTR_ID)]) assert(attrList.Count() < 2);
+        if (attrList.Count() > 0) CH_ERR(PrintObjectID(attrList[0]));
+    }
+
+    return TErrorCode::Success;
 }
