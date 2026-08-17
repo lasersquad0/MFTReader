@@ -153,7 +153,7 @@ void TFileImageRecordsLoader::Open(const string_t& imgFileName)
     // check that record #0 is in use
     assert((mftRec->Flags & MFT_FLAG_IN_USE) == MFT_FLAG_IN_USE);
 
-    TMFTParserBase prsr(*this);
+    TMFTBaseReader prsr(*this);
     TAttrCollection collection;
     res = prsr.FillAttrCollection(mftRec, MakeAttrBitmask(ATTR_DATA), collection);
     assert(TErrorCode::Success == res);// << "Error parsing attributes in MFT record buffer " << mftRef.sId.low;
