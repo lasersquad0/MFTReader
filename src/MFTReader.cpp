@@ -102,7 +102,7 @@ int _tmain(int argc, TCHAR* argv[])
 
             for (auto& pth: paths)
             {
-                cout_t << "Full path: " << convert_string<string_t::value_type>(pth) << std::endl;
+                cout_t << "Full path: " << convert_string<char_t>(pth) << std::endl;
             }
             
             std::wcout << std::endl;
@@ -110,7 +110,7 @@ int _tmain(int argc, TCHAR* argv[])
             logger.SetLogLevel(LogEngine::Levels::llDebug);
 
             ITEM_INFO info{0};
-            res = rdr.ReadMftItemInfo(MFTRef, info);
+            res = rdr.ReadMftItemInfo(MFTRef, nullptr, info);
             if (res != TErrorCode::Success)
                 logger.Error("Error reading info about specified MFT record ID");
 
@@ -133,7 +133,7 @@ int _tmain(int argc, TCHAR* argv[])
                 MFT_REF MFTRef{ MFTRecID.value()};
                 ITEM_INFO info{ 0 };
 
-                auto res = rdr.ReadMftItemInfo(MFTRef, info);
+                auto res = rdr.ReadMftItemInfo(MFTRef, nullptr, info);
                 if (res != TErrorCode::Success)
                     logger.Error("Error reading info about MFT record specified by path.");
             }
@@ -191,8 +191,10 @@ int _tmain(int argc, TCHAR* argv[])
         }
         else if (cmd.HasOption(OPT_T))
         {
-            TWinAPICacheRecordsLoader ldr;
-            ldr.Open(_T("C:\\"));
+            TWinAPIRecordsLoader ldr(_T("C"));
+            TMFTBaseReader rdr(ldr);
+
+            //rdr.FillAttrCollection()
         }
         else
         {
