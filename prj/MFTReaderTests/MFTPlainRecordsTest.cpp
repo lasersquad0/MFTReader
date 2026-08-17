@@ -54,7 +54,7 @@ public:
         // check that record #0 is in use
         ASSERT_TRUE((mftRec->Flags & MFT_FLAG_IN_USE) == MFT_FLAG_IN_USE);
 
-        TMFTParserBase prsr(*this);
+        TMFTBaseReader prsr(*this);
         TAttrCollection collection;
         res = prsr.FillAttrCollection(mftRec, MakeAttrBitmask(ATTR_DATA), collection);
         ASSERT_EQ(TErrorCode::Success, res) << "Error parsing attributes in MFT record buffer " << mftRef.sId.low;
@@ -227,7 +227,7 @@ TEST_P(MFTPlainRecordsTest, ReadMftItemInfoBuf_1)
             {
                 // parse only 'FILE' records
                 ASSERT_TRUE(ntfs_is_file_recp(mftRec->RecHeader.Signature));
-                res = stat.ReadMftItemInfoBuf(mftRec, item);
+                res = stat.ReadMftItemInfoBuf(mftRec, nullptr, item);
                 EXPECT_EQ(TErrorCode::Success, res);
             }
             else
@@ -264,7 +264,7 @@ TEST_P(MFTPlainRecordsTest, ReadMftItemInfoOneByOne_1)
 
         if ((mftRef.sId.low != 9) && (mftRef.sId.low != 24) && (mftRef.sId.low != 25) )
         {
-            res = stat.ReadMftItemInfo(mftRef, item);
+            res = stat.ReadMftItemInfo(mftRef, nullptr, item);
             if (ldr.Eof()) break;
 
             if (res == TErrorCode::MFTRecordNotInUse) // bypass not in use records
@@ -289,7 +289,7 @@ TEST_P(MFTPlainRecordsTest, GetMFTRecIdByPath_1)
 {
     auto& fileName = GetParam();
     TMFTPlainRecordsLoader ldr(fileName);
-    TMFTParserBase ps(ldr);
+    TMFTBaseReader ps(ldr);
    
     THArray<std::pair<uint32_t, ci_string>> testData{
         {0, _T("c:\\$MFT")},
@@ -315,7 +315,7 @@ TEST_P(MFTPlainRecordsTest, GetPathByMFTRecId_1)
 {
     auto& fileName = GetParam();
     TMFTPlainRecordsLoader ldr(fileName);
-    TMFTParserBase ps(ldr);
+    TMFTBaseReader ps(ldr);
 
     THArray<std::pair<uint32_t, ci_string>> testData
     {
