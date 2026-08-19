@@ -8,7 +8,7 @@
 
 #include "strutils/include/ci_string.h"
 #include "logengine2/FileStream.h"
-#include "Utils.h"
+//#include "Utils.h"
 #include "NTFS.h"
 
 // structure fields alignment set to 1 byte.
