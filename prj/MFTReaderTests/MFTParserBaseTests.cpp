@@ -82,7 +82,7 @@ TEST_F(MFTParserBaseTests, NormalizeVolume_1)
 
 TEST_F(MFTParserBaseTests, AbsPath_1)
 {
-    auto curr = std::filesystem::current_path();
+    string_t curr = std::filesystem::current_path();
 
     EXPECT_EQ(_T(""), IRecordsLoader::AbsPath(_T(""))); 
     EXPECT_EQ(_T(" "), IRecordsLoader::AbsPath(_T(" ")));
@@ -106,16 +106,19 @@ TEST_F(MFTParserBaseTests, AbsPath_1)
     EXPECT_EQ(_T("f:\\folder"), IRecordsLoader::AbsPath(_T("f://folder")));
     EXPECT_EQ(_T("c:\\folder\\file"), IRecordsLoader::AbsPath(_T("c:/folder/file")));
 
-    string_t val = string_t(curr) + _T("\\1");
+    string_t val = curr + _T("\\1");
     EXPECT_EQ(val, IRecordsLoader::AbsPath(_T("1")));
-    val = string_t(curr) + _T("\\:");
+    val = curr + _T("\\:");
     EXPECT_EQ(val, IRecordsLoader::AbsPath(_T(":")));
-    val = string_t(curr) + _T("\\$");
+    val = curr + _T("\\$");
     EXPECT_EQ(val, IRecordsLoader::AbsPath(_T("$")));
-    val = string_t(curr) + _T("\\^");
+    val = curr + _T("\\^");
     EXPECT_EQ(val, IRecordsLoader::AbsPath(_T("^")));
+    val = curr;
     EXPECT_EQ(curr, IRecordsLoader::AbsPath(_T(".")));
-    EXPECT_EQ(curr, IRecordsLoader::AbsPath(_T("..")));
+    val = curr;
+    val = val.substr(0, val.find_last_of('\\')); // need to remove last dir from path
+    EXPECT_EQ(val, IRecordsLoader::AbsPath(_T("..")));
 }
 
 TEST_F(MFTParserBaseTests, Open_1)
