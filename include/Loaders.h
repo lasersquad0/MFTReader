@@ -39,7 +39,7 @@ public:
 	virtual bool IsMetaFile(MFTRecIndex mftRecID) { assert(FMetaFilesCount > 0); return mftRecID < FMetaFilesCount; }
 
 	virtual TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData);
-	virtual TErrorCode ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf) = 0;
+	virtual TErrorCode ReadClusters(uint64_t lcnStart, uint64_t lcnCnt, uint8_t* dataBuf) = 0;
 	static TErrorCode FixupUSA1(NTFS_RECORD_HEADER* record, uint32_t BytesPerBlock, uint32_t BytesPerSector);
 	virtual expected_uintptr LoadMFTRecordCache(MFT_REF mftRecRef); // returns NULL if error occurred during loading MFT record
 	virtual void Close();
@@ -56,7 +56,7 @@ public:
 	TWinAPIRecordsLoader(const string_t& vol) { Open(vol); }
 	void Open(const string_t& vol) override;
 	void Close() override;
-	TErrorCode ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf) override;
+	TErrorCode ReadClusters(uint64_t lcnStart, uint64_t lcnCnt, uint8_t* dataBuf) override;
 	//TErrorCode LoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData) override;
 };
 
@@ -117,7 +117,7 @@ public:
 	//   - FixupUSA call failed
 	TErrorCode InternalLoadMFTRecord(MFT_REF mftRecRef, uint8_t* mftRecData, bool internalCall) override;
 
-	TErrorCode ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf) override;
+	TErrorCode ReadClusters(uint64_t lcnStart, uint64_t lcnCnt, uint8_t* dataBuf) override;
 
 	// Applies Update Sequence Array (USA) to MFT record refered by dataBuf
 	TErrorCode FixupUsaMFTRec(NTFS_RECORD_HEADER* mftRec);
