@@ -5,7 +5,6 @@
 #include "MFTBaseParamTest.h"
 
 
-
 class MFTDataRunDecodeTest : public MFTStringParamTest
 {
 public:
