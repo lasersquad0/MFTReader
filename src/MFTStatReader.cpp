@@ -93,7 +93,7 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_
         };
 
     //TODO this is the same predicate code as in MFTSearchReader.cpp. Think how to avoid duplication
-    ProcessiBlocksPred processAllocPred = [this, &addToFileListPred](uint8_t* dataBuf, CLST VCN, CLST LCN)
+    ProcessiBlocksPred processAllocPred = [this, &addToFileListPred](uint8_t* dataBuf, uint64_t VCN, uint64_t LCN)
         {
             auto allocIndex = (INDEX_BUFFER*)dataBuf;
 
@@ -156,7 +156,8 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_
     {
         logger.DebugFmt("MFT Rec Signature:     '{}'", std::string((char*)mftRec->RecHeader.Signature, 4));
         logger.DebugFmt("MFT Rec ID:             {}", MFT_REF::toHexString(mftRec->IndexMFTRec));
-        logger.DebugFmt("MFT Rec Num re-used:    {}", mftRec->SeqNum);
+        logger.DebugFmt("MFT Rec Sequence:       {}", mftRec->SeqNum);
+        logger.DebugFmt("MFT Log Seq Number:     {}", mftRec->RecHeader.LogFileSeqNum);
         logger.DebugFmt("MFT Parent Rec ID:      {} {}", mftRec->ParentFileRec.toHexString(), mftRec->ParentFileRec.Id > 0 ? " CHILD" : "BASE");
         logger.DebugFmt("MFT Hard Links Count:   {} {}", mftRec->HardLinksCnt, mftRec->ParentFileRec.Id > 0 ? " (may be inaccurate for child records)" : "");
         logger.DebugFmt("MFT Rec Size:           {}", mftRec->FileRecSize);
@@ -373,13 +374,14 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_
 
                 logger.Debug("[Resident ATTR_LIST_ATTR] - START PARSING");
 
-                THArray<uint32_t> visitedMFTRec;
+                THArray<MFTRecIndex> visitedMFTRec;
+                visitedMFTRec.AddValue(mftRec->IndexMFTRec);
 
                 ATTR_LIST_ENTRY* attrEntry = (ATTR_LIST_ENTRY*)attrValue;
                 uint8_t* attrEntryEnd = Add2Ptr(currAttr, currAttr->AttrSize);
                 uint64_t processedAttrSize = 0;
 
-                result = ParseAttrList(mftRec->IndexMFTRec, attrEntry, attrEntryEnd, currAttr->res.DataSize, processedAttrSize, callReadMftItemInfoPred);
+                result = ParseAttrList(mftRec->IndexMFTRec, attrEntry, attrEntryEnd, currAttr->res.DataSize, processedAttrSize, visitedMFTRec, callReadMftItemInfoPred);
                 if (result != TErrorCode::Success)
                 {
                     logger.Error("ParseAttrList returned error.");
@@ -714,10 +716,10 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_
 
     // only for base MFT records
     if (isBASERec)
-    {
-        assert(itemInfo.MainName.size() > 0); // check that we've really found MainName
-        // against empty file name
-        if (itemInfo.MainName.size() == 0)
+    {  
+        // MainName still can be empty for meta records.
+        // some .img files have meta records without any FILENAME attributes for some reason
+        if ((itemInfo.MainName.size() == 0) && iFileItem)
             itemInfo.MainName = iFileItem->ciName.c_str();
         
         // once we read all attributes we are ready to process ALLOC data runs which exist for Dir type only
@@ -778,7 +780,6 @@ TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF mftRecRef, IFILE_NAME* fileIt
 
     ITEM_INFO itemInfo;
     auto res = ReadMftItemInfo(mftRecRef, fileItem, itemInfo);
-
     if (res != TErrorCode::Success)
     {
         logger.ErrorFmt("ReadMftItemInfo() finished with error for MFT Rec ID: {}", mftRecRef.toHexString());
@@ -1098,7 +1099,7 @@ void TMFTStatCollector::SaveToFile(string_t fileName)
     string_t fendl;
     BUILD_ENDL(fendl);
 
-    ff << L"Total Items Count: " << toStringSep<uint,std::wstring>(index.Count()) << fendl;
+    ff << L"Total Items Count: " << toStringSep<std::wstring, uint>(index.Count()) << fendl;
     //ff << toStringSepW(itemsList.Count() - dirCount) + L" - files"; // only files
     //ff << toStringSepW(dirCount) + L" - dirs"; // only dirs
 
