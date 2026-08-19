@@ -183,11 +183,11 @@ inline std::string MillisecToStr(uint64_t ms)
 }
 
 /**
-* @brief Converts any integer like type into a std::string with group separator applied.
+* @brief Converts any integer like type into a STRING-like type with group separator applied.
 * @details Group separator is defined by MyGroupSeparator class
 * @param IntType Any integral type (int, long, int64_t, bool, char, wchar_t, short, etc)
 */
-template<typename IntType, typename STRING>
+template<typename STRING, typename IntType>
 STRING toStringSep(IntType v)
 {
     static_assert(std::is_integral<IntType>::value);
@@ -207,6 +207,12 @@ STRING toStringSep(IntType v)
     ss.imbue(std::locale(ss.getloc(), new MyGroupSeparator()));
     ss << v;  // printing to string stream with formating
     return ss.str();
+}
+
+template<typename IntType>
+string_t toStringSep(IntType v)
+{
+    return toStringSep<string_t, IntType>(v);
 }
 
 /** 
@@ -283,6 +289,39 @@ void StringToArray(const STRING& str, std::vector<STRING>& arr, const typename S
         if (s.length() > 0)
             arr.push_back(s);
     }
+}
+
+// split string into array of strings using any symbol from DelimStr string as delimiter
+template<class STRING>
+void StringToArray(const STRING& str, std::vector<STRING>& arr, const STRING DelimStr)
+{
+    // make sure that STRING is one of instantiations of std::basic_string
+    static_assert(std::is_base_of<std::basic_string<typename STRING::value_type, typename STRING::traits_type>, STRING>::value);
+
+    size_t i = 0;
+    size_t len = str.length();
+    STRING s{};
+    s.reserve(len);
+
+    while (i < len)
+    {
+        if (DelimStr.find(str[i]) != STRING::npos)
+        {
+            if (s.length() > 0)
+            {
+                arr.push_back(s);
+                s.clear();
+            }
+            i++;
+        }
+        else
+        {
+            s += str[i++];
+        }
+    }
+
+    if (s.length() > 0)
+        arr.push_back(s);
 }
 
 // splits string to array of strings using Delim as delimiter
