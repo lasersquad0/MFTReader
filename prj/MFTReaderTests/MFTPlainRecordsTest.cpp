@@ -125,7 +125,7 @@ public:
         */
     }
 
-    TErrorCode ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf) override
+    TErrorCode ReadClusters(uint64_t lcnStart, uint64_t lcnCnt, uint8_t* dataBuf) override
     {
         EXPECT_TRUE(IsOpened());
 
