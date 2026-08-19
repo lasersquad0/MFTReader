@@ -145,7 +145,7 @@ public:
 		LogEngine::TFileStream fout(fileName, LogEngine::TFileMode::fmWriteTrunc);
 
 		using ManipType = std::ostream& (*)(std::ostream&);
-		fout << "Total Items Count: " << toStringSep<uint32_t,std::string>(TotalCount()) << static_cast<ManipType>(std::endl); //EndLine;
+		fout << "Total Items Count: " << toStringSep<std::string, uint32_t>(TotalCount()) << static_cast<ManipType>(std::endl); //EndLine;
 
 		for (auto level : FCacheData)
 		{
