@@ -11,12 +11,17 @@
 
 class TMFTBaseReader
 {
+private:
+	uint32_t FAttrCurrIndex; // used during printing info about single MFT record, index number of attribute being printed at the moment.
 protected:
 	IRecordsLoader& FLoader;
 	const VOLUME_DATA& getVolData() const { return FLoader.GetVolumeData(); }
 	ostream_t& FOut;
+
 public:
-	TMFTBaseReader(IRecordsLoader& loader) : FOut(cout_t), FLoader(loader) {};
+	TMFTBaseReader(IRecordsLoader& loader) : FOut(cout_t), FAttrCurrIndex(0), FLoader(loader) {};
+
+	ostream_t& Out();
 
 	//TErrorCode FillAttrCollection(MFT_REF mftRecRef, TAttrCollection& collection);
 	TErrorCode FillAttrCollection(MFT_FILE_RECORD* mftRec, TAttrCollection& collection);
@@ -35,22 +40,28 @@ public:
 	TErrorCode ParseBitmap(MFT_ATTR_HEADER* attr, TBitField& bitmap);
 	void ParseIndexRoot(MFT_ATTR_HEADER* attr, TLCNRecs& lcns, TFileList& fileList);
 	//bool ParseAlloc(MFT_ATTR_HEADER* attr, TDataRuns& dataRuns);
-	TErrorCode ParseAttrList(MFTRecIndex indexMFTRec, uint32_t attrFilter, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, uint64_t& processedAttrSize, AttrListPred processChildMFTRecPred);
-	TErrorCode ParseAttrList(MFTRecIndex indexMFTRec, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, uint64_t& processedAttrSize, AttrListPred processChildMFTRecPred);
+	TErrorCode ParseAttrList(MFTRecIndex indexMFTRec, uint32_t attrFilter, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, 
+		                     uint64_t& processedAttrSize, THArray<MFTRecIndex> visitedMFTRec, AttrListPred processChildMFTRecPred);
+	TErrorCode ParseAttrList(MFTRecIndex indexMFTRec, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd, uint64_t realSize, 
+		                     uint64_t& processedAttrSize, THArray<MFTRecIndex> visitedMFTRec, AttrListPred processChildMFTRecPred);
 	TErrorCode ProcessAllocDataRuns(DIR_NODE& node, ProcessiBlocksPred processIndexBlockPred);
 	TErrorCode DecodeDataRuns(MFT_ATTR_HEADER* attr, TDataRuns& runs);
 	
-	ATTR_FILE_NAME* GetFileNameAttr(MFT_FILE_RECORD* mftRec);
+	ATTR_FILE_NAME* GetDirNameAttr(MFT_FILE_RECORD* mftRec);
 	std::wstring GetPathByAttrFileName(ATTR_FILE_NAME* attrFileName);
 	TErrorCode GetFileNameAttrPointers(MFT_FILE_RECORD* mftRec, THArray<ATTR_FILE_NAME*>& attrFileNames);
 	
-	TErrorCode GetFileListFromMFTRec(MFT_FILE_RECORD* mftRec, DIR_NODE& node);
-	TErrorCode PathByMFTRecID(MFT_REF mftRecRef, THArray<std::wstring>& paths);
-	std::expected<MFTRecIndex, TErrorCode> MFTRecIdByPath(const ci_string& path); // ci_string is for case INsensitive search here
-	
-	void PrintAttrCollection(TAttrCollection& collection);
+	TErrorCode GetFileListFromMFTRec(MFT_FILE_RECORD* mftRec, TFileList& fileList);
+	TErrorCode GetFileListFromMFTRec(TAttrCollection& collection, TFileList& fileList);
 
+	TErrorCode PathByMFTRecID(MFT_REF mftRecRef, THArray<std::wstring>& paths);
+	expected_uint32 /*std::expected<MFTRecIndex, TErrorCode>*/ MFTRecIdByPath(const ci_string& path); // ci_string is for case INsensitive search here
+	
+	TErrorCode PrintMFTRecord(MFT_REF mftRecRef);
 	TErrorCode PrintMFTRecord(MFT_FILE_RECORD* mftRec);
+	TErrorCode PrintMFTHeader(MFT_FILE_RECORD* mftRec);
+	TErrorCode PrintMFTFooter(MFT_FILE_RECORD* mftRec);
+	TErrorCode PrintMFTAttrHeader(MFT_ATTR_HEADER* attr);
 	TErrorCode PrintSTDInfo(MFT_ATTR_HEADER* attr);
 	TErrorCode PrintFileNames(TAttrHeaderList& fileNamesList);
 	TErrorCode PrintDirectory(TAttrCollection& collection);
@@ -58,6 +69,11 @@ public:
 	TErrorCode PrintLabel(MFT_ATTR_HEADER* attr);
 	TErrorCode PrintVolumeInfo(MFT_ATTR_HEADER* attr);
 	TErrorCode PrintDataInfo(MFT_ATTR_HEADER* attr);
+	TErrorCode PrintEA(MFT_ATTR_HEADER* attr);
+	TErrorCode PrintEAInfo(MFT_ATTR_HEADER* attr);
+	TErrorCode PrintLUS(TAttrHeaderList& lusList);
+	TErrorCode PrintSecure(MFT_ATTR_HEADER* attr);
+	TErrorCode PrintReparse(MFT_ATTR_HEADER* attr);
 };
 
 typedef int32_t(*ReadMftItemsCallback)(const string_t& data);
