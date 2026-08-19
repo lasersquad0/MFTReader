@@ -85,20 +85,21 @@ std::string FormatFileAttributes(uint32_t a)
 #define HIDWORD(_) static_cast<uint32_t>(((uint64_t)(_)) >> 32)
 #define LODWORD(_) static_cast<uint32_t>(_)
 
-string_t FileDateToString(const string_t& str, uint64_t dateTime)
+string_t FileDateToString(uint64_t dateTime)
 {
     if (dateTime == 0)
-        return std::format(_T("{}---"), str);
+        return _T("--never--");
 
     const uint BUF_SZ = 100;
-    string_t::value_type buf[BUF_SZ];
+    char_t buf[BUF_SZ];
     DWORD dateTimeFlags = /*FDTF_DEFAULT */ FDTF_SHORTDATE | FDTF_LONGTIME | FDTF_NOAUTOREADINGORDER;
     FILETIME ft{ 0 };
 
     ft.dwLowDateTime = LODWORD(dateTime);
     ft.dwHighDateTime = HIDWORD(dateTime);
     SHFormatDateTime(&ft, &dateTimeFlags, buf, BUF_SZ);
-    return std::format(_T("{}{}"), str, convert_string<string_t::value_type>(buf));
+
+    return buf;
 }
 
 
@@ -119,4 +120,17 @@ string_t GetVolumeName(const string_t& path)
     }
 
     return vol;
+}
+
+string_t AttrFlagToString(uint32_t attrFlag)
+{
+    if (attrFlag == 0) return _T(""); // this standard attribute
+
+    string_t res;
+
+    if ((attrFlag & ATTR_FLAG_COMPRESSED) > 0) res += _T(" COMPRESSED");
+    if ((attrFlag & ATTR_FLAG_SPARSED) > 0)    res += _T(" SPARSED");
+    if ((attrFlag & ATTR_FLAG_ENCRYPTED) > 0)  res += _T(" ENCRYPTED");
+
+    return res;
 }
