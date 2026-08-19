@@ -36,7 +36,7 @@ int _tmain(int argc, TCHAR* argv[])
     std::wcout.imbue(std::locale());
     //std::cout.imbue(std::locale());
 
-    std::wcout << std::endl << "MFTReader shows various information about your NTFS file system." << std::endl << std::endl;
+    std::wcout << std::endl << "MFTReader shows useful information about your NTFS file system." << std::endl << std::endl;
 
     InitLogger();
     LogEngine::Logger& logger = LogEngine::GetLogger(MFT_LOGGER_NAME);
@@ -53,14 +53,14 @@ int _tmain(int argc, TCHAR* argv[])
 
     if (argc < 2) 
     {
-        logger.Info("No command line arguments specified. MFTReader needs command line arguments, see description below.\n");
+        //logger.Info("No command line arguments specified. MFTReader needs command line arguments, see description below.\n");
         PrintUsage(options);
         return 1;
     }
 
     if (!defaultParser.Parse(&options, &cmd, argv, argc))
     {
-        logger.Error(wtos(defaultParser.GetLastError()));
+        logger.Error(wtos(_T("Error. ") + defaultParser.GetLastError() + _T("\n")));
         PrintUsage(options);
         return 1;
     }
@@ -70,49 +70,58 @@ int _tmain(int argc, TCHAR* argv[])
     {
         //TODO re-do this error handling to proper way
         if (!cmd.HasOption(OPT_T))
-            assert((cmd.HasOption(OPT_M) && !cmd.HasOption(OPT_P) && !cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_C)) ||
-                   (cmd.HasOption(OPT_P) && !cmd.HasOption(OPT_M) && !cmd.HasOption(OPT_S)) && !cmd.HasOption(OPT_C) ||
-                   (cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_C) && !cmd.HasOption(OPT_M) && !cmd.HasOption(OPT_P)) ||
-                   (cmd.HasOption(OPT_C) && !cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_M)) && !cmd.HasOption(OPT_P) );
+            assert( (cmd.HasOption(OPT_R) && !cmd.HasOption(OPT_P) && !cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_C)) ||
+                    (cmd.HasOption(OPT_P) && !cmd.HasOption(OPT_R) && !cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_C)) ||
+                    (cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_C) && !cmd.HasOption(OPT_R) && !cmd.HasOption(OPT_P)) ||
+                    (cmd.HasOption(OPT_C) && !cmd.HasOption(OPT_S) && !cmd.HasOption(OPT_R) && !cmd.HasOption(OPT_P)) );
                 
 
-        if (cmd.HasOption(OPT_M)) // info about one MFT record requested
+        if (cmd.HasOption(OPT_R)) // info about one MFT record requested
         {
-            string_t volume = cmd.GetOptionValue(OPT_M, 1, _T(DEFAULT_VOLUME));
-            auto mftRecID = StringToMFTRecID(cmd.GetOptionValue(OPT_M, 0));
+            string_t volume = cmd.GetOptionValue(OPT_R, 1, _T(DEFAULT_VOLUME));
+            auto mftRecID = StringToMFTRecID(cmd.GetOptionValue(OPT_R, 0));
 
             auto absPath = IRecordsLoader::AbsPath(volume);
 
             IRecordsLoader* ldr{ nullptr };
-            if(IRecordsLoader::IsPath(absPath)) //TODO shall we check here that path refered by absPath really exist?
+            if (IRecordsLoader::IsPath(absPath)) //TODO shall we check here that path refered by absPath really exist?
+            {
                 ldr = new TFileImageRecordsLoader(absPath);
+                cout_t << std::format(_T("Information about MFT record ID: #{} on disk image file: {}"), mftRecID, ldr->GetVolumeData().Name) << std::endl;
+            }
             else
+            {
                 ldr = new TWinAPIRecordsLoader(absPath);
+                cout_t << std::format(_T("Information about MFT record ID: #{} on volume: {}"), mftRecID, ldr->GetVolumeData().Name) << std::endl;
+            }
 
-            TMFTStatCollector rdr(*ldr);
-            
+            cout_t << std::endl;
+
+            TMFTBaseReader rdr(*ldr);        
             MFT_REF MFTRef{ mftRecID };
             THArray<std::wstring> paths;
             
             auto res = rdr.PathByMFTRecID(MFTRef, paths);
             if (res != TErrorCode::Success)
-                logger.Warn("Error getting path by specified MFT record ID");
-
-            cout_t << _T("Showing information about MFT record ID: ") << mftRecID << std::endl;
-
-            for (auto& pth: paths)
             {
-                cout_t << "Full path: " << convert_string<char_t>(pth) << std::endl;
+                logger.ErrorFmt("Error getting path by specified MFT record ID ({}).", mftRecID);
             }
-            
-            std::wcout << std::endl;
+            else
+            {
+                cout_t << std::format(_T("MFT record #{} contains the following files:"), mftRecID) << std::endl;
 
-            logger.SetLogLevel(LogEngine::Levels::llDebug);
+                uint num = 1;
+                for (auto& pth : paths)
+                {
+                    rdr.Out() << std::format(_T("#{} {}"), num++, convert_string<char_t>(pth)) << std::endl;
+                }
 
-            ITEM_INFO info{0};
-            res = rdr.ReadMftItemInfo(MFTRef, nullptr, info);
-            if (res != TErrorCode::Success)
-                logger.Error("Error reading info about specified MFT record ID");
+                //logger.SetLogLevel(LogEngine::Levels::llDebug);
+
+                res = rdr.PrintMFTRecord(MFTRef);
+                if (res != TErrorCode::Success)
+                    logger.ErrorFmt("Error reading info about specified MFT record ID ({})", mftRecID);
+            }
 
             delete ldr;
 
@@ -123,17 +132,38 @@ int _tmain(int argc, TCHAR* argv[])
             TWinAPIRecordsLoader ldr(path);
             TMFTStatCollector rdr(ldr);
             
-            auto MFTRecID = rdr.MFTRecIdByPath(path.c_str());
-            if (MFTRecID)
+            cout_t << path << std::endl;
+
+            auto mftRecID = rdr.MFTRecIdByPath(path.c_str());
+            if (mftRecID)
             {
-                logger.SetLogLevel(LogEngine::Levels::llDebug);
+                //logger.SetLogLevel(LogEngine::Levels::llDebug);
 
-                cout_t << "Path: " << path << std::endl;
+                cout_t << std::format(_T("{:<{}}: {}"), _T("Info about file"), 17, path) << std::endl;
+                cout_t << std::format(_T("{:<{}}: {}"), _T("MFT Record"), 17, mftRecID.value()) << std::endl;
 
-                MFT_REF MFTRef{ MFTRecID.value()};
-                ITEM_INFO info{ 0 };
+                MFT_REF MFTRef{ mftRecID.value()};
+                THArray<std::wstring> paths;
 
-                auto res = rdr.ReadMftItemInfo(MFTRef, nullptr, info);
+                // this call fills IRecordLoader::FMFTRecCache with values (only when MFTRef has ATTR_LIST attr)
+                auto res = rdr.PathByMFTRecID(MFTRef, paths);
+                if (res != TErrorCode::Success)
+                    logger.ErrorFmt("Error getting path by MFT record ID ({}).", mftRecID.value());
+                
+                cout_t << std::format(_T("{:<{}}: "), _T("Alternate paths"), 17); // no need std::endl here
+
+                //uint num = 1;
+                for (auto& pth : paths)
+                {
+                    cout_t << convert_string<char_t>(pth) << std::endl;
+                    cout_t << std::format(_T("{:<{}}"), _T(""), 19);
+                }
+
+                cout_t << std::endl;
+                
+                // this call parses the same MFTRef record again and uses data from IRecordLoader::FMFTRecCache (only if MFTRef has ATTR_LIST attr)
+                res = rdr.PrintMFTRecord(MFTRef);
+
                 if (res != TErrorCode::Success)
                     logger.Error("Error reading info about MFT record specified by path.");
             }
@@ -223,20 +253,17 @@ int _tmain(int argc, TCHAR* argv[])
 }
 
 
+
 void PrintUsage(COptionsList& options)
 {
-    cout_t << CHelpFormatter::Format(_T("MFTReader"), &options);
+    cout_t << CHelpFormatter::Format(_T("MFTReader"), &options) << std::endl;
 }
 
 void DefineOptions(COptionsList& options)
 {
     COption mm;
-    mm.ShortName(OPT_M).LongName(_T("mft")).Descr(_T("Display information about specified MFT record.")).Required(false).NumArgs(2).RequiredArgs(1);
+    mm.ShortName(OPT_R).LongName(_T("record")).Descr(_T("Display information about MFT record. First argument is MFT record ID, second argument - volume name (if omitted default volume c:\\ is used).")).Required(false).NumArgs(2).RequiredArgs(1);
     options.AddOption(mm);
-
-    //COption vv;
-    //vv.ShortName(OPT_V).LongName(_T("volume")).Descr(_T("What disk/volume to use.")).Required(false).NumArgs(1).RequiredArgs(1);
-    //options.AddOption(vv);
 
     COption pp;
     pp.ShortName(OPT_P).LongName(_T("path")).Descr(_T("Display information about file/directory by specified path.")).Required(false).NumArgs(1).RequiredArgs(1);
@@ -250,8 +277,6 @@ void DefineOptions(COptionsList& options)
     cc.ShortName(OPT_C).LongName(_T("cache")).Descr(_T("Build cache for file search and show some statistics.")).Required(false).NumArgs(1).RequiredArgs(0);
     options.AddOption(cc);
 
-    //options.AddOption(OPT_S, _T("stat"), _T("Show interesting volume/disk statistics."), 1, false);
-    //options.AddOption(OPT_C, _T("cache"), _T("Build cache for file search and show some statistics."), 1, false);
     options.AddOption(OPT_T, _T("test"), _T("For testing purposes."), 0, false);
 }
 
@@ -260,8 +285,6 @@ void DefineOptions(COptionsList& options)
 
 void InitLogger()
 {
-    LogEngine::Levels::LogLevel llevel = LogEngine::Levels::llInfo;
-
     // if MFTReader.lfg exists load loggers from that file
     if (std::filesystem::exists(MFT_LOG_CFG_FILENAME))
     {
@@ -271,13 +294,13 @@ void InitLogger()
     {
         std::shared_ptr<LogEngine::Sink> consoleSink(DBG_NEW LogEngine::StdoutSinkST("consolesink"));
         consoleSink->SetPattern("%MSG%");
-        consoleSink->SetLogLevel(llevel);
+        consoleSink->SetLogLevel(LogEngine::Levels::llWarning); // show error messages only on console
 
         std::shared_ptr<LogEngine::Sink> fileSink(DBG_NEW LogEngine::FileSinkST("file_sink", MFT_LOG_FILENAME));
-        fileSink->SetLogLevel(llevel);
+        fileSink->SetLogLevel(LogEngine::Levels::llInfo);
 
         LogEngine::Logger& logger = LogEngine::GetMultiLogger(MFT_LOGGER_NAME, { fileSink, consoleSink });
         //logger.SetAsyncMode(true);//TODO uncomment to increase performance, also change sinks from ST to MT
-        logger.SetLogLevel(llevel, false); // do not overwrite sink's log levels.
+        logger.SetLogLevel(LogEngine::Levels::llInfo, false); // do not overwrite sink's log levels.
     }
 }
