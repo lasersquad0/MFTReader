@@ -117,7 +117,7 @@ class TLCNRecs
 {
 private:
     THArrayRaw FRecs; // storage for LCN records (pieces of memory)
-    THash2<CLST, CLST, uint8_t*> FHash; // mapping mft records to VCNs and LCNs
+    THash2<uint64_t, uint64_t, uint8_t*> FHash; // mapping mft records to VCNs and LCNs
 public:
     using rec_type = decltype(FHash)::ValuesHash::iterator::value_type;
     TLCNRecs(uint32_t recSize, uint32_t capacity) : FRecs(recSize) { SetCapacity(capacity); }
@@ -131,7 +131,7 @@ public:
     // lcnRecData pointer and data become unchanged
     //TODO contains a problem, if we want to delete one record from cache, all pointers in FHash become "invalid"
     // solution - delete record from FHash but DO NOT delete anything from FRecs
-    uint8_t* AddRec(uint8_t* lcnRecData, CLST VCN, CLST LCN)
+    uint8_t* AddRec(uint8_t* lcnRecData, uint64_t VCN, uint64_t LCN)
     {
         uint32_t index = FRecs.AddValue(lcnRecData);
         uint8_t* p = (uint8_t*)FRecs.GetValuePointer(index);
@@ -139,7 +139,7 @@ public:
         return p;
     }
 
-    rec_type GetRecByVCN(CLST VCN)
+    rec_type GetRecByVCN(uint64_t VCN)
     {
         auto& LCNHash = FHash.GetValue(VCN);
 
