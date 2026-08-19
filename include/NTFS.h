@@ -238,21 +238,21 @@ const bool SingleAttributes[ATTR_TYPE_CNT]{ true,true,true,false,true,true,true,
 // offsets in this structure shown from beginning of MFT_ATTR_HEADER structure 
 struct MFT_ATTR_RESIDENT
 {
-    uint32_t DataSize;      //0x10 Byte size of attribute value. 
-    uint16_t DataOffset;    //0x14 Byte offset of the attribute value from the start of the attribute record.
+    uint32_t DataSize;      //0x10: Byte size of attribute value. 
+    uint16_t DataOffset;    //0x14: Byte offset of the attribute value from the start of the attribute record.
                             //     When creating, align to 8 - byte boundary if we have a name present as this might
                             //     not have a length of a multiple of 8 - bytes.
-    uint8_t  IndexedFlag;   //0x16 Attribute is referenced in an index (has implications for deleting and modifying the attribute)
-    uint8_t  Align;         //0x17 Reserved/alignment to 8-byte boundary.
+    uint8_t  IndexedFlag;   //0x16: Attribute is referenced in an index (has implications for deleting and modifying the attribute)
+    uint8_t  Align;         //0x17: Reserved/alignment to 8-byte boundary.
 }; // 0x08
 
 static_assert(sizeof(MFT_ATTR_RESIDENT) == 0x08);
 
 struct MFT_ATTR_NONRESIDENT
 {
-    uint64_t StartVCN;          // 0x10 Starting VCN of this segment.
-    uint64_t LastVCN;           // 0x18 End VCN of this segment.
-    uint16_t DataRunsOffset;    // 0x20 Offset to packed runs.
+    uint64_t StartVCN;          // 0x10: Starting VCN of this segment.
+    uint64_t LastVCN;           // 0x18: End VCN of this segment.
+    uint16_t DataRunsOffset;    // 0x20: Offset to packed runs.
 
 //  Unit of Compression size for this stream, expressed as a log of the cluster size.
 //	0 means file is not compressed
@@ -263,13 +263,13 @@ struct MFT_ATTR_NONRESIDENT
 //  values here (1-5?), even if the implementation only generates a smaller set of values itself.
     uint8_t CompressionUnitSize; // 0x22: The compression unit for the attribute expressed as the logarithm to the base two of the number 
                                  // of clusters in a compression unit. If CompressionUnitSize is zero, the attribute is not compressed.
-    uint8_t reserved1[5];		 // 0x23 Reserved
-    uint64_t AllocatedSize;      // 0x28 Byte size of disk space allocated to hold the attribute value. Always is a multiple of the cluster size.
+    uint8_t reserved1[5];		 // 0x23: Reserved
+    uint64_t AllocatedSize;      // 0x28: Byte size of disk space allocated to hold the attribute value. Always is a multiple of the cluster size.
                                  // When a file is compressed, this field is a multiple of the compression block size (2 ^ compression_unit) and it represents 
                                  // the logically allocated space rather than the actual on disk usage. For this use the CompressedSize below.
-    uint64_t RealSize;           // 0x30 Byte size of the attribute value. Can be larger than AllocatedSize if attribute value is compressed or sparse.
-    uint64_t StreamSize;         // 0x38 Byte size of initialized portion of the attribute value. Usually equals RealSize.see SetEndOfFile WINAPI function.
-    uint64_t CompressedSize;     // 0x40 Byte size of the attribute value after compression. Only present when compressed. 
+    uint64_t RealSize;           // 0x30: Byte size of the attribute value. Can be larger than AllocatedSize if attribute value is compressed or sparse.
+    uint64_t StreamSize;         // 0x38: Byte size of initialized portion of the attribute value. Usually equals RealSize.see SetEndOfFile WINAPI function.
+    uint64_t CompressedSize;     // 0x40: Byte size of the attribute value after compression. Only present when compressed. 
                                  // Always is a multiple of the cluster size. Represents the actual amount of disk space being used on the disk.
                                  // (present only for the first segment (0 == vcn) of compressed attribute)
 
@@ -289,12 +289,12 @@ static_assert(sizeof(MFT_ATTR_NONRESIDENT) == 0x38);
 struct MFT_ATTR_HEADER
 {
     ATTR_TYPE AttrType;
-    uint32_t AttrSize;       //0x4 Byte size of the resident part of the attribute (aligned to 8 - byte boundary). Used to get to the next attribute.
-    uint8_t  NonResidentFlag;//0x8 Specifies, when true, that the attribute value is nonresident
-    uint8_t  AttrNameSize;   //0x9 The size, in characters, of the name (if any) of the attribute.
-    uint16_t AttrNameOffset; //0xA The offset, in bytes, from the start of the structure to the attribute name. The attribute name is stored as a Unicode string.
-    uint16_t Flags;          //0xC see ATTR_FLAG_XXX defines above
-    uint16_t AttrID;         //0xE The ID of this attribute record. This number is unique within this mft record (see MFT_FILE_RECORD/NextAttrId above )
+    uint32_t AttrSize;       //0x04: Byte size of the resident part of the attribute (aligned to 8 - byte boundary). Used to get to the next attribute.
+    uint8_t  NonResidentFlag;//0x08: Specifies, when true, that the attribute value is nonresident
+    uint8_t  AttrNameSize;   //0x09: The size, in characters, of the name (if any) of the attribute.
+    uint16_t AttrNameOffset; //0x0A: The offset, in bytes, from the start of the structure to the attribute name. The attribute name is stored as a Unicode string.
+    uint16_t Flags;          //0x0C: see ATTR_FLAG_XXX defines above
+    uint16_t AttrID;         //0x0E: The ID of this attribute record. This number is unique within this mft record (see MFT_FILE_RECORD/NextAttrId above )
 
     union
     {
@@ -357,18 +357,18 @@ static_assert(sizeof(enum FILE_ATTR_FLAGS) == 4);
 // correct by practical experimentation on Windows NT4 SP6a and is hence assumed to be the one and only correct interpretation.
 struct ATTR_STD_INFO5
 {
-    uint64_t CreateTime;	  // 0x00 File creation file.
-    uint64_t ModifyTime;	  // 0x08 File modification time.
-    uint64_t ModifyAttrTime;  // 0x10 Last time any attribute of this MFT record was modified.
-    uint64_t LastAccessTime;  // 0x18 File last access time.
-    uint32_t FileAttrib;      // 0x20 Standard DOS attributes & more. //FILE_ATTRIBUTE FileAttrib; 
-    uint32_t max_ver_num;	  // 0x24 Maximum allowed versions for file. Zero if version numbering is disabled.
-    uint32_t VersionNum;	  // 0x28 This file's version (if any). Set to zero if max_ver_num is zero.
-    uint32_t class_id;	      // 0x2C Class Id from bidirectional Class Id index.
-    uint32_t owner_id;	      // 0x30 Owner_id of the user owning the file. Translate via $Q index in FILE_Extend/$Quota to the quota control entry for 
+    uint64_t CreateTime;	  // 0x00: File creation file.
+    uint64_t ModifyTime;	  // 0x08: File modification time.
+    uint64_t ModifyAttrTime;  // 0x10: Last time any attribute of this MFT record was modified.
+    uint64_t LastAccessTime;  // 0x18: File last access time.
+    uint32_t FileAttrib;      // 0x20: Standard DOS attributes & more. //FILE_ATTRIBUTE FileAttrib; 
+    uint32_t max_ver_num;	  // 0x24: Maximum allowed versions for file. Zero if version numbering is disabled.
+    uint32_t VersionNum;	  // 0x28:: This file's version (if any). Set to zero if max_ver_num is zero.
+    uint32_t class_id;	      // 0x2C: Class Id from bidirectional Class Id index.
+    uint32_t owner_id;	      // 0x30: Owner_id of the user owning the file. Translate via $Q index in FILE_Extend/$Quota to the quota control entry for 
                               // the user owning the file. Zero if quotas are disabled
-    uint32_t security_id;	  // 0x34 Security_id for the file. Translate via $SII index and $SDS data stream in FILE_Secure to the security descriptor.
-    uint64_t quota_charged;   // 0x38 Byte size of the charge to the quota for all streams of the file. Note: Is zero if quotas are disabled.
+    uint32_t security_id;	  // 0x34: Security_id for the file. Translate via $SII index and $SDS data stream in FILE_Secure to the security descriptor.
+    uint64_t quota_charged;   // 0x38: Byte size of the charge to the quota for all streams of the file. Note: Is zero if quotas are disabled.
     uint64_t usn;		      // 0x40: Last Update Sequence Number of the file. This is a direct index into the file $UsnJrnl. If zero, the USN Journal is disabled.
 }; // 0x48
 
@@ -378,16 +378,16 @@ static_assert(sizeof(ATTR_STD_INFO5) == 0x48);
 // can be resident and non-resident
 struct ATTR_LIST_ENTRY 
 {
-    enum ATTR_TYPE AttrType; // 0x00 The type of attribute.
-    uint16_t AttrSize;		 // 0x04 The size, in bytes, of the attribute list entry.
-    uint8_t NameLen;		 // 0x06 The length of attribute name.
-    uint8_t NameOffset;		 // 0x07 The offset to attribute name.
-    uint64_t StartVCN;       // 0x08 Lowest VCN of this portion of the attribute value.This is usually 0. It is non-zero for the case where one attribute
+    enum ATTR_TYPE AttrType; // 0x00: The type of attribute.
+    uint16_t AttrSize;		 // 0x04: The size, in bytes, of the attribute list entry.
+    uint8_t NameLen;		 // 0x06: The length of attribute name.
+    uint8_t NameOffset;		 // 0x07: The offset to attribute name.
+    uint64_t StartVCN;       // 0x08: Lowest VCN of this portion of the attribute value.This is usually 0. It is non-zero for the case where one attribute
                              // does not fit into one mft record and thus several mft records are allocated to hold this attribute. In the latter case, each mft
                              // record holds one extent of the attribute and there is one attribute list entry for each extent
-    MFT_REF RecRef;	         // 0x10 The reference of the MFT record holding the MFT_ATTR_HEADER for this portion of the attribute value.
-    uint16_t AttrId;		 // 0x18 If StartVCN = 0, the Id of the attribute being referenced; otherwise 0.
-    uint16_t name[3];		 // 0x1A Just to align. To get real name can use NameOffset.
+    MFT_REF RecRef;	         // 0x10: The reference of the MFT record holding the MFT_ATTR_HEADER for this portion of the attribute value.
+    uint16_t AttrId;		 // 0x18: If StartVCN = 0, the Id of the attribute being referenced; otherwise 0.
+    uint16_t name[3];		 // 0x1A: Just to align. To get real name can use NameOffset.
 
 }; // sizeof(0x20)
 
@@ -401,19 +401,19 @@ static_assert(sizeof(struct ATTR_LIST_ENTRY) == 0x20);
 
 struct NTFS_DUP_INFO
 {
-    uint64_t CreateTime;	   // 0x00 File creation file.
-    uint64_t ModifyTime;	   // 0x08 File modification time.
-    uint64_t ModifyAttrTime;   // 0x10 Last time any attribute was modified.
-    uint64_t LastAccessTime;   // 0x18 File last access time.
-    uint64_t AllocSize;        // 0x20 Data attribute allocated size (for unnamed $DATA attribute), multiple of cluster size.
-    uint64_t FileSize;	       // 0x28 Actual data attribute size <= AllocSize.
-    uint32_t FileAttrib;       // 0x30 Standard DOS attributes & more.
+    uint64_t CreateTime;	   // 0x00: File creation file.
+    uint64_t ModifyTime;	   // 0x08: File modification time.
+    uint64_t ModifyAttrTime;   // 0x10: Last time any attribute was modified.
+    uint64_t LastAccessTime;   // 0x18: File last access time.
+    uint64_t AllocSize;        // 0x20: Data attribute allocated size (for unnamed $DATA attribute), multiple of cluster size.
+    uint64_t FileSize;	       // 0x28: Actual data attribute size <= AllocSize.
+    uint32_t FileAttrib;       // 0x30: Standard DOS attributes & more.
     union {
         struct {
-            uint16_t ea_size;	// 0x34 Size of the buffer needed to pack the extended attributes (EAs), if such are present.
-            uint16_t reparse;	// 0x36 Used by Reparse reparse_tag.
+            uint16_t ea_size;	// 0x34: Size of the buffer needed to pack the extended attributes (EAs), if such are present.
+            uint16_t reparse;	// 0x36: Used by Reparse reparse_tag.
         } ea;
-        uint32_t reparse_tag;   // 0x34 Type of reparse point, present only in reparse points and only if there are no EAs.
+        uint32_t reparse_tag;   // 0x34: Type of reparse point, present only in reparse points and only if there are no EAs.
     };
 }; // 0x38
  
@@ -423,10 +423,10 @@ static_assert(sizeof(NTFS_DUP_INFO) == 0x38);
 // resident only
 struct ATTR_FILE_NAME
 {
-    MFT_REF ParentDir;   // 0x00 reference to MFT record for parent directory.
-    NTFS_DUP_INFO dup;   // 0x08
-    uint8_t FileNameLen; // 0x40 File name length in words for unicode.
-    uint8_t NameType;	 // 0x41 File name type: POSIX=0, UNICODE=1, DOS=2, BOTH=3
+    MFT_REF ParentDir;   // 0x00: reference to MFT record for parent directory.
+    NTFS_DUP_INFO dup;   // 0x08:
+    uint8_t FileNameLen; // 0x40: File name length in words for unicode.
+    uint8_t NameType;	 // 0x41: File name type: POSIX=0, UNICODE=1, DOS=2, BOTH=3
 }; //0x42   
 
 static_assert(sizeof(ATTR_FILE_NAME) == 0x42);
@@ -437,10 +437,10 @@ static_assert(sizeof(ATTR_FILE_NAME) == 0x42);
  */
 struct ATTR_REPARSE_POINT
 {
-    uint32_t ReparseTag;		   // 0x00: Reparse point type (inc. flags).
+    uint32_t ReparseTag;		 // 0x00: Reparse point type (inc. flags).
     uint16_t ReparseDataLength;  // 0x04: Byte size of reparse data. 
-    uint16_t Reserved;		   	   // 0x06: Align to 8-byte boundary. 
-    GUID Guid;	                  // 0x08: 
+    uint16_t Reserved;		   	 // 0x06: Align to 8-byte boundary. 
+    GUID Guid;	                 // 0x08: 
 
     //uint8_t  reparse_data[0];	   // Here GenericReparseBuffer is placed. Meaning depends on reparse_tag. 
 
@@ -478,7 +478,6 @@ static_assert(sizeof(ATTR_REPARSE_POINT) == 0x18);
  */
 
 
-
  /* Microsoft reparse buffer. (see DDK for details) */
 struct REPARSE_DATA_BUFFER {
     uint32_t ReparseTag;		// 0x00:
@@ -488,11 +487,11 @@ struct REPARSE_DATA_BUFFER {
     union {
         /* If ReparseTag == 0xA0000003 (IO_REPARSE_TAG_MOUNT_POINT) */
         struct {
-            uint16_t SubstituteNameOffset; // 0x08
-            uint16_t SubstituteNameLength; // 0x0A
-            uint16_t PrintNameOffset;      // 0x0C
-            uint16_t PrintNameLength;      // 0x0E
-            uint16_t PathBuffer[1];	     // 0x10 This is field is of variable size
+            uint16_t SubstituteNameOffset; // 0x08:
+            uint16_t SubstituteNameLength; // 0x0A:
+            uint16_t PrintNameOffset;      // 0x0C:
+            uint16_t PrintNameLength;      // 0x0E:
+            uint16_t PathBuffer[1];	       // 0x10: This is field is of variable size
         } MountPointReparseBuffer;
 
         /*
@@ -500,29 +499,29 @@ struct REPARSE_DATA_BUFFER {
          * https://msdn.microsoft.com/en-us/library/cc232006.aspx
          */
         struct {
-            uint16_t SubstituteNameOffset; // 0x08
-            uint16_t SubstituteNameLength; // 0x0A
-            uint16_t PrintNameOffset;      // 0x0C
-            uint16_t PrintNameLength;      // 0x0E
+            uint16_t SubstituteNameOffset; // 0x08:
+            uint16_t SubstituteNameLength; // 0x0A:
+            uint16_t PrintNameOffset;      // 0x0C:
+            uint16_t PrintNameLength;      // 0x0E:
             // 0-absolute path 1- relative path, SYMLINK_FLAG_RELATIVE
-            uint32_t Flags;		           // 0x10
-            uint16_t PathBuffer[1];	       // 0x14 This is field is of variable size
+            uint32_t Flags;		           // 0x10:
+            uint16_t PathBuffer[1];	       // 0x14: This is field is of variable size
         } SymbolicLinkReparseBuffer;
 
         /* If ReparseTag == 0x80000017U */
         struct {
-            uint32_t WofVersion;  // 0x08 == 1
+            uint32_t WofVersion;  // 0x08: == 1
             /*
              * 1 - WIM backing provider ("WIMBoot"),
              * 2 - System compressed file provider
              */
-            uint32_t WofProvider; // 0x0C:
-            uint32_t ProviderVer; // 0x10: == 1 WOF_FILE_PROVIDER_CURRENT_VERSION == 1
+            uint32_t WofProvider;       // 0x0C:
+            uint32_t ProviderVer;       // 0x10: == 1 WOF_FILE_PROVIDER_CURRENT_VERSION == 1
             uint32_t CompressionFormat; // 0x14: 0, 1, 2, 3. See WOF_COMPRESSION_XXX
         } CompressReparseBuffer;
 
         struct {
-            uint8_t DataBuffer[1];   // 0x08:
+            uint8_t DataBuffer[1];      // 0x08:
         } GenericReparseBuffer;
     };
 };
@@ -560,7 +559,7 @@ typedef enum : uint16_t
  */
 struct VOLUME_INFO
 {
-    uint64_t reserved; // 0x00
+    uint64_t Reserved; // 0x00:
     uint8_t MajorVer;  // 0x08: NTFS major version number (before .)
     uint8_t MinorVer;  // 0x09: NTFS minor version number (after .)
     uint16_t Flags;	   // 0x0A: Volume flags, see VOLUME_FLAGS enum
@@ -586,11 +585,11 @@ static_assert(sizeof(ATTR_OBJECT_ID) == 0x40);
 
 struct INDEX_HDR
 {
-    uint32_t DEOffset;  // 0x00 The offset from the start of this structure to the first NTFS_DE.
-    uint32_t Used;      // 0x04 The size of this structure plus all entries (quad-word aligned).
-    uint32_t Allocated; // 0x08 The allocated size of for this structure plus all entries.
-    uint8_t Flags;	    // 0x0C 0x00 = Small directory, 0x01 = Large directory.
-    uint8_t reserved[3];
+    uint32_t DEOffset;   // 0x00: The offset from the start of this structure to the first NTFS_DE.
+    uint32_t Used;       // 0x04: The size of this structure plus all entries (quad-word aligned).
+    uint32_t Allocated;  // 0x08: The allocated size of for this structure plus all entries.
+    uint8_t Flags;	     // 0x0C: 0x00 = Small directory, 0x01 = Large directory.
+    uint8_t reserved[3]; // 0x0D:
     //
     // DEOffset + Used <= Allocated
     //
@@ -602,7 +601,6 @@ static_assert(sizeof(INDEX_HDR) == 0x10);
 enum class COLLATION_RULE: uint32_t
 {
     BINARY   = 0x00,      // Collate by binary compare where the first byte is most significant.
-    // used in $I30
     FILENAME = 0x01,      // Collate Unicode strings by comparing their 16-bit coding units, primarily ignoring case using the volume's $UpCase table,
                           // but falling back to a case-sensitive comparison if the names are equal ignoring case.
     UINT  = 0x10,         // Sorting is done according to ascending le32 key values. E.g.used for $SII index in $Secure, which sorts by security_id(le32).
@@ -667,7 +665,7 @@ static_assert(sizeof(NTFS_DE) == 0x10);
 // This struct located in clusters as a part of $INDEX_ALLOCATION attribute
 struct INDEX_BUFFER 
 {
-    NTFS_RECORD_HEADER RecHeader; // 'INDX', FixupOffset, FixupCnt, LogFileSeqNum
+    NTFS_RECORD_HEADER RecHeader; // 0x00: 'INDX', FixupOffset, FixupCnt, LogFileSeqNum
     uint64_t vcn;   // 0x10: Virtual cluster number of the index buffer. vcn if index >= cluster or vsn id index < cluster
     INDEX_HDR ihdr; // 0x18:
 }; // 0x28
@@ -675,16 +673,18 @@ struct INDEX_BUFFER
 static_assert(sizeof(INDEX_BUFFER) == 0x28);
 
 
-typedef uint64_t CLST;
+//typedef uint64_t CLST;
 
 struct DATA_RUN_ITEM 
 {
-    CLST len; // Length in clusters.
-    CLST vcn; // Virtual cluster number.
-    CLST lcn; // Logical cluster number.
+    uint64_t len; // 0x00: Length in clusters.
+    uint64_t vcn; // 0x08: Virtual cluster number.
+    uint64_t lcn; // 0x10: Logical cluster number.
 
     bool operator==(const DATA_RUN_ITEM& other) const { return (len == other.len) && (vcn == other.vcn) && (lcn == other.lcn); }
 };
+
+static_assert(sizeof(DATA_RUN_ITEM) == 0x18);
 
 /**
  * struct BITMAP_ATTR - Attribute: Bitmap (0xb0).
@@ -707,44 +707,44 @@ constexpr char NTFS_LABEL[] = "NTFS    ";
 
 struct MBR_PARTITION_ENTRY
 {
-    uint8_t  BootFlag;     // 0x00 0x08 -  bootable partition, 0x00 - non-bootable
-    uint8_t  StartCHS[3];  // 0x01 old and unused
-    uint8_t  Type;         // 0x04 0x07 - NTFS partition, 0x0C - FAT, 0x83 - Linux, etc.
-    uint8_t  EndCHS[3];    // 0x05 old and unused
-    uint32_t FirstLBA;     // 0x08 First sector of partition. Counted from beginning of physical disk
-    uint32_t SectorCount;  // 0x0C total number of sectors occupied by partition starting from FirstLBA.
+    uint8_t  BootFlag;     // 0x00: 0x08 -  bootable partition, 0x00 - non-bootable
+    uint8_t  StartCHS[3];  // 0x01: old and unused
+    uint8_t  Type;         // 0x04: 0x07 - NTFS partition, 0x0C - FAT, 0x83 - Linux, etc.
+    uint8_t  EndCHS[3];    // 0x05: old and unused
+    uint32_t FirstLBA;     // 0x08: First sector of partition. Counted from beginning of physical disk
+    uint32_t SectorCount;  // 0x0C: total number of sectors occupied by partition starting from FirstLBA.
 }; //0x10
 
 static_assert(sizeof(MBR_PARTITION_ENTRY) == 16);
 
 
 struct NTFS_BOOT_SECTOR {
-    uint8_t     Jump[3];         // 0x00 jump to boot code
-    uint8_t     OemId[8];        // 0x03 Magic "NTFS    "
-    uint16_t    BytesPerSector;  // 0x0B Size of a sector in bytes. 
-    uint8_t     SectorsPerCluster; // 0x0D
+    uint8_t     Jump[3];           // 0x00: jump to boot code
+    uint8_t     OemId[8];          // 0x03: Magic "NTFS    "
+    uint16_t    BytesPerSector;    // 0x0B: Size of a sector in bytes. 
+    uint8_t     SectorsPerCluster; // 0x0D:
     uint8_t     Reserved[7];
-    uint8_t     MediaDescriptor; // 0x15 0xf8 = hard disk
+    uint8_t     MediaDescriptor;   // 0x15: 0xf8 = hard disk
     uint16_t    Reserved2;
-    uint16_t    SectorsPerTrack; // 0x18 Required to boot Windows.
-    uint16_t    NumberOfHeads;   // 0x1A Required to boot Windows.
-    uint32_t    HiddenSectors;   // 0x1C
-    uint32_t    Unused1;         // zero, NTFS diskedit.exe states that this is actually :
+    uint16_t    SectorsPerTrack;   // 0x18: Required to boot Windows.
+    uint16_t    NumberOfHeads;     // 0x1A: Required to boot Windows.
+    uint32_t    HiddenSectors;     // 0x1C:
+    uint32_t    Unused1;           // zero, NTFS diskedit.exe states that this is actually :
     // u8 physical_drive;		// 0x80
     // u8 current_head;		// zero
     // u8 extended_boot_signature;	// 0x80
     //u8 unused;			// zero
     uint32_t    Unused2;
-    uint64_t    TotalSectors;        // 0x28 Number of sectors in volume.Gives maximum volume size of 2 ^ 63 sectors.
-    // Assuming standard sector size of 512 bytes, the maximum byte size is approx. 4.7x10 ^ 21 bytes. (-;
-    uint64_t    MftStartLcn;         // 0x30 Cluster location of mft data
-    uint64_t    MftMirrorStartLcn;   // 0x38 Cluster location of copy of mft.
-    int8_t      ClustersPerFileRecord;// 0x40 Mft record size in clusters.
+    uint64_t    TotalSectors;          // 0x28: Number of sectors in volume. Gives maximum volume size of 2 ^ 63 sectors.
+                                       // Assuming standard sector size of 512 bytes, the maximum byte size is approx. 4.7x10 ^ 21 bytes. (-;
+    uint64_t    MftStartLcn;           // 0x30: Cluster location of mft data
+    uint64_t    MftMirrorStartLcn;     // 0x38: Cluster location of copy of mft.
+    int8_t      ClustersPerFileRecord; // 0x40: Mft record size in clusters.
     uint8_t     Reserved3[3];
-    int8_t      ClustersPerIndexBlock;// 0x44 Index block size in clusters
+    int8_t      ClustersPerIndexBlock; // 0x44: Index block size in clusters
     uint8_t     Reserved4[3];
-    uint64_t    VolumeSerialNumber;  // 0x48
-    uint32_t    Checksum;            // 0x50 Boot sector checksum
+    uint64_t    VolumeSerialNumber;    // 0x48:
+    uint32_t    Checksum;              // 0x50: Boot sector checksum
 }; // 0x54
 
 static_assert(sizeof(NTFS_BOOT_SECTOR) == 84);
