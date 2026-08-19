@@ -1,5 +1,6 @@
 
 #include "Readers.h"
+#include "Utils.h"
 
 // make volume look like \\.\C:
 // vol should contain volume letter ('c','d', etc) and symbol ':' after it.
@@ -38,7 +39,7 @@ string_t IRecordsLoader::AbsPath(const string_t& str)
     std::filesystem::path relPath(IRecordsLoader::PreNormalize(str));
     std::filesystem::path absPath = std::filesystem::absolute(relPath, ec);
     if (ec) return str;
-    return convert_string<char_t>(absPath.wstring());
+    return convert_string<char_t>(absPath);
 }
 
 bool IRecordsLoader::IsPath(const string_t& str)
@@ -111,7 +112,7 @@ expected_uintptr IRecordsLoader::LoadMFTRecordCache(MFT_REF mftRecRef) // return
     }
 
     GET_LOGGER;
-    logger.Warn("[LoadMFTRecordCache] Record is loaded from cache!");
+    logger.Info("[LoadMFTRecordCache] Record is loaded from cache!");
 
     return *result; // return MFT record from cache
 }
@@ -291,13 +292,13 @@ TErrorCode TWinAPIRecordsLoader::InternalLoadMFTRecord(MFT_REF mftRecRef, uint8_
         if (!internalCall)
         {
             GET_LOGGER;
-            logger.WarnFmt("Requested MFT Rec ID differs from returned. Looks like requested MFT record is deleted. Requested: {}, returned: {}",
+            logger.WarnFmt("Requested MFT Rec ID differs from returned. Looks like non existing record is requested or record was deleted. Requested: {}, returned: {}",
                 nfrib.FileReferenceNumber.LowPart, pnfrob->FileReferenceNumber.LowPart);
         }
         return TErrorCode::MFTRecordNotInUse;
     }
 
-    MFT_FILE_RECORD* mftRecord = (MFT_FILE_RECORD*)(pnfrob->FileRecordBuffer);
+    auto mftRecord = (MFT_FILE_RECORD*)(pnfrob->FileRecordBuffer);
 
     // Make sure DeviceIoControl returned exactly the MFT record number we requested.
     // DeviceIoControl may return closest existing MFT record when record with requested ID is "free".
@@ -333,7 +334,7 @@ TErrorCode TWinAPIRecordsLoader::InternalLoadMFTRecord(MFT_REF mftRecRef, uint8_
 * @param lcnCnt Count of sequential clusters to be read
 * @param dataBuf Buffer where all clusters will be read. Should be at least size lcnCnt*VolumeClusterSize
 **/
-TErrorCode TWinAPIRecordsLoader::ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf)
+TErrorCode TWinAPIRecordsLoader::ReadClusters(uint64_t lcnStart, uint64_t lcnCnt, uint8_t* dataBuf)
 {
     assert(IsOpened());
 
