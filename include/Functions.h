@@ -12,6 +12,16 @@
 #include "BitField.h"
 
 
+#define CH_ERR(_res_) do { \
+   TErrorCode __ = (_res_); \
+    if ((__) != TErrorCode::Success) \
+        return (__); \
+    } while(0)
+
+constexpr uint32_t F_WIDTH = 22;
+const size_t MFT_LINE_LEN = 57;
+const size_t ATTR_LINE_LEN = MFT_LINE_LEN - 6;
+
 #define MFT_LOGGER_NAME "mftlog"
 #define MFT_LOGGER_NAME_FUNC "mftlogfunc"
 //#define MFT_LOGGER_NAME_LIST "mftlist"
@@ -31,9 +41,9 @@ constexpr uint32_t DEFAULT_BYTES_PER_MFT_REC = 1024;
 //#define AttrIsNtfsInt(_) (AttrIsMetaFile(_) || AttrIsDotDir(_))
 
 // ANSI charset, for logging purposes only
-#define ATTR_TYPE_NAMES { "ZERO", "STANDARD INFO", "ATTR LIST", "FILENAME", "OBJECT ID", "secure_info", "LABEL", \
-                          "VOLUME INFO", "DATA", "INDEX ROOT", "ALLOCATION", "BITMAP", "REPARSE", "EA INFORMATION", \
-                          "EA", "PROPERTYSHEET", "LOGGED UTILITY STREAM", "USER ATTRIBUTE" }
+#define ATTR_TYPE_NAMES { "ZERO", "STANDARD_INFO", "ATTR_LIST", "FILENAME", "OBJECT_ID", "secure_info", "LABEL", \
+                          "VOLUME_INFO", "DATA", "INDEX_ROOT", "ALLOCATION", "BITMAP", "REPARSE", "EA_INFORMATION", \
+                          "EA", "PROPERTYSHEET", "LOGGED_UTILITY_STREAM", "USER_ATTRIBUTE" }
 
 
 // Attr types have numbers 0x10, 0x20, 0x30, etc. - convert them into consecutive indexes in the array
@@ -188,7 +198,7 @@ typedef THArray<ITEM_INFO> TItemInfoList;
 
 typedef std::function<void(const ATTR_FILE_NAME*, const MFT_REF&)> AddFileAttrPred;
 typedef std::function<TErrorCode(const MFT_REF&)> AttrListPred;
-typedef std::function<void(uint8_t* dataBuf, CLST VCN, CLST LCN)> ProcessiBlocksPred;
+typedef std::function<void(uint8_t* dataBuf, uint64_t VCN, uint64_t LCN)> ProcessiBlocksPred;
 
 typedef int32_t (__stdcall *ProgressCallbackPtr)(int32_t progress);
 
@@ -243,10 +253,11 @@ public:
 };
 
 LogEngine::Logger& GetLoggerFunc();
-string_t FileDateToString(const string_t& str, uint64_t dateTime);
+string_t FileDateToString(uint64_t dateTime);
 std::string FormatFileAttributes(uint32_t a);
 MFTRecIndex StringToMFTRecID(const string_t& strMFTRecID);
 string_t GetVolumeName(const string_t& path);
+string_t AttrFlagToString(uint32_t attrFlag); 
 
 // removes all leading and trailing \n\t\r and space symbols from string
 //std::wstring TrimSPCRLF(std::wstring str);
