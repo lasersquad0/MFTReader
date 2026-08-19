@@ -167,7 +167,7 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
                 assert(IsBASERec); // ATTR_LIST cannot be located in child record
                 assert(node.FileList.Count() == 0);
 
-                THArray<uint32_t> visitedMFTRec;
+                THArray<MFTRecIndex> visitedMFTRec;
                 visitedMFTRec.AddValue(mftRec->IndexMFTRec);
 
                 ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)attrValue;
@@ -362,7 +362,7 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
                 assert(attrListItem->StartVCN == 0);
                 assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
 
-                THArray<uint32_t> visitedMFTRec;
+                THArray<MFTRecIndex> visitedMFTRec;
                 visitedMFTRec.AddValue(mftRec->IndexMFTRec);
 
                 while (true) // loop by LCNs in one data run
@@ -556,7 +556,7 @@ TErrorCode TMFTSearchReader::ReadDirectoryV1(uint32_t parentIdx, CACHE_ITEM* par
     }
 
     //TODO this is the same predicate code as in MFTStatReader.cpp. Think how to avoid duplication
-    ProcessiBlocksPred processAllocPred = [this, &addToFileListPred](uint8_t* dataBuf, CLST VCN, CLST LCN)
+    ProcessiBlocksPred processAllocPred = [this, &addToFileListPred](uint8_t* dataBuf, uint64_t VCN, uint64_t LCN)
         {
             auto allocIndex = (INDEX_BUFFER*)dataBuf;
 
@@ -709,7 +709,7 @@ void TMFTSearchReader::SaveToFile(string_t fileName)
     string_t fendl;
     BUILD_ENDL(fendl);
 
-    ff << _T("Total Items Count: ") << toStringSep<uint, string_t>(arr.Count()) << fendl;
+    ff << _T("Total Items Count: ") << toStringSep<string_t, uint>(arr.Count()) << fendl;
 
     cout_t << "Saving list of files to '" << fileName << "'..." << std::endl;
 
@@ -740,13 +740,14 @@ TErrorCode TMFTSearchReaderV2::ReadDirectoryV2(MFT_REF parentMftRecID, uint32_t 
         return res;
     }
 
-    DIR_NODE node;
+    //DIR_NODE node;
+    TFileList fileList;
     // GetFileListFromMFTRec uses FillAttrCollection to read file attributes
-    res = GetFileListFromMFTRec(mftRec, node); // writes error to log file in case of error
+    res = GetFileListFromMFTRec(mftRec, fileList); // writes error to log file in case of error
     if (res != TErrorCode::Success)
         return res;
 
-    for (auto& item : node.FileList)
+    for (auto& item : fileList)
     {
         //if (!item.NtfsInternal()) // do not add hidden metafiles into file list
         if (!FLoader.IsMetaFile(item.MFTRecID.sId.low)) 
