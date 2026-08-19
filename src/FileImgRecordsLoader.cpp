@@ -3,6 +3,7 @@
 //#include "gtest/gtest.h"
 #include "Readers.h"
 #include "Functions.h"
+#include "Utils.h"
 
 int64_t TFileImageRecordsLoader::MFTRecIdToOffset(MFTRecIndex MFTRecID)
 {
@@ -250,7 +251,7 @@ TErrorCode TFileImageRecordsLoader::InternalLoadMFTRecord(MFT_REF mftRecRef, uin
     return TErrorCode::Success;
 }
 
-TErrorCode TFileImageRecordsLoader::ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf)
+TErrorCode TFileImageRecordsLoader::ReadClusters(uint64_t lcnStart, uint64_t lcnCnt, uint8_t* dataBuf)
 {
     assert(IsOpened());
 
