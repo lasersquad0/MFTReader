@@ -37,6 +37,9 @@
     <ClCompile Include="..\..\src\MFTBaseReader.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="StringToArrayParamTest.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

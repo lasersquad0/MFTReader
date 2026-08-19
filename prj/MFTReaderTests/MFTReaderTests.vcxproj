@@ -140,6 +140,7 @@
     <ClCompile Include="MFTParserBaseTests.cpp" />
     <ClCompile Include="MFTPlainRecordsTest.cpp" />
     <ClCompile Include="MFTRawImagesTest.cpp" />
+    <ClCompile Include="StringToArrayParamTest.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
