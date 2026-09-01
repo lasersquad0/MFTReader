@@ -32,7 +32,7 @@ static void InitLogger()
             std::shared_ptr<FileLockSinkST> sink(new FileLockSinkST("filelocksink", exepath + "LogMFTReaderDLL.log"));
             logger.AddSink(sink);
            // logger.SetAsyncMode(true);
-            logger.SetLogLevel(LogEngine::Levels::llInfo);
+            logger.SetLogLevel(LogEngine::llInfo);
             logger.Info("LogEngine STARTED");
         }
     }
