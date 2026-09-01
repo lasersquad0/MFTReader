@@ -41,10 +41,11 @@ constexpr uint32_t DEFAULT_BYTES_PER_MFT_REC = 1024;
 //#define AttrIsNtfsInt(_) (AttrIsMetaFile(_) || AttrIsDotDir(_))
 
 // ANSI charset, for logging purposes only
-#define ATTR_TYPE_NAMES { "ZERO", "STANDARD_INFO", "ATTR_LIST", "FILENAME", "OBJECT_ID", "secure_info", "LABEL", \
+#define ATTR_TYPE_NAMES { "ZERO", "STANDARD_INFO", "ATTR_LIST", "FILENAME", "OBJECT_ID", "SECURITY_INFO", "LABEL", \
                           "VOLUME_INFO", "DATA", "INDEX_ROOT", "ALLOCATION", "BITMAP", "REPARSE", "EA_INFORMATION", \
-                          "EA", "PROPERTYSHEET", "LOGGED_UTILITY_STREAM", "USER_ATTRIBUTE" }
+                          "EA", "PROPERTYSHEET", "LOGGED_UTIL_STREAM", "USER_ATTRIBUTE" }
 
+#define GetResidenceName(_attr_) ((_attr_->NonResidentFlag == ATTR_FLAG_NONRESIDENT) ? "NON-RESIDENT" : "RESIDENT")
 
 // Attr types have numbers 0x10, 0x20, 0x30, etc. - convert them into consecutive indexes in the array
 // used for indexing ATTR_TYPE_NAMES array and in some other places
@@ -134,7 +135,7 @@ struct ITEM_INFO
     bool HasNonResidentDataAttr{ false }; // Has non-resident DATA attribute
 
     THArray<IFILE_NAME> FileNames; // contains filenames of all types - DOS, WIN and POSIX
-    THash<std::wstring, TDataRuns> DataStreamNames; // data stream name counts groupped by stream name
+    THash<std::wstring, std::optional<TDataRuns>> DataStreamNames; // data stream name counts groupped by stream name
   
     DIR_NODE Node;
 
@@ -223,31 +224,46 @@ class TAttrCollection
 {
 private:
     THArray<TAttrHeaderList> FAttrList;
+    THashUnordered<MFT_ATTR_HEADER*, MFTRecIndex> FReadFrom;
 public:
     TAttrCollection()
     {
         FAttrList.SetCount(ATTR_TYPE_CNT);
-        //FAttrList.Zero(); // needed to check which attrs are not present (will be nulls in FAttrList)
     }
 
     //auto begin() { return FAttrList.begin(); }
     //auto end()   { return FAttrList.end(); }
 
-    void Set(MFT_ATTR_HEADER* attr)
+    // readFrom - MFT Rec ID (eaither BASE or CHILD) where attribute attr is located
+    void Set(MFT_ATTR_HEADER* attr, MFTRecIndex readFrom)
     {
         assert(attr->AttrType <= ATTR_LOGGED_UTILITY_STREAM); // this is last attribute in list of attr types
+        assert(attr->AttrType != ATTR_LIST_ATTR);
+        assert(attr->AttrType != ATTR_ZERO);
 
         // check that single attributes are single
         if (SingleAttributes[MATI(attr->AttrType)]) 
             assert(FAttrList[MATI(attr->AttrType)].Count() == 0);
 
         FAttrList[MATI(attr->AttrType)].AddValue(attr);
+        FReadFrom.SetValue(attr, readFrom);
     }
 
     TAttrHeaderList& Get(ATTR_TYPE attrType)
     {
-        //assert((attrType != ATTR_FILENAME) && (attrType != ATTR_DATA) && (attrType != ATTR_LOGGED_UTILITY_STREAM));
+        assert(attrType <= ATTR_LOGGED_UTILITY_STREAM); // this is last attribute in list of attr types
+        assert(attrType != ATTR_LIST_ATTR);
+        assert(attrType != ATTR_ZERO);
+
         return FAttrList[MATI(attrType)];
+    }
+
+    // returns location of attribute attr 
+    // location this is a MFT Rec ID where attribute attr is actually located
+    // it may be CHILD MFT record when its BASE record contains ATT_LIST attribute
+    MFTRecIndex GetLoc(MFT_ATTR_HEADER* attr)
+    {
+        return FReadFrom[attr];
     }
 
 };
@@ -261,3 +277,67 @@ string_t AttrFlagToString(uint32_t attrFlag);
 
 // removes all leading and trailing \n\t\r and space symbols from string
 //std::wstring TrimSPCRLF(std::wstring str);
+
+
+enum class TProgressResult
+{
+    OK,
+    ABORT,
+    PAUSE
+};
+
+class IProgress
+{
+protected:
+    uint32_t FP100 = 100;
+public:
+    virtual ~IProgress() {};
+    virtual void Start(uint32_t p100) { FP100 = p100; };
+    virtual void Finish() {};
+    /** Return values:
+    * 0 - user aborted the process. need to stop/abort current operation
+    * 1 - everything is ok, continue operation
+    * 2 - pause operation (call method progess() with the last parameter every 1 second until any other value than 2 returned)
+    */
+    virtual TProgressResult Progress(uint32_t prgrs, string_t data) { UNREFERENCED_PARAMETER(data); UNREFERENCED_PARAMETER(prgrs); return TProgressResult::OK; };
+
+};
+
+/**
+* This class used for showing ONLY progress on the console
+* It shows one line without '\n' at the end and updates info on this line each time when progress() method is called
+*/
+class ConsoleProgress : public IProgress
+{
+protected:
+    ostream_t& FCout;
+public:
+    ConsoleProgress(ostream_t& console) : FCout(console) {}
+
+    void Start(uint32_t p100) override { IProgress::Start(p100); }
+    void Finish() override 
+    {
+        Progress(FP100, _T("DONE"));
+        std::cout << std::endl << std::endl; 
+    }
+
+    TProgressResult Progress(uint32_t prgrs, string_t data) override
+    {
+        const uint32_t LINE_LEN = 100; //100 symbols in console
+        const uint32_t FOR_FILE_NM = 20;
+
+        uint32_t realProgress = prgrs * LINE_LEN / FP100;
+        uint32_t figureProgress = prgrs * 100 / FP100;
+
+        //string_t str(_T(''\033[32m'));
+        string_t str;
+        str.reserve(LINE_LEN);
+        str.append(realProgress, L'\u2588');
+        str.append(abs((int32_t)LINE_LEN - (int32_t)str.size()), L'\u2591');
+        //str.append(_T("\033[0m"));
+
+        cout_t << _T("\r ") << str << std::format(_T(" {}% ({:.{}}){:<{}}"), figureProgress, data, FOR_FILE_NM, _T(""), (FOR_FILE_NM > data.size() ? FOR_FILE_NM - data.size() : 0));
+
+        return TProgressResult::OK;  // not used at the moment
+    }
+};
