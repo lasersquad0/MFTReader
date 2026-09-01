@@ -19,12 +19,9 @@
 
 LOGENGINE_NS_BEGIN
 
-namespace Levels
-{//TODO shall we replace by class enum??
-	enum LogLevel:int { llOff, llCritical, llError, llWarning, llInfo, llDebug, llTrace, n_LogLevels };
-}
+enum LogLevel : uint { llOff, llCritical, llError, llWarning, llInfo, llDebug, llTrace, llnLogLevels };
 
-#define LL_DEFAULT Levels::llInfo
+#define LL_DEFAULT llInfo
 #define LL_DEFAULT_NAME "llInfo"
 
 #define LL_NAMES       { "off", "critical", "error", "warning", "info", "debug", "trace" }
@@ -35,24 +32,24 @@ static const std::string LogLevelNames[] LL_NAMES;
 static const std::string LogLevelCapsNames[] LL_CAPS_NAMES;
 static const char* LogLevelShortNames[] LL_SHORT_NAMES;
 
-inline const std::string& LLtoString(const Levels::LogLevel ll) { return LogLevelNames[ll]; }
-inline const std::string& LLtoCapsString(const Levels::LogLevel ll) { return LogLevelCapsNames[ll]; }
+inline const std::string& LLtoString(const LogLevel ll) { return LogLevelNames[ll]; }
+inline const std::string& LLtoCapsString(const LogLevel ll) { return LogLevelCapsNames[ll]; }
 
-inline const char* LLtoShortString(const Levels::LogLevel ll) { return LogLevelShortNames[ll]; }
+inline const char* LLtoShortString(const LogLevel ll) { return LogLevelShortNames[ll]; }
 
 
-inline Levels::LogLevel LLfromString(std::string name)
+inline LogLevel LLfromString(std::string name)
 {
 	//std::transform(name.begin(), name.end(), name.begin(), mytolower);
 
 	name = StrToLower(name);
 	auto it = std::find(std::begin(LogLevelNames), std::end(LogLevelNames), name);
 	if (it != std::end(LogLevelNames))
-		return static_cast<Levels::LogLevel>(std::distance(std::begin(LogLevelNames), it));
+		return static_cast<LogLevel>(std::distance(std::begin(LogLevelNames), it));
 
 	// check also for "warn" and "err" before giving up..
-	if (name == "warn") return Levels::llWarning;
-	if (name == "err") return Levels::llError;
+	if (name == "warn") return llWarning;
+	if (name == "err") return llError;
 
 	return LL_DEFAULT;
 }
@@ -102,10 +99,10 @@ public:
 	Logger* logger; // pointer to logger instance that generated this log event
 	struct tm tmtime;
 	std::string message;
-	Levels::LogLevel msgLevel;
+	LogLevel msgLevel;
 	unsigned int threadID; // this is a thread that generated a log message. it may differ from thread that makes actual writing to the file (when Logger's AsyncMode set to true)
 
-	LogEvent(Logger* lgr, const std::string& msg, Levels::LogLevel msgLv, unsigned int thrID, struct tm time)
+	LogEvent(Logger* lgr, const std::string& msg, LogLevel msgLv, unsigned int thrID, struct tm time)
 		: logger(lgr), tmtime(time), message(msg),msgLevel(msgLv), threadID(thrID) {}
 
 };
