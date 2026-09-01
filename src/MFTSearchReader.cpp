@@ -65,7 +65,7 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
 
     bool IsBASERec = mftRec->ParentFileRec.Id == 0;
     
-    if (logger.ShouldLog(LogEngine::Levels::llDebug))
+    if (logger.ShouldLog(LogEngine::llDebug))
     {
         logger.DebugFmt("Signature: {}", std::string((char*)mftRec->RecHeader.Signature, 4));
         logger.DebugFmt("MFT Rec ID: {}", MFT_REF::toHexString(mftRec->IndexMFTRec));
@@ -103,7 +103,7 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
     int attroOrderNum = 1;
     do  // reading all attributes in a loop
     {
-        if (logger.ShouldLog(LogEngine::Levels::llDebug))
+        if (logger.ShouldLog(LogEngine::llDebug))
         {
             logger.DebugFmt("********** #{} Attribute ({} {:#x}) **********", attroOrderNum++, AttrName(currAttr->AttrType), (uint32_t)currAttr->AttrType);
             logger.Debug(currAttr->NonResidentFlag == ATTR_FLAG_NONRESIDENT ? "Attr Type: NON-RESIDENT" : "Attr Type: RESIDENT");
@@ -143,7 +143,7 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
 
                 node.IndexBlockSize = indexR->IndexBlockSize; // need this value for further processing ALLOC Data Runs
 
-                if (logger.ShouldLog(LogEngine::Levels::llDebug))
+                if (logger.ShouldLog(LogEngine::llDebug))
                 {
                     logger.DebugFmt("IndexRoot Indexed Attr Type: {} {:#x}", AttrName(indexR->AttrType), (uint32_t)indexR->AttrType);
                     logger.DebugFmt("IndexRoot Collation Rule: {} ({:#x})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
@@ -265,7 +265,7 @@ TErrorCode TMFTSearchReader::ParseMFTRecord(uint8_t* mftRecData, DIR_NODE& node,
         }
         else // Attribute is NON-Resident
         {
-            if (logger.ShouldLog(LogEngine::Levels::llDebug))
+            if (logger.ShouldLog(LogEngine::llDebug))
             {
                 logger.DebugFmt("Attr StartVCN: {}", currAttr->nonres.StartVCN);
                 logger.DebugFmt("Attr LastVCN: {}", currAttr->nonres.LastVCN);
