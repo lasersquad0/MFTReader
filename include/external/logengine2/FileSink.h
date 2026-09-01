@@ -24,7 +24,7 @@ template<class Mutex>
 class FileSink : public BaseSink<Mutex>
 {
 protected:
-	TFileStream* FStream;
+	TFileStream* FStream = nullptr;
 
 	void sendMsg(const LogEvent& e) override
 	{
