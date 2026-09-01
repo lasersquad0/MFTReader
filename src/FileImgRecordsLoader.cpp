@@ -74,6 +74,19 @@ void TFileImageRecordsLoader::Open(const string_t& imgFileName)
 
         //TODO extended partitions are not supported yet, need to add support.
 
+        // check MBR signature
+        const uint8_t MBR_SIGNATURE[2] = { 0x55, 0xAA };
+        uint8_t mbrSign[2]{};
+        if (SetFilePointer(FHFile, 0x1FE, 0, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+            throw_winapi_exception("TFileImageRecordsLoader.SetFilePointer");
+
+        bytesRead = 0;
+        if (!(ReadFile(FHFile, mbrSign, sizeof(mbrSign), &bytesRead, nullptr) && (bytesRead == sizeof(mbrSign))))
+            throw_winapi_exception("TFileImageRecordsLoader.ReadFile");
+
+        if ( (mbrSign[0] != MBR_SIGNATURE[0]) || (mbrSign[1] != MBR_SIGNATURE[1]))
+            throw std::exception(std::format("MBR signature 0x55AA is not found in file '{}'", convert_string<char>(imgFileName)).c_str());
+
         MBR_PARTITION_ENTRY mbr{ 0 };
         DWORD mbrOff = 0x1BE; // fixed offset to first partition entry
 
