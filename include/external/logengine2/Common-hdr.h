@@ -22,9 +22,9 @@ LOGENGINE_INLINE double round(const double Value, const int Precision)
 	double p = 1;
 
 	if(Precision >= 0)
-		while(i--)p *= 10;
+		while(i--) p *= 10;
 	else 
-		while(i++)p /= 10;
+		while(i++) p /= 10;
 
 	double temp = Value * p;
 
