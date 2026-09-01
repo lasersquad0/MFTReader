@@ -87,12 +87,12 @@ int _tmain(int argc, TCHAR* argv[])
             if (IRecordsLoader::IsPath(absPath)) //TODO shall we check here that path refered by absPath really exist?
             {
                 ldr = new TFileImageRecordsLoader(absPath);
-                cout_t << std::format(_T("Information about MFT record ID: #{} on disk image file: {}"), mftRecID, ldr->GetVolumeData().Name) << std::endl;
+                cout_t << std::format(_T("Information about MFT record ID: #{} on disk image file: {}"), mftRecID, convert_string<char_t>(ldr->GetVolumeData().Name)) << std::endl;
             }
             else
             {
                 ldr = new TWinAPIRecordsLoader(absPath);
-                cout_t << std::format(_T("Information about MFT record ID: #{} on volume: {}"), mftRecID, ldr->GetVolumeData().Name) << std::endl;
+                cout_t << std::format(_T("Information about MFT record ID: #{} on volume: {}"), mftRecID, convert_string<char_t>(ldr->GetVolumeData().Name)) << std::endl;
             }
 
             cout_t << std::endl;
@@ -131,16 +131,14 @@ int _tmain(int argc, TCHAR* argv[])
             string_t path = cmd.GetOptionValue(OPT_P, 0);
             TWinAPIRecordsLoader ldr(path);
             TMFTStatCollector rdr(ldr);
-            
-            cout_t << path << std::endl;
-
+           
             auto mftRecID = rdr.MFTRecIdByPath(path.c_str());
             if (mftRecID)
             {
                 //logger.SetLogLevel(LogEngine::Levels::llDebug);
 
                 cout_t << std::format(_T("{:<{}}: {}"), _T("Info about file"), 17, path) << std::endl;
-                cout_t << std::format(_T("{:<{}}: {}"), _T("MFT Record"), 17, mftRecID.value()) << std::endl;
+                cout_t << std::format(_T("{:<{}}: {}"), _T("MFT Record"), 17, toStringSep(mftRecID.value())) << std::endl;
 
                 MFT_REF MFTRef{ mftRecID.value()};
                 THArray<std::wstring> paths;
@@ -187,9 +185,14 @@ int _tmain(int argc, TCHAR* argv[])
 
             TMFTStatCollector srdr(*ldr);
 
+            cout_t << _T("Collecting statistic about filesystem ") << convert_string<char_t>(ldr->GetVolumeData().Name) << std::endl << std::endl;
+           // cout_t << _T("Progress:") << std::endl;
+
             auto res = srdr.CollectVolumeStat();
             if (res != TErrorCode::Success)
                 logger.Error("Error reading volume files statistics.");
+
+            cout_t << std::endl;
 
             srdr.ShowVolumeStat();
 
@@ -294,13 +297,13 @@ void InitLogger()
     {
         std::shared_ptr<LogEngine::Sink> consoleSink(DBG_NEW LogEngine::StdoutSinkST("consolesink"));
         consoleSink->SetPattern("%MSG%");
-        consoleSink->SetLogLevel(LogEngine::Levels::llWarning); // show error messages only on console
+        consoleSink->SetLogLevel(LogEngine::llCritical); // show error messages only on console
 
         std::shared_ptr<LogEngine::Sink> fileSink(DBG_NEW LogEngine::FileSinkST("file_sink", MFT_LOG_FILENAME));
-        fileSink->SetLogLevel(LogEngine::Levels::llInfo);
+        fileSink->SetLogLevel(LogEngine::llInfo);
 
         LogEngine::Logger& logger = LogEngine::GetMultiLogger(MFT_LOGGER_NAME, { fileSink, consoleSink });
         //logger.SetAsyncMode(true);//TODO uncomment to increase performance, also change sinks from ST to MT
-        logger.SetLogLevel(LogEngine::Levels::llInfo, false); // do not overwrite sink's log levels.
+        logger.SetLogLevel(LogEngine::llInfo, false); // do not overwrite sink's log levels.
     }
 }
