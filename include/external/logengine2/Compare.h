@@ -77,4 +77,25 @@ public:
 };
 
 
+// Class to compare std::wstring WITHOUT CASE sensitivity
+class CompareWStringNCase : public Compare<std::wstring>
+{
+public:
+	bool eq(const std::wstring& a, const std::wstring& b) const override // returns True when string a is equal b
+	{
+		return EqualNCase(a, b);
+	}
+
+	bool lt(const std::wstring& a, const std::wstring& b) const override
+	{
+		return CompareNCase(a, b) < 0;
+	}
+
+	bool mt(const std::wstring& a, const std::wstring& b) const override
+	{
+		return CompareNCase(a, b) > 0;
+	}
+};
+
+
 #endif //COMPARE_H
