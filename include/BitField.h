@@ -64,11 +64,13 @@ public:
         FBitsCount += addWordsCount * 64ull;
     }
 
-    /*TBitField& operator=(const TBitField& a)
+    // Because TBitField contains pointers we need copy operator to properly copy data
+    // otherwise pointers will be copied which cause error of double memory free in destrutors.
+    TBitField& operator=(const TBitField& a)
     {
         SetData(a.FBits, a.FCount);
         return *this;
-    }*/
+    }
 
     uint8_t* GetData()
     {
