@@ -11,10 +11,8 @@ class TMFTPlainRecordsLoader : public IRecordsLoader
 {
 private:
     std::ifstream FFile;
-   // uint64_t FMFTRecordsCount = 0;
 public:
     TMFTPlainRecordsLoader(const string_t& fileName) { Open(fileName); }
-    //~TMFTPlainRecordsLoader() { Close(); }
 
     bool Eof() { return FFile.eof(); }
 
@@ -99,6 +97,25 @@ public:
         {
             FFile.seekg(FVolumeData.BytesPerMFTRec * (uint64_t)mftRecRef.sId.low);
             FFile.read(reinterpret_cast<char*>(mftRecData), FVolumeData.BytesPerMFTRec);
+
+            // check that we've read record with proper signature
+            NTFS_RECORD_HEADER* mftRec = (NTFS_RECORD_HEADER*)mftRecData;
+            if (!ntfs_is_file_recp(mftRec->Signature)) // correct MFT rec must contain 'FILE' signature
+            {
+                if (!internalCall)
+                {
+                    GET_LOGGER;
+                    uint8_t* sign = mftRec->Signature;
+                    logger.WarnFmt("[LoadMFTRecord] Signature 'FILE' has not been found in MFT record {}. Signature found: {}{}{}{}",
+                        mftRecRef.sId.low, sign[0], sign[1], sign[2], sign[3]);
+                }
+
+                //record is inside MFT table but it does not contain 'FILE' signature - consider it as Not In Use
+                return TErrorCode::MFTRecordNotInUse;
+            }
+
+            //TODO shall we add FixupUSA1 call here?
+
         }
         catch (const std::ios_base::failure& ex)
         {
@@ -109,20 +126,7 @@ public:
             return TErrorCode::IOError;
         }
 
-        //TODO shall we add FixupUSA1 call here?
-
         return TErrorCode::Success;
-
-        /*
-        FFile.seekg(FVolumeData.BytesPerMFTRec * (uint64_t)mftRecRef.sId.low, std::ios::beg);
-        if(FFile.fail())
-            return false;
-
-        if (FFile.read(reinterpret_cast<char*>(mftRecData), FVolumeData.BytesPerMFTRec))
-            return true;
-        else
-            return false;
-        */
     }
 
     TErrorCode ReadClusters(uint64_t lcnStart, uint64_t lcnCnt, uint8_t* dataBuf) override
@@ -143,22 +147,6 @@ public:
             return TErrorCode::IOError;
         }
 
-
-        /*if (!FFile.seekg(lcnStart * FVolumeData.BytesPerCluster, std::ios::beg))
-        {
-            GET_LOGGER;
-            logger.ErrorFmt("FFile.seekg() has failed with error: {}", errno);
-
-            return false;
-        }
-
-        if (!FFile.read(reinterpret_cast<char*>(dataBuf), lcnCnt * FVolumeData.BytesPerCluster))
-        {
-            GET_LOGGER;
-            logger.ErrorFmt("FFile.read() has failed with error: {}", errno);
-            return false;
-        }
-        */
         return TErrorCode::Success;
     }
 
@@ -217,22 +205,31 @@ TEST_P(MFTPlainRecordsTest, ReadMftItemInfoBuf_1)
             TErrorCode res = ldr.LoadMFTRecord(mftRef, buf);
             if (ldr.Eof()) break;
             
-            EXPECT_EQ(TErrorCode::Success, res);
+            EXPECT_TRUE(res == TErrorCode::Success || res == TErrorCode::MFTRecordNotInUse);
 
-            if (!ntfs_is_file_recp(mftRec->RecHeader.Signature) && !ntfs_is_magicp(mftRec->RecHeader.Signature, zero))
-                FAIL() << "MFT record with incorrect signature found " << mftRec->RecHeader.Signature << " (neither 'FILE' nor '0000')";
-
-            // parse only 'IN USE' records, bypass free ones
-            if ((mftRec->Flags & MFT_FLAG_IN_USE) == MFT_FLAG_IN_USE)
-            {
-                // parse only 'FILE' records
-                ASSERT_TRUE(ntfs_is_file_recp(mftRec->RecHeader.Signature));
-                res = stat.ReadMftItemInfoBuf(mftRec, nullptr, item);
-                EXPECT_EQ(TErrorCode::Success, res);
-            }
-            else
+            if (res == TErrorCode::MFTRecordNotInUse)
             {
                 notInUseCount++;
+            }
+            
+            if (res == TErrorCode::Success)
+            {
+                // LoadMFTRecord checks loaded record for 'FILE' signature. If signature != FILE then MFTRecordNotInUse error code returned.
+                if (!ntfs_is_file_recp(mftRec->RecHeader.Signature))
+                    FAIL() << "MFT record with incorrect signature found " << mftRec->RecHeader.Signature;
+
+                // parse only 'IN USE' records, bypass unused ones
+                if ((mftRec->Flags & MFT_FLAG_IN_USE) == MFT_FLAG_IN_USE)
+                {
+                    // check again and parse only 'FILE' records
+                    ASSERT_TRUE(ntfs_is_file_recp(mftRec->RecHeader.Signature));
+                    res = stat.ReadMftItemInfoBuf(mftRec, nullptr, item);
+                    EXPECT_EQ(TErrorCode::Success, res);
+                }
+                else
+                {
+                    notInUseCount++;
+                }
             }
 
             // when assert() fails inside calling function then Google Test aborts immediately, and do not execute remaining tests
