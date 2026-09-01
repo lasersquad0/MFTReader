@@ -44,7 +44,7 @@ class IniReader
 {
 public:
 	using ValueType = THArray<std::string>;
-	using StorageType = THash2<std::string, std::string, ValueType, CompareStringNCase>;
+	using StorageType = THash2<std::string, std::string, ValueType, CompareStringNCase, CompareStringNCase>;
 private:
 	StorageType FInidata;
 
