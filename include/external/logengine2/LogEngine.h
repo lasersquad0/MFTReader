@@ -85,7 +85,7 @@ Logger& GetODebugLoggerMT(const std::string& loggerName);
 #endif
 
 // default logger functions
-void Log(const std::string& msg, const Levels::LogLevel ll);
+void Log(const std::string& msg, const LogLevel ll);
 
 void Crit(const std::string& msg);
 void Error(const std::string& msg);
@@ -96,7 +96,7 @@ void Trace(const std::string& msg);
 
 #if defined(WIN32) && _HAS_CXX20==1 && !defined(__BORLANDC__)
 template<class... Args>
-void LogFmt(Levels::LogLevel ll, const std::format_string<Args...> fmt, Args&&... args)
+void LogFmt(LogLevel ll, const std::format_string<Args...> fmt, Args&&... args)
 {
 	GetDefaultLogger().LogFmt(ll, fmt, std::forward<Args>(args)...);
 }
@@ -104,37 +104,37 @@ void LogFmt(Levels::LogLevel ll, const std::format_string<Args...> fmt, Args&&..
 template<class ... Args>
 void CritFmt(const std::format_string<Args...> fmt, Args&& ...args)
 {
-	LogFmt(Levels::llCritical, fmt, std::forward<Args>(args)...);
+	LogFmt(llCritical, fmt, std::forward<Args>(args)...);
 }
 
 template<class ... Args>
 void ErrorFmt(const std::format_string<Args...> fmt, Args&& ...args)
 {
-	LogFmt(Levels::llError, fmt, std::forward<Args>(args)...);
+	LogFmt(llError, fmt, std::forward<Args>(args)...);
 }
 
 template<class ... Args>
 void WarnFmt(const std::format_string<Args...> fmt, Args&& ...args)
 {
-	LogFmt(Levels::llWarning, fmt, std::forward<Args>(args)...);
+	LogFmt(llWarning, fmt, std::forward<Args>(args)...);
 }
 
 template<class ... Args>
 void InfoFmt(const std::format_string<Args...> fmt, Args&& ...args)
 {
-	LogFmt(Levels::llInfo, fmt, std::forward<Args>(args)...);
+	LogFmt(llInfo, fmt, std::forward<Args>(args)...);
 }
 
 template<class ... Args>
 void DebugFmt(const std::format_string<Args...> fmt, Args&& ...args)
 {
-	LogFmt(Levels::llDebug, fmt, std::forward<Args>(args)...);
+	LogFmt(llDebug, fmt, std::forward<Args>(args)...);
 }
 
 template<class ... Args>
 void TraceFmt(const std::format_string<Args...> fmt, Args&& ...args)
 {
-	LogFmt(Levels::llTrace, fmt, std::forward<Args>(args)...);
+	LogFmt(llTrace, fmt, std::forward<Args>(args)...);
 }
 
 #else
