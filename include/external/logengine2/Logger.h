@@ -40,7 +40,7 @@ private:
 	std::string FName;
 	LoggerQueue FQueue;
 	std::thread FThread;
-	Levels::LogLevel FLogLevel;
+	LogLevel FLogLevel;
 	SinkList FSinks;
 	bool FAsync = false;
 	Properties FProperties;
@@ -48,9 +48,9 @@ private:
 
 public:
 	//TODO shall we add FQueue capacity size to constructor parameters?
-	Logger(const std::string& name, Levels::LogLevel ll = LL_DEFAULT) : FName(name), FQueue(10), FLogLevel(ll) {}
+	Logger(const std::string& name, LogLevel ll = LL_DEFAULT) : FName(name), FQueue(10), FLogLevel(ll) {}
 	
-	Logger(const std::string& name, std::initializer_list<std::shared_ptr<Sink>> list, Levels::LogLevel ll = LL_DEFAULT) : Logger(name, ll) 
+	Logger(const std::string& name, std::initializer_list<std::shared_ptr<Sink>> list, LogLevel ll = LL_DEFAULT) : Logger(name, ll) 
 	{
 		for (auto& item : list) AddSink(item);
 	}
@@ -67,10 +67,10 @@ public:
 		FSinks.Clear();
 	}
 
-	bool ShouldLog(const Levels::LogLevel ll) const { return FLogLevel >= ll; }
+	bool ShouldLog(const LogLevel ll) const { return FLogLevel >= ll; }
 
-	Levels::LogLevel GetLogLevel() { return FLogLevel; }
-	void SetLogLevel(const Levels::LogLevel ll, bool propagate = true)
+	LogLevel GetLogLevel() { return FLogLevel; }
+	void SetLogLevel(const LogLevel ll, bool propagate = true)
 	{ 
 		FLogLevel = ll;
 		if (propagate)
@@ -115,7 +115,7 @@ public:
 	}
 
 	// sets log line pattern for the specified by parameter 'll' log line
-	void SetPattern(const std::string& pattern, Levels::LogLevel ll)
+	void SetPattern(const std::string& pattern, LogLevel ll)
 	{
 		for (auto& sk: FSinks)
 		{
@@ -133,7 +133,7 @@ public:
 	}
 
 	// sets log line pattern for all log lines
-	void SetDefaultPattern(Levels::LogLevel ll)
+	void SetDefaultPattern(LogLevel ll)
 	{
 		for (auto& sk : FSinks)
 		{
@@ -183,41 +183,41 @@ public:
 	template<class ... Args>
 	void CritFmt(const std::format_string<Args...> fmt, Args&& ...args)
 	{
-		LogFmt(Levels::llCritical, fmt, std::forward<Args>(args)...);
+		LogFmt(llCritical, fmt, std::forward<Args>(args)...);
 	}
 
 	template<class ... Args>
 	void ErrorFmt(const std::format_string<Args...> fmt, Args&& ...args)
 	{
-		LogFmt(Levels::llError, fmt, std::forward<Args>(args)...);
+		LogFmt(llError, fmt, std::forward<Args>(args)...);
 	}
 
 	template<class ... Args>
 	void WarnFmt(const std::format_string<Args...> fmt, Args&& ...args)
 	{
-		LogFmt(Levels::llWarning, fmt, std::forward<Args>(args)...);
+		LogFmt(llWarning, fmt, std::forward<Args>(args)...);
 	}
 
 	template<class ... Args>
 	void InfoFmt(const std::format_string<Args...> fmt, Args&& ...args)
 	{
-		LogFmt(Levels::llInfo, fmt, std::forward<Args>(args)...);
+		LogFmt(llInfo, fmt, std::forward<Args>(args)...);
 	}
 
 	template<class ... Args>
 	void DebugFmt(const std::format_string<Args...> fmt, Args&& ...args)
 	{
-		LogFmt(Levels::llDebug, fmt, std::forward<Args>(args)...);
+		LogFmt(llDebug, fmt, std::forward<Args>(args)...);
 	}
 
 	template<class ... Args>
 	void TraceFmt(const std::format_string<Args...> fmt, Args&& ...args)
 	{
-		LogFmt(Levels::llTrace, fmt, std::forward<Args>(args)...);
+		LogFmt(llTrace, fmt, std::forward<Args>(args)...);
 	}
 
 	template<class... Args>
-	void LogFmt(Levels::LogLevel ll, const std::format_string<Args...> fmt, Args&&... args)
+	void LogFmt(LogLevel ll, const std::format_string<Args...> fmt, Args&&... args)
 	{
 		if (!ShouldLog(ll)) return;
 
@@ -360,14 +360,14 @@ public:
 
 #endif
 
-	void Crit (const std::string& msg) { Log(msg, Levels::llCritical); }
-	void Error(const std::string& msg) { Log(msg, Levels::llError);    }
-	void Warn (const std::string& msg) { Log(msg, Levels::llWarning);  }
-	void Info (const std::string& msg) { Log(msg, Levels::llInfo);     }
-	void Debug(const std::string& msg) { Log(msg, Levels::llDebug);    }
-	void Trace(const std::string& msg) { Log(msg, Levels::llTrace);    }
+	void Crit (const std::string& msg) { Log(msg, llCritical); }
+	void Error(const std::string& msg) { Log(msg, llError);    }
+	void Warn (const std::string& msg) { Log(msg, llWarning);  }
+	void Info (const std::string& msg) { Log(msg, llInfo);     }
+	void Debug(const std::string& msg) { Log(msg, llDebug);    }
+	void Trace(const std::string& msg) { Log(msg, llTrace);    }
 
-	void Log(const std::string& msg, const Levels::LogLevel ll)
+	void Log(const std::string& msg, const LogLevel ll)
 	{
 		if (!ShouldLog(ll)) return;
 
