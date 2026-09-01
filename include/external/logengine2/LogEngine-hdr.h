@@ -19,7 +19,7 @@ class Registry
 {
 private:
 	// logger names are case INsensitive
-	THashBase<std::string, Logger*, THArraySorted<std::string, CompareStringNCase>> FLoggers;
+	THash<std::string, Logger*, CompareStringNCase /*, THArraySorted<std::string, CompareStringNCase>*/> FLoggers;
 
 	Registry() 
 	{
@@ -143,7 +143,7 @@ LOGENGINE_INLINE Logger& GetLogger(const std::string& loggerName)
 // if logger with specified name does not exist new logger is created and one FileSink is added to thie logger
 LOGENGINE_INLINE Logger& GetFileLoggerST(const std::string& loggerName, const std::string& fileName)
 {
-	Logger& logger = GetLogger(loggerName); // TODO what if second logger has the same logger name, but different file name???
+	Logger& logger = GetLogger(loggerName); //TODO what if second logger has the same logger name, but different file name???
 	if (logger.SinkCount() > 0) return logger; // this is pre-existed logger
 
 	auto sink = std::make_shared<FileSinkST>(loggerName, fileName); //TODO may be use file name as Sink name instead of logger name?
@@ -154,7 +154,7 @@ LOGENGINE_INLINE Logger& GetFileLoggerST(const std::string& loggerName, const st
 
 LOGENGINE_INLINE Logger& GetFileLoggerMT(const std::string& loggerName, const std::string& fileName)
 {
-	Logger& logger = GetLogger(loggerName); // TODO what if second logger has the same logger name, but different file name???
+	Logger& logger = GetLogger(loggerName); //TODO what if second logger has the same logger name, but different file name???
 	if (logger.SinkCount() > 0) return logger; // this is pre-existed logger
 
 	auto sink = std::make_shared<FileSinkMT>(loggerName, fileName); //TODO may be use file name as Sink name instead of logger name?
@@ -165,7 +165,7 @@ LOGENGINE_INLINE Logger& GetFileLoggerMT(const std::string& loggerName, const st
 
 LOGENGINE_INLINE Logger& GetRotatingFileLoggerST(const std::string& loggerName, const std::string& fileName, ullong maxLogSize, LogRotatingStrategy strategy, uint maxBackupIndex)
 {
-	Logger& logger = GetLogger(loggerName); // TODO what if second logger has the same logger name, but different file name???
+	Logger& logger = GetLogger(loggerName); //TODO what if second logger has the same logger name, but different file name???
 	if (logger.SinkCount() > 0) return logger; // this is pre-existed logger
 
 	auto sink = std::make_shared<RotatingFileSinkST>(loggerName, fileName, maxLogSize, strategy, maxBackupIndex); //TODO may be use file name as Sink name instead of logger name?
@@ -176,7 +176,7 @@ LOGENGINE_INLINE Logger& GetRotatingFileLoggerST(const std::string& loggerName, 
 
 LOGENGINE_INLINE Logger& GetRotatingFileLoggerMT(const std::string& loggerName, const std::string& fileName, ullong maxLogSize, LogRotatingStrategy strategy, uint maxBackupIndex)
 {
-	Logger& logger = GetLogger(loggerName); // TODO what if second logger has the same logger name, but different file name???
+	Logger& logger = GetLogger(loggerName); //TODO what if second logger has the same logger name, but different file name???
 	if (logger.SinkCount() > 0) return logger; // this is pre-existed logger
 
 	auto sink = std::make_shared<RotatingFileSinkMT>(loggerName, fileName, maxLogSize, strategy, maxBackupIndex); //TODO may be use file name as Sink name instead of logger name?
@@ -287,17 +287,17 @@ LOGENGINE_INLINE Logger& GetODebugLoggerMT(const std::string& loggerName)
 }
 #endif
 
-LOGENGINE_INLINE void Log(const std::string& msg, const Levels::LogLevel ll)
+LOGENGINE_INLINE void Log(const std::string& msg, const LogLevel ll)
 {
 	Registry::Instance().GetDefaultLogger().Log(msg, ll);
 }
 
-LOGENGINE_INLINE void Crit(const std::string& msg) { Log(msg, Levels::llCritical); }
-LOGENGINE_INLINE void Error(const std::string& msg) { Log(msg, Levels::llError); }
-LOGENGINE_INLINE void Warn(const std::string& msg) { Log(msg, Levels::llWarning); }
-LOGENGINE_INLINE void Info(const std::string& msg) { Log(msg, Levels::llInfo); }
-LOGENGINE_INLINE void Debug(const std::string& msg) { Log(msg, Levels::llDebug); }
-LOGENGINE_INLINE void Trace(const std::string& msg) { Log(msg, Levels::llTrace); }
+LOGENGINE_INLINE void Crit(const std::string& msg)  { Log(msg, llCritical); }
+LOGENGINE_INLINE void Error(const std::string& msg) { Log(msg, llError);    }
+LOGENGINE_INLINE void Warn(const std::string& msg)  { Log(msg, llWarning);  }
+LOGENGINE_INLINE void Info(const std::string& msg)  { Log(msg, llInfo);     }
+LOGENGINE_INLINE void Debug(const std::string& msg) { Log(msg, llDebug);    }
+LOGENGINE_INLINE void Trace(const std::string& msg) { Log(msg, llTrace);    }
 
 
 static uint ParseInt(std::string s, uint defaultValue = 0)
