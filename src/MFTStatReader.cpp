@@ -152,7 +152,7 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_
         if(iFileItem) assert(itemInfo.MFTRecID.Id != 0);
     }
 
-    if (logger.ShouldLog(LogEngine::Levels::llDebug))
+    if (logger.ShouldLog(LogEngine::llDebug))
     {
         logger.DebugFmt("MFT Rec Signature:     '{}'", std::string((char*)mftRec->RecHeader.Signature, 4));
         logger.DebugFmt("MFT Rec ID:             {}", MFT_REF::toHexString(mftRec->IndexMFTRec));
@@ -224,9 +224,10 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_
             {
                 stdinfo = (ATTR_STD_INFO5*)attrValue;
 
+                assert(isBASERec); //STD_INFO cannot be in child MFT record
                 assert((stdinfo->FileAttrib & FILE_ATTRIBUTE_NORMAL) == 0);// check that NORMAL bit is always zero
 
-                if (logger.ShouldLog(LogEngine::Levels::llDebug))
+                if (logger.ShouldLog(LogEngine::llDebug))
                 {
                     /*logger.Debug(FileDateToString("Created: ", stdinfo->CreateTime));
                       logger.Debug(FileDateToString("Modified: ", stdinfo->ModifyTime));
@@ -248,7 +249,7 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_
             {
                 ATTR_FILE_NAME* fname = (ATTR_FILE_NAME*)attrValue;
                 std::wstring name(GetFName(fname), fname->FileNameLen);
-                itemInfo.FileNames.AddValue({ name.c_str(), *fname, fname->ParentDir });
+                itemInfo.FileNames.AddValue({ convert_string<char_t>(name).c_str(), *fname, fname->ParentDir });
 
                 assert(fname->NameType <= FILE_NAME_UNICODE_AND_DOS);
 
@@ -268,7 +269,7 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_
                             // they will have equal ParentDir but diff names
                             if (fname->ParentDir.sId.low == iFileItem->Attr.ParentDir.sId.low)
                             {
-                                itemInfo.MainName = iFileItem->ciName.c_str();
+                                itemInfo.MainName = convert_string<wchar_t>(iFileItem->ciName);
                                 itemInfo.FileAttrib = iFileItem->Attr.dup.FileAttrib;
                                 itemInfo.ParentDir = iFileItem->Attr.ParentDir;
                                 assert(iFileItem->Attr.ParentDir.Id == fname->ParentDir.Id);
@@ -278,8 +279,9 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_
             
                 assert((fname->dup.FileAttrib & FILE_ATTRIBUTE_NORMAL) == 0);// check that NORMAL bit is always zero
 
-                if (logger.ShouldLog(LogEngine::Levels::llDebug))
+                if (logger.ShouldLog(LogEngine::llDebug))
                 {
+                    if(!isBASERec) logger.DebugFmt("Where (child rec):  {}", mftRec->IndexMFTRec);
                     logger.DebugFmt("File Parent Rec ID: {}", fname->ParentDir.toHexString());
                     logger.DebugFmt("File Name Type:     {:#x} '{}' ", fname->NameType, FileNameTypes[fname->NameType]);
                     logger.DebugFmt("File DOS Attrib:    {:#x} {}", fname->dup.FileAttrib, FormatFileAttributes(fname->dup.FileAttrib));
@@ -292,17 +294,6 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_
                     */
 
                 }
-                /*if (stdinfo && (stdinfo->CreateTime != fname->dup.CreateTime))
-                {
-                    logger.WarnFmt("CreateTime: STDINFO {} != FNAME {} ", FileDateToString("", stdinfo->CreateTime), FileDateToString("", fname->dup.CreateTime));
-                    //assert(stdinfo->CreateTime == fname->dup.CreateTime);
-                }
-
-                if (stdinfo->ModifyTime != fname->dup.ModifyTime)
-                {
-                    //logger.WarnFmt("ModifyTime: STDINFO {} != FNAME {} ", FileDateToString("", stdinfo->ModifyTime), FileDateToString("", fname->dup.ModifyTime));
-                    //assert(stdinfo->ModifyTime == fname->dup.ModifyTime);
-                }*/
 
                 break;
             }
@@ -330,7 +321,7 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_
                 auto pihdr = &(indexR->ihdr);
                 assert(pihdr->Used == pihdr->Allocated); // for resident ATTR_ROOT attribute values in these fields are euqal
 
-                if (logger.ShouldLog(LogEngine::Levels::llDebug))
+                if (logger.ShouldLog(LogEngine::llDebug))
                 {
                     logger.DebugFmt("IndexRoot Indexed Attr Type: {} {:#x}", AttrName(indexR->AttrType), (uint32_t)indexR->AttrType);
                     logger.DebugFmt("IndexRoot Collation Rule:    {} ({:#x})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
@@ -420,8 +411,7 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_
 
                 // each stream name can be met only once
                 assert(!itemInfo.DataStreamNames.IfExists(nameOfAttrW));
-                TDataRuns runs;
-                itemInfo.DataStreamNames.SetValue(nameOfAttrW, runs); // for resident - add empty data run class
+                itemInfo.DataStreamNames.SetValue(nameOfAttrW, std::nullopt); // for resident - add nullopt instead of TDataRuns instance
                
                 break;
             }
@@ -512,7 +502,7 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_
                 itemInfo.AttrsCount++;
             }
 
-            if (logger.ShouldLog(LogEngine::Levels::llDebug))
+            if (logger.ShouldLog(LogEngine::llDebug))
             {
                 logger.DebugFmt("Attr StartVCN:      {}", toStringSepA(currAttr->nonres.StartVCN));
                 logger.DebugFmt("Attr LastVCN:       {}", toStringSepA(currAttr->nonres.LastVCN));
@@ -720,7 +710,7 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_
         // MainName still can be empty for meta records.
         // some .img files have meta records without any FILENAME attributes for some reason
         if ((itemInfo.MainName.size() == 0) && iFileItem)
-            itemInfo.MainName = iFileItem->ciName.c_str();
+            itemInfo.MainName = convert_string<wchar_t>(iFileItem->ciName);
         
         // once we read all attributes we are ready to process ALLOC data runs which exist for Dir type only
         // when DataRuns.Count()==0 it means that all files (small number of files) are fit into INDEX_ROOT attribute
@@ -765,14 +755,7 @@ TErrorCode TMFTStatCollector::ReadMftItemInfoBuf(MFT_FILE_RECORD* mftRec, IFILE_
 * @param dirLevel specifies directory hierarchy level, increased by 1 each time when function goes into sub-directory
 * @param callback Callback function that allows showing reading progress, now it called with names of files located in dirLevel=1
 */
-/*TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF mftRecRef, uint32_t dirLevel, ReadMftItemsCallback callback)
-{
- //   FILE_NAME fn;
- //   fn.MFTRecID = mftRecRef;
-    return ReadMftItems(mftRecRef, nullptr, dirLevel, callback);
-}*/
-
-TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF mftRecRef, IFILE_NAME* fileItem, uint32_t dirLevel, ReadMftItemsCallback callback)
+TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF mftRecRef, IFILE_NAME* fileItem, uint32_t dirLevel, IProgress& callback)
 {
     GET_LOGGER;
 
@@ -795,12 +778,16 @@ TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF mftRecRef, IFILE_NAME* fileIt
     itemInfo.FilesCount = itemInfo.Node.FileList.Count();
     FItemsList.AddValue(itemInfo);
 
+    if (dirLevel == 0 && itemInfo.IsDir())
+        callback.Start(itemInfo.FilesCount);
+
+    uint32_t num = 0;
     for (auto& item : itemInfo.Node.FileList)
     {     
-        //if (!item.NtfsInternal()) // bypass hidden mft metafiles
+        if (dirLevel == 0) callback.Progress(num++, item.ciName.c_str()); 
+
         if (!FLoader.IsMetaFile(item.MFTRecID.sId.low))
         {
-            if ((dirLevel == 0) && (callback)) callback(item.ciName.c_str()); // cout_t << item.ciName.c_str() /*<< " [" <<item.Attr.dup.FileSize << "]"*/ << std::endl;
             //if ((dirLevel == 1) && (callback)) callback(std::wstring(_T("\t")) + item.ciName.c_str()); //cout_t << _T("\t") << item.ciName.c_str() << std::endl;
 
             // reading detailed info about each item (files, directories and reparse points)
@@ -812,14 +799,32 @@ TErrorCode TMFTStatCollector::ReadMftItems(MFT_REF mftRecRef, IFILE_NAME* fileIt
         }
     }
 
+    if (dirLevel == 0 && itemInfo.IsDir())
+        callback.Finish();
+
     return TErrorCode::Success;
 }
 
-static int32_t PrintProgress(const string_t& data)
+/*
+static int32_t PrintProgress(uint32_t n100, uint32_t progress, const string_t& data)
 {
-    cout_t << data << std::endl;
+    const uint32_t LINE_LEN = 100; //100 symbols in console
+    const uint32_t FOR_FILE_NM = 20;
+
+    uint32_t realProgress = progress * LINE_LEN / n100;
+    uint32_t figureProgress = progress * 100 / n100;
+
+    //string_t str(_T(''\033[32m'));
+    string_t str;
+    str.reserve(LINE_LEN);
+    str.append(realProgress, L'\u2588');
+    str.append(abs((int32_t)LINE_LEN - (int32_t)str.size()), L'\u2591');
+    //str.append(_T("\033[0m"));
+    
+    cout_t << _T("\r") << str << std::format(_T(" {}% ({:.{}}){:<{}}"), figureProgress, data, FOR_FILE_NM, _T(""), (FOR_FILE_NM > data.size()? FOR_FILE_NM - data.size(): 0));
+
     return 1; // not used at the moment
-}
+}*/
 
 int64_t TMFTStatCollector::CountFileNamesWithNameType(uint8_t nameType, uint32_t count)
 {
@@ -848,31 +853,21 @@ TErrorCode TMFTStatCollector::CollectVolumeStat()
 {
     GET_LOGGER;
 
+    FItemsList.Clear();
     FItemsList.SetCapacity(1'000'000); // Expect 1M files and dirs
 
     MFT_REF startMFTRecID{0};
     startMFTRecID.Id = MFT_ROOT_REC_ID;
-
-    //FILE_NAME fn;
-    //fn.MFTRecID.Id = MFT_ROOT_REC_ID;
     
     Ticks::Start(_T("Loading time"));
-    auto res = ReadMftItems(startMFTRecID, nullptr, 0, PrintProgress);
+    ConsoleProgress prgrs(cout_t);
+    auto res = ReadMftItems(startMFTRecID, nullptr, 0, prgrs);
     if (res != TErrorCode::Success)
     {
         logger.ErrorFmt("Error reading volume {}.", wtos(getVolData().Name));
         return res;
     }
     Ticks::Finish(_T("Loading time"));
-
-
-    //some intergrity check
-    /*for (int i = 0; i < FItemsList.Count() - 1; i++)
-        for (int j = i + 1; j < FItemsList.Count(); j++)
-            if (FItemsList[i].MFTRecID.sId.low == FItemsList[j].MFTRecID.sId.low)
-                assert(false);
-                */
-
 
     //TODO because FItemsList contains "duplicates" (items in list that have the same MFTRecID) statistic may be slightly incorrect
     // duplicates appear because NTFS system contains hard links.
@@ -883,110 +878,116 @@ TErrorCode TMFTStatCollector::CollectVolumeStat()
     int64_t value;
 
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir(); });
-    FStatistics.SetValue(L"Total Items Count: ", toStringSepW(FItemsList.Count()));
-    FStatistics.SetValue(L"Total Dirs Count: ", toStringSepW(value));
-    FStatistics.SetValue(L"Total Files Count: ", toStringSepW(FItemsList.Count() - value));  
+    FStatistics.SetValue(L"Total Items Count", toStringSepW(FItemsList.Count()));
+    FStatistics.SetValue(L"Total Dirs Count",  toStringSepW(value));
+    FStatistics.SetValue(L"Total Files Count", toStringSepW(FItemsList.Count() - value));  
 
-    
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrsCount > 9; });
-    FStatistics.SetValue(L"Attrs Count > 9: ", toStringSepW(value));
+    FStatistics.SetValue(L"Attrs Count > 9", toStringSepW(value));
 
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.HardLinksCount > 9; });
-    FStatistics.SetValue(L"Hard links Count > 9: ", toStringSepW(value));
+    FStatistics.SetValue(L"Hard links Count > 9", toStringSepW(value));
 
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.FileNames.Count() > 13; });
-    FStatistics.SetValue(L"Filenames Count > 13: ", toStringSepW(value));
+    FStatistics.SetValue(L"Filenames Count > 13", toStringSepW(value));
 
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.FileNames.Count() == 1; });
-    FStatistics.SetValue(L"Filenames Count = 1: ", toStringSepW(value));
+    FStatistics.SetValue(L"Filenames Count = 1", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.FileNames.Count() == 0; });
-    FStatistics.SetValue(L"Filenames Count = 0: ", toStringSepW(value));
+    FStatistics.SetValue(L"Filenames Count = 0", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && (a.HardLinksCount == 1); });
-    FStatistics.SetValue(L"Dir Hard links Count = 1: ", toStringSepW(value));
+    FStatistics.SetValue(L"Dir Hard links Count = 1", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && (a.HardLinksCount == 2); });
-    FStatistics.SetValue(L"Dir Hard links Count = 2: ", toStringSepW(value));
+    FStatistics.SetValue(L"Dir Hard links Count = 2", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && (a.HardLinksCount > 2); });
-    FStatistics.SetValue(L"Dirs with Hard Links Count > 2: ", toStringSepW(value));
+    FStatistics.SetValue(L"Dirs with Hard Links Count > 2", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.FileNames.Count() > 2; });
-    FStatistics.SetValue(L"Dir Filenames Count > 2: ", toStringSepW(value));
+    FStatistics.SetValue(L"Dir Filenames Count > 2", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.FileNames.Count() == 1; });
-    FStatistics.SetValue(L"Dir Filenames Count = 1: ", toStringSepW(value));
+    FStatistics.SetValue(L"Dir Filenames Count = 1", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.FileNames.Count() == 2; });
-    FStatistics.SetValue(L"Dir Filenames Count = 2: ", toStringSepW(value));
+    FStatistics.SetValue(L"Dir Filenames Count = 2", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && (a.AttrCounters[MATI(ATTR_LIST_ATTR)] > 0); });
-    FStatistics.SetValue(L"Dir Has ATTR_LIST attribute: ", toStringSepW(value));
+    FStatistics.SetValue(L"Dir Has ATTR_LIST attribute", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.NonResidentAttrList; });
-    FStatistics.SetValue(L"Have non-resident ATTR_LIST: ", toStringSepW(value));
+    FStatistics.SetValue(L"Have non-resident ATTR_LIST", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.NonResidentBitmap; });
-    FStatistics.SetValue(L"Have non-resident BITMAP: ", toStringSepW(value));
+    FStatistics.SetValue(L"Have non-resident BITMAP", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.HasResidentDataAttr; });
-    FStatistics.SetValue(L"Have resident Data: ", toStringSepW(value));
+    FStatistics.SetValue(L"Have resident Data", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.HasNonResidentDataAttr; });
-    FStatistics.SetValue(L"Have non-resident Data: ", toStringSepW(value));
+    FStatistics.SetValue(L"Have non-resident Data", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MATI(ATTR_REPARSE)] > 0; });
-    FStatistics.SetValue(L"Reparse Points Count: ", toStringSepW(value));
+    FStatistics.SetValue(L"Reparse Points Count", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MATI(ATTR_LOGGED_UTILITY_STREAM)] > 1; });
-    FStatistics.SetValue(L"Logged Utility Streams Count > 1: ", toStringSepW(value));
+    FStatistics.SetValue(L"Logged Utility Streams Count > 1", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MATI(ATTR_LOGGED_UTILITY_STREAM)] > 2; });
-    FStatistics.SetValue(L"Logged Utility Streams Count > 2: ", toStringSepW(value));
+    FStatistics.SetValue(L"Logged Utility Streams Count > 2", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MATI(ATTR_ID)] > 0; });
-    FStatistics.SetValue(L"Have Object ID: ", toStringSepW(value));
+    FStatistics.SetValue(L"Have Object ID", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.AttrCounters[MATI(ATTR_DATA)] == 0; });
-    FStatistics.SetValue(L"DOES NOT have Data attribute: ", toStringSepW(value));
+    FStatistics.SetValue(L"DOES NOT have Data attribute", toStringSepW(value));
     
     value = std::count_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.DataStreamNames.Count() > 2; });
-    FStatistics.SetValue(L"Data streams Count > 2: ", toStringSepW(value));
+    FStatistics.SetValue(L"Data streams Count > 2", toStringSepW(value));
 
     value = CountFileNamesWithNameType(FILE_NAME_DOS, 0);
-    FStatistics.SetValue(L"Files with DOS name count = 0: ", toStringSepW(value));
+    FStatistics.SetValue(L"Files with DOS name count = 0", toStringSepW(value));
 
     value = CountFileNamesWithNameType(FILE_NAME_DOS, 1);
-    FStatistics.SetValue(L"Files with DOS name count = 1: ", toStringSepW(value));
+    FStatistics.SetValue(L"Files with DOS name count = 1", toStringSepW(value));
 
     value = CountFileNamesWithNameType(FILE_NAME_DOS, 2);
-    FStatistics.SetValue(L"Files with DOS name count = 2: ", toStringSepW(value));
+    FStatistics.SetValue(L"Files with DOS name count = 2", toStringSepW(value));
 
     value = CountFileNamesWithNameType(FILE_NAME_UNICODE_AND_DOS, 1);
-    FStatistics.SetValue(L"Files with UNICODE_AND_DOS name count = 1: ", toStringSepW(value));
+    FStatistics.SetValue(L"Files with UNICODE_AND_DOS name count = 1", toStringSepW(value));
     
     value = CountFileNamesWithNameType(FILE_NAME_UNICODE_AND_DOS, 2);
-    FStatistics.SetValue(L"Files with UNICODE_AND_DOS name count = 2: ", toStringSepW(value));
+    FStatistics.SetValue(L"Files with UNICODE_AND_DOS name count = 2", toStringSepW(value));
 
-
+    size_t maxMainNameLen = 0;
     auto maxHardLinks = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.HardLinksCount < b.HardLinksCount; });
-    FStatistics.SetValue(L"Max Hard Links Count: ", std::format(L"{}, file name: '{}' (mft red id: {})", (*maxHardLinks).HardLinksCount, (*maxHardLinks).MainName, (*maxHardLinks).MFTRecID.sId.low));
-   
+    if (maxMainNameLen < (*maxHardLinks).MainName.size()) maxMainNameLen = (*maxHardLinks).MainName.size();
+
     auto maxAttrs = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.AttrsCount < b.AttrsCount; });
-    FStatistics.SetValue(L"Max Attrs Count: ", std::format(L"{}, file name: '{}' (mft rec id: {})", (*maxAttrs).AttrsCount, (*maxAttrs).MainName, (*maxAttrs).MFTRecID.sId.low));
-    
+    if (maxMainNameLen < (*maxAttrs).MainName.size()) maxMainNameLen = (*maxAttrs).MainName.size();
+
     auto maxFilenames = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.FileNames.Count() < b.FileNames.Count(); });
-    FStatistics.SetValue(L"Max File Names Count: ", std::format(L"{}, file name : '{}' (mft rec id : {})", (*maxFilenames).FileNames.Count(), (*maxFilenames).MainName, (*maxFilenames).MFTRecID.sId.low));
-    
+    if (maxMainNameLen < (*maxFilenames).MainName.size()) maxMainNameLen = (*maxFilenames).MainName.size();
+
     auto maxDataStreams = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.DataStreamNames.Count() < b.DataStreamNames.Count(); });
-    FStatistics.SetValue(L"Max Data Streams Count: ", std::format(L"{}, filename: '{}' (mft rec id : {})", (*maxDataStreams).DataStreamNames.Count(), (*maxDataStreams).MainName, (*maxDataStreams).MFTRecID.sId.low));
-    
+    if (maxMainNameLen < (*maxDataStreams).MainName.size()) maxMainNameLen = (*maxDataStreams).MainName.size();
+
     auto maxDataLCNsCount = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.DataLCNsCount < b.DataLCNsCount; });
-    FStatistics.SetValue(L"Max Data Runs Count: ", std::format(L"{}, filename: '{}' (mft rec id: {})", (*maxDataLCNsCount).DataLCNsCount, (*maxDataLCNsCount).MainName, (*maxDataLCNsCount).MFTRecID.sId.low));
-    
+    if (maxMainNameLen < (*maxDataLCNsCount).MainName.size()) maxMainNameLen = (*maxDataLCNsCount).MainName.size();
+
     auto maxFilesInDirCount = std::max_element(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a, ITEM_INFO& b) { return a.FilesCount < b.FilesCount; });
-    FStatistics.SetValue(L"Max Files Count in Dir: ", std::format(L"{}, filename: '{}' (mft rec id : {})", (*maxFilesInDirCount).FilesCount, (*maxFilesInDirCount).MainName, (*maxFilesInDirCount).MFTRecID.sId.low));
+    if (maxMainNameLen < (*maxFilesInDirCount).MainName.size()) maxMainNameLen = (*maxFilesInDirCount).MainName.size();
+
+    FStatistics.SetValue(L"Max Hard Links Count", std::format(L"{:<10} File: {:<{}} ID: {}", toStringSepW((*maxHardLinks).HardLinksCount), (*maxHardLinks).MainName, maxMainNameLen, toStringSepW((*maxHardLinks).MFTRecID.sId.low)));
+    FStatistics.SetValue(L"Max Attrs Count", std::format(L"{:<10} File: {:<{}} ID: {}", toStringSepW((*maxAttrs).AttrsCount), (*maxAttrs).MainName, maxMainNameLen, toStringSepW((*maxAttrs).MFTRecID.sId.low)));
+    FStatistics.SetValue(L"Max File Names Count", std::format(L"{:<10} File: {:<{}} ID: {}", toStringSepW((*maxFilenames).FileNames.Count()), (*maxFilenames).MainName, maxMainNameLen, toStringSepW((*maxFilenames).MFTRecID.sId.low)));
+    FStatistics.SetValue(L"Max Data Streams Count", std::format(L"{:<10} File: {:<{}} ID: {}", toStringSepW((*maxDataStreams).DataStreamNames.Count()), (*maxDataStreams).MainName, maxMainNameLen, toStringSepW((*maxDataStreams).MFTRecID.sId.low)));
+    FStatistics.SetValue(L"Max Data Runs Count", std::format(L"{:<10} File: {:<{}} ID: {}", toStringSepW((*maxDataLCNsCount).DataLCNsCount), (*maxDataLCNsCount).MainName, maxMainNameLen, toStringSepW((*maxDataLCNsCount).MFTRecID.sId.low)));
+    FStatistics.SetValue(L"Max Files Count in Dir", std::format(L"{:<10} File: {:<{}} ID: {}", toStringSepW((*maxFilesInDirCount).FilesCount), (*maxFilesInDirCount).MainName, maxMainNameLen, toStringSepW((*maxFilesInDirCount).MFTRecID.sId.low)));
 
     uint32_t FileNamesTotalSymbols = std::accumulate(FItemsList.begin(), FItemsList.end(), (uint32_t)0,
         [](uint32_t acc, ITEM_INFO& x) 
@@ -1002,32 +1003,51 @@ TErrorCode TMFTStatCollector::CollectVolumeStat()
     uint32_t FileNamesAverageSymbols = FileNamesTotalSymbols / FItemsList.Count(); // average file length in symbols
     uint32_t FileNamesAverageBytes = FileNamesTotalSymbols * sizeof(wchar_t) / FItemsList.Count(); // average file length in bytes
 
-    FStatistics.SetValue(L"\nFilenames Average Length (symbols): ", toStringSepW(FileNamesAverageSymbols));
-    FStatistics.SetValue(L"Filenames Average Length (bytes): ", toStringSepW(FileNamesAverageBytes));
+    FStatistics.SetValue(L" ", L""); // just extra new line
+    FStatistics.SetValue(L"Filenames Average Length (symbols)", toStringSepW(FileNamesAverageSymbols));
+    FStatistics.SetValue(L"Filenames Average Length (bytes)", toStringSepW(FileNamesAverageBytes));
 
-    std::wstringstream strstream;
+    size_t maxDSLen = 0;
     for (auto ds : (*maxDataStreams).DataStreamNames)
     {
-        if(ds.first.empty())
-            strstream << L"'<empty>' - data runs count: " << ds.second.Count() << std::endl;
+        if (maxDSLen < ds.first.size())
+            maxDSLen = ds.first.size();
+    }
+    std::wstringstream strstream;
+    strstream << std::endl;
+    for (auto ds : (*maxDataStreams).DataStreamNames)
+    {
+        if (ds.second.has_value())
+        {
+            uint64_t lcnCnt = 0;
+            for (auto& rli : ds.second.value()) lcnCnt += rli.len;
+            
+            if (ds.first.empty())
+                strstream << std::format(L"    {:<{}} - data runs count: {}, total LCNs: {}", L"'<empty>'", maxDSLen + 2, ds.second.value().Count(), lcnCnt) << std::endl;
+            else
+                strstream << std::format(L"    {:<{}} - data runs count: {}, total LCNs: {}", std::format(L"'{}'", ds.first), maxDSLen + 2, ds.second.value().Count(), lcnCnt) << std::endl;
+        }
         else
-            strstream << "'" << ds.first << L"' - data runs count: " << ds.second.Count() << std::endl;
+            strstream << std::format(L"    {:<{}} - {}", std::format(L"'{}'", ds.first), maxDSLen + 2, L"resident data stream") << std::endl;
     }
 
-    FStatistics.SetValue(L"\nDatastream names for '" + (*maxDataStreams).MainName + L"':\n", strstream.str());
+    FStatistics.SetValue(L"  ", L""); // just extra new line
+    FStatistics.SetValue(L"Datastream names for '" + (*maxDataStreams).MainName + L"'", strstream.str());
 
    /* std::wcout << std::endl << "File names for '" << (*maxFilenames).MainName.c_str() << "':" << std::endl;
     for (auto& fn : (*maxFilenames).FileNames)
     {
         std::wcout << fn << std::endl;
     }*/
-
+    
     strstream.seekp(0);
-    for (int i = 1; i < ATTR_TYPE_CNT; i++) // bypass ATTR_ZERO
+    strstream << std::endl;
+    for (int i = 1; i < ATTR_TYPE_CNT; i++) // bypass first ATTR_ZERO
     {
-        strstream << AttrTypeNames[i] << " = " <<(*maxAttrs).AttrCounters[i] << std::endl;
+        strstream << std::format(L"    {:<19}= {}", stow(AttrTypeNames[i]), toStringSepW((*maxAttrs).AttrCounters[i])) << std::endl;
     }
-    FStatistics.SetValue(L"\nAttribute counts for '" + (*maxAttrs).MainName + L"':\n", strstream.str());
+    //FStatistics.SetValue(L"   ", L"\n");
+    FStatistics.SetValue(L"Attribute counts for '" + (*maxAttrs).MainName + _T("'"), strstream.str());
 
 
     /*auto hasAttrList = std::find_if(FItemsList.begin(), FItemsList.end(), [](ITEM_INFO& a) { return a.IsDir() && a.AttrCounters[MATI(ATTR_LIST_ATTR)] > 0; });
@@ -1043,11 +1063,11 @@ TErrorCode TMFTStatCollector::CollectVolumeStat()
 
     Ticks::Finish(_T("Calc statistic"));
 
-    SaveToFile(_T("ListMFTFile_StatReader.log"));
+    //SaveToFile(_T("ListMFTFile_StatReader.log"));
 
-    //std::cout << std::endl << "Freeing memory..." << std::endl;
+    Ticks::Start(_T("Freeing Memory"));
     FItemsList.ClearMem();
-    //std::cout << "Freed" << std::endl << std::endl;
+    Ticks::Finish(_T("Freeing Memory"));
 
     Ticks::PrintTime();
 
@@ -1058,15 +1078,18 @@ void TMFTStatCollector::ShowVolumeStat()
 {
     if (FStatistics.Count() == 0)
     {
-        std::wcout << std::endl << L"No statistics collected. Nothing to show. " << std::endl;
+        cout_t << std::endl << _T("No statistics collected. Nothing to show.") << std::endl;
     }
     else
     {
-        std::wcout << std::endl <<L"Showing volume statistics for " << FLoader.GetVolumeData().Name << "." << std::endl << std::endl;
+        cout_t << std::endl <<_T("Statistics for ") << convert_string<char_t>(FLoader.GetVolumeData().Name) << std::endl << std::endl;
 
         for (auto item : FStatistics)
         {
-            std::wcout << item.first << item.second << std::endl;
+            if(item.second.empty())
+                cout_t << std::format(_T("  {:<{}}"), convert_string<char_t>(item.first), 43) << std::endl;
+            else
+                cout_t << std::format(_T("  {:<{}}: {}"), convert_string<char_t>(item.first), 43, convert_string<char_t>(item.second)) << std::endl;
         }
     }
 }
