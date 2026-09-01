@@ -16,7 +16,7 @@ LogEngine::Logger& GetLoggerFunc()
 {
     LogEngine::Logger& logger = LogEngine::GetFileLogger(MFT_LOGGER_NAME_FUNC, "LogMFTReaderFUNC.log");
     //logger.SetAsyncMode(true);
-    logger.SetLogLevel(LogEngine::Levels::llInfo);
+    logger.SetLogLevel(LogEngine::llInfo);
     return logger;
 }
 
