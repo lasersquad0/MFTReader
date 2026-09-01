@@ -21,14 +21,14 @@ class Sink
 {
 protected:
 	std::string FName;
-	std::atomic<Levels::LogLevel> FLogLevel;
+	std::atomic<LogLevel> FLogLevel;
 	Properties FProperties;
 
-	virtual bool shouldLog(const Levels::LogLevel ll) { return FLogLevel.load() >= ll; }
+	virtual bool shouldLog(const LogLevel ll) { return FLogLevel.load() >= ll; }
 	virtual void sendMsg(const LogEvent& e) = 0;
 
 public:
-	Sink(const std::string& name, const Levels::LogLevel ll = LL_DEFAULT) : FName{ name }
+	Sink(const std::string& name, const LogLevel ll = LL_DEFAULT) : FName{ name }
 	{
 		FLogLevel.store(ll);
 
@@ -48,7 +48,7 @@ public:
 	/**
 	* Sets log line pattern for the specified log level
 	**/
-	virtual void SetPattern(const std::string& pattern, Levels::LogLevel ll) = 0;
+	virtual void SetPattern(const std::string& pattern, LogLevel ll) = 0;
 
 	/**
 	* Sets one log line pattern for all log levels
@@ -64,7 +64,7 @@ public:
 	/**
 	* Sets default log line pattern for the specified log level
 	**/
-	virtual void SetDefaultPattern(Levels::LogLevel ll) = 0;
+	virtual void SetDefaultPattern(LogLevel ll) = 0;
 
 	// sets log line pattern for all log lines
 	virtual void SetDefaultPattern() = 0;
@@ -81,12 +81,12 @@ public:
 	**/
 	virtual ullong* GetMessageCounts() = 0;
 	
-	Levels::LogLevel GetLogLevel() const 
+	LogLevel GetLogLevel() const 
 	{ 
 		return FLogLevel.load(); 
 	}
 	
-	void SetLogLevel(Levels::LogLevel ll) 
+	void SetLogLevel(LogLevel ll) 
 	{
 		FLogLevel.store(ll); 
 	}
