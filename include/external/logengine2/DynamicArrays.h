@@ -253,7 +253,7 @@ public:
 	virtual void Hold() = 0;
 	virtual void SetCapacity(const uint Value) = 0;
 	//virtual void Zero() = 0;
-	virtual void Swap(const uint Index1, const uint Index2) = 0;
+	virtual void Swap(const uint Index1, const uint Index2) = 0;  */
 	/*	void	Reverse ();
 		void	Reverse (int endIndex);*/
 
