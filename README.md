@@ -39,6 +39,7 @@ Commands:
 -t, --test                   For testing purposes.
 ```
 
+
 ### Read file information by path
 Type in console the following command.
 
@@ -47,8 +48,6 @@ MFTReaderConsole.exe -p c:\windows\notepad.exe
 ```
 You will get the output similar to below.
 
-The most interesting fields are: 
-
 Alternate paths - you will be surprised how many files has alternate names (hard links).
 
 MFT Rec ID - shown in both dec and hex format. You can use this id later to show information about this file.
@@ -56,7 +55,7 @@ MFT Rec ID - shown in both dec and hex format. You can use this id later to show
 MFT Changed - datetime when this attribute (not file) has changed. This date hasn't shown any where in Windows Explorer.
 
 You may notice that some information is duplicated e.g. datetime fields present in both STANDARD_INFO and FILENAME attributes.
-This is how NTFS filesystem works. it has some data duplication for better speed.
+This is how NTFS filesystem works. It has some data duplication for better speed.
 
 ```
 MFTReader shows useful information about your NTFS file system.
@@ -204,13 +203,19 @@ Alternate paths  : c:\Windows\notepad.exe
 
 ```
 
-#### Read file information by MFT record ID
+### Read file information by MFT record ID
+
 MFT record ID can be specified either in decimal or hexadecimal numeral system.
+
 ```bash
 MFTReaderConsole.exe -r 53523
-MFTReaderConsole.exe -r 0xD0613
+MFTReaderConsole.exe -r 53523 d:\
+MFTReaderConsole.exe -r 0xd0613
 ```
-#### Collect and show files/directories statistic for entire volume
+### Collect and show files/directories statistic for entire volume
+
+If you don't specify which volume to read, c:\ will be read.
+
 ```bash
 MFTReaderConsole.exe -s
 MFTReaderConsole.exe -s d:
