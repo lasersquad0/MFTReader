@@ -46,7 +46,7 @@ public:
 		FLayout = nullptr;
 	}
 
-	virtual void Flush() { /* does nothing here*/ }
+	//void Flush() override { /* does nothing here*/ }
 
 	void PubSendMsg(const LogEvent& e) override
 	{
@@ -126,7 +126,7 @@ public:
 		std::lock_guard<Mutex> lock(FMutex);
 		FLogLevel = ll;
 	}
-
+       */
 	/**
 	 * Get the name of this sink. The name identifies the sink.
 	 * @returns the name of the sink.
