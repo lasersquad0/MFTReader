@@ -46,6 +46,18 @@ Type in console the following command.
 MFTReaderConsole.exe -p c:\windows\notepad.exe
 ```
 You will get the output similar to below.
+
+The most interesting fields are: 
+
+Alternate paths - you will be surprised how many files has alternate names (hard links).
+
+MFT Rec ID - shown in both dec and hex format. You can use this id later to show information about this file.
+
+MFT Changed - datetime when this attribute (not file) has changed. This date hasn't shown any where in Windows Explorer.
+
+You may notice that some information is duplicated e.g. datetime fields present in both STANDARD_INFO and FILENAME attributes.
+This is how NTFS filesystem works. it has some data duplication for better speed.
+
 ```
 MFTReader shows useful information about your NTFS file system.
 
@@ -80,7 +92,7 @@ Alternate paths  : c:\Windows\notepad.exe
   Flags:                0
   Indexed:              0
   Created:              27-Jul-26 10:54:05 AM
-  Modiied:              27-Jul-26 10:54:05 AM
+  Modified:             27-Jul-26 10:54:05 AM
   MFT Changed:          28-Jul-26 10:15:50 PM
   Last Access:          04-Sep-26 10:42:00 PM
   DOS Attrib:           0x40020 ----A----------L-
