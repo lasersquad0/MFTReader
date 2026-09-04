@@ -9,7 +9,7 @@ protected:
     static void SetUpTestCase()
     {
         LogEngine::Logger& logger = LogEngine::GetFileLoggerST(MFT_LOGGER_NAME, MFT_TESTS_LOG_FILE);
-        logger.SetLogLevel(LogEngine::Levels::llInfo);
+        logger.SetLogLevel(LogEngine::llInfo);
         logger.Debug("MFTReaderBaseTests START");
     }
     static void TearDownTestCase()
@@ -82,7 +82,7 @@ TEST_F(MFTParserBaseTests, NormalizeVolume_1)
 
 TEST_F(MFTParserBaseTests, AbsPath_1)
 {
-    string_t curr = std::filesystem::current_path();
+    string_t curr = convert_string<char_t>(std::filesystem::current_path().wstring());
 
     EXPECT_EQ(_T(""), IRecordsLoader::AbsPath(_T(""))); 
     EXPECT_EQ(_T(" "), IRecordsLoader::AbsPath(_T(" ")));
@@ -185,7 +185,7 @@ TEST_F(MFTParserBaseTests, MFTRecIdByPath_1)
         {0, _T("C:\\ProgramFiles")},{0, _T("C:\\Program  Files")},
         {58663, _T("C:\\windows")}, {58663, _T("c:\\WINDOWS")}, {58663, _T("C:\\WindowS")},
         {MFT_ROOT_REC_ID, _T("C:WindowS")}, {0, _T("D:WindowS")},
-        {104227, _T("c:\\hiberfil.sys")}, {64, _T("c:\\pagefile.sys")},
+        {104227, _T("c:\\hiberfil.sys")}, {3239, _T("c:\\pagefile.sys")},
         {57651, _T("c:\\program files")}, {57651, _T("c:\\Program Files")},
         {406846, _T("c:\\Program Files\\Git\\mingw64\\libexec\\git-core\\")},
         {406846, _T("c:\\Program Files\\Git\\mingw64\\libexec\\git-core")},
@@ -221,7 +221,7 @@ TEST_F(MFTParserBaseTests, PathByMFTRecId_1)
         {0, _T("c:\\$MFT")}, 
         {1, _T("C:\\$MFTMirr")}, {2, _T("C:\\$LogFile")},
         {58663, _T("C:\\windows")},
-        {104227, _T("c:\\hiberfil.sys")}, {64, _T("c:\\pagefile.sys")},
+        {104227, _T("c:\\hiberfil.sys")}, {3239, _T("c:\\pagefile.sys")},
         {57651, _T("c:\\program files")}, {57651, _T("c:\\Program Files")},
         {406846, _T("c:\\Program Files\\Git\\mingw64\\libexec\\git-core")},
         {405697, _T("c:\\Program Files\\Git\\mingw64\\bin\\git.exe")},
@@ -285,4 +285,93 @@ TEST_F(MFTParserBaseTests, BitField_1)
             ASSERT_EQ(true, bmp.Test(i));
         else
             ASSERT_EQ(false, bmp.Test(i));
+}
+
+
+#define ARRCNT 5
+
+// copy one object two times and check that copied object frees successfully 
+TEST_F(MFTParserBaseTests, testCopyBitmapAndITEM_INFO)
+{
+    static_assert(std::is_copy_constructible<TBitField>::value, "TBitField must be copy constructible");
+    static_assert(std::is_copy_assignable<TBitField>::value, "TBitField must be copy assignable");
+
+    THArray<ITEM_INFO>* arr = new THArray<ITEM_INFO>;
+
+    uint64_t arr64_1[ARRCNT] = { 0x111111, 0x222222, 0x333333, 0x444444, 0x555555 };
+    uint64_t arr64_2[ARRCNT] = { 0x666666, 0x777777, 0x888888, 0x999999, 0x000000 };
+    uint64_t arr64_3[ARRCNT] = { 0x112233, 0x445566, 0x778899, 0x990011, 0x223344 };
+    uint64_t arr64_4[ARRCNT] = { 0x123456, 0x789012, 0x345678, 0x901234, 0x567890 };
+    uint64_t arr64_5[ARRCNT] = { 0x111222, 0x333444, 0x555666, 0x777888, 0x999000 };
+
+    ITEM_INFO item1;
+    item1.Node.Bitmap.SetData(arr64_1, ARRCNT);
+
+    ITEM_INFO item2;
+    item1.Node.Bitmap.SetData(arr64_2, ARRCNT);
+
+    ITEM_INFO item3;
+    item1.Node.Bitmap.SetData(arr64_3, ARRCNT);
+
+    item1 = item3;
+
+    arr->AddValue(item1);
+    arr->AddValue(item2);
+    arr->AddValue(item1);
+    arr->AddValue(item3);
+
+    EXPECT_EQ(arr->Count(), 4ul);
+
+    delete arr;
+}
+
+// during memory reallocate in THArray<T> class objects are created and freed
+// check that copies of ITEM_INFO class properly copied and freed aftewards
+TEST_F(MFTParserBaseTests, testITEM_INFOReallocateInArray)
+{
+    static_assert(std::is_copy_constructible<TBitField>::value, "TBitField must be copy constructible");
+    static_assert(std::is_copy_assignable<TBitField>::value, "TBitField must be copy assignable");
+
+    THArray<ITEM_INFO> arr;
+
+    uint64_t arr64_1[ARRCNT] = { 0x111111, 0x222222, 0x333333, 0x444444, 0x555555 };
+    uint64_t arr64_2[ARRCNT] = { 0x666666, 0x777777, 0x888888, 0x999999, 0x000000 };
+    uint64_t arr64_3[ARRCNT] = { 0x112233, 0x445566, 0x778899, 0x990011, 0x223344 };
+    uint64_t arr64_4[ARRCNT] = { 0x123456, 0x789012, 0x345678, 0x901234, 0x567890 };
+    uint64_t arr64_5[ARRCNT] = { 0x111222, 0x333444, 0x555666, 0x777888, 0x999000 };
+
+    ITEM_INFO item1;
+    item1.Node.Bitmap.SetData(arr64_1, ARRCNT);
+    EXPECT_EQ(0, memcmp(item1.Node.Bitmap.GetData(), arr64_1, ARRCNT * sizeof(uint64_t)));
+
+    ITEM_INFO item2;
+    item2.Node.Bitmap.SetData(arr64_2, ARRCNT);
+    EXPECT_EQ(0, memcmp(item2.Node.Bitmap.GetData(), arr64_2, ARRCNT * sizeof(uint64_t)));
+
+    ITEM_INFO item3;
+    item3.Node.Bitmap.SetData(arr64_3, ARRCNT);
+    EXPECT_EQ(0, memcmp(item3.Node.Bitmap.GetData(), arr64_3, ARRCNT * sizeof(uint64_t)));
+
+    ITEM_INFO item4;
+    item4.Node.Bitmap.SetData(arr64_4, ARRCNT);
+    EXPECT_EQ(0, memcmp(item4.Node.Bitmap.GetData(), arr64_4, ARRCNT * sizeof(uint64_t)));
+
+    ITEM_INFO item5;
+    item5.Node.Bitmap.SetData(arr64_5, ARRCNT);
+    EXPECT_EQ(0, memcmp(item5.Node.Bitmap.GetData(), arr64_5, ARRCNT * sizeof(uint64_t)));
+
+    arr.AddValue(item1);
+    arr.AddValue(item2);
+    arr.AddValue(item1);
+    arr.AddValue(item3); 
+    arr.AddValue(item4); //reallocate should happen here
+    arr.AddValue(item5);
+
+    EXPECT_EQ(arr.Count(), 6ul);
+    EXPECT_EQ(0, memcmp(arr[0].Node.Bitmap.GetData(), arr64_1, ARRCNT * sizeof(uint64_t)));
+    EXPECT_EQ(0, memcmp(arr[1].Node.Bitmap.GetData(), arr64_2, ARRCNT * sizeof(uint64_t)));
+    EXPECT_EQ(0, memcmp(arr[2].Node.Bitmap.GetData(), arr64_1, ARRCNT * sizeof(uint64_t)));
+    EXPECT_EQ(0, memcmp(arr[3].Node.Bitmap.GetData(), arr64_3, ARRCNT * sizeof(uint64_t)));
+    EXPECT_EQ(0, memcmp(arr[4].Node.Bitmap.GetData(), arr64_4, ARRCNT * sizeof(uint64_t)));
+    EXPECT_EQ(0, memcmp(arr[5].Node.Bitmap.GetData(), arr64_5, ARRCNT * sizeof(uint64_t)));
 }
