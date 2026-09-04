@@ -27,17 +27,19 @@ public:
     // To access the test parameter, call GetParam() from class TestWithParam<T>.
 };
 
-#define IMG_PTRN_FILE     _T(TEST_DATA_DIR "ntfs-ptrn.raw")
-#define IMG_INDEX_FILE    _T(TEST_DATA_DIR "ntfs_index.raw")
-#define IMG_NTFS3_FILE    _T(TEST_DATA_DIR "ntfs3.raw")
-#define IMG_KW_1_FILE     _T(TEST_DATA_DIR "ntfs-img-kw-1.dd")
-#define IMG_DFR_16_FILE   _T(TEST_DATA_DIR "dfr-16-ntfs.dd")
-#define IMG_DFR_17_FILE   _T(TEST_DATA_DIR "dfr-17-ntfs.dd")
-#define IMG_2M_FILE       _T(TEST_DATA_DIR "ntfs-2m.raw")
-#define IMG_512K_FILE     _T(TEST_DATA_DIR "ntfs-512K.raw")
-#define IMG_RAMSLACK_FILE _T(TEST_DATA_DIR "ntfs-ramslack.raw")
-#define IMG_SI_VS_FN_FILE _T(TEST_DATA_DIR "ntfs-si-vs-fn.raw")
-#define IMG_7_UNDEL_FILE _T(TEST_DATA_DIR "7-ntfs-undel.dd")
+#define IMG_PTRN_FILE        _T(TEST_DATA_DIR "ntfs-ptrn.raw")
+#define IMG_INDEX_FILE       _T(TEST_DATA_DIR "ntfs_index.raw")
+#define IMG_NTFS3_FILE       _T(TEST_DATA_DIR "ntfs3.raw")
+#define IMG_KW_1_FILE        _T(TEST_DATA_DIR "ntfs-img-kw-1.dd")
+#define IMG_DFR_16_FILE      _T(TEST_DATA_DIR "dfr-16-ntfs.dd")
+#define IMG_DFR_17_FILE      _T(TEST_DATA_DIR "dfr-17-ntfs.dd")
+#define IMG_2M_FILE          _T(TEST_DATA_DIR "ntfs-2m.raw")
+#define IMG_512K_FILE        _T(TEST_DATA_DIR "ntfs-512K.raw")
+#define IMG_RAMSLACK_FILE    _T(TEST_DATA_DIR "ntfs-ramslack.raw")
+#define IMG_SI_VS_FN_FILE    _T(TEST_DATA_DIR "ntfs-si-vs-fn.raw")
+#define IMG_7_UNDEL_FILE     _T(TEST_DATA_DIR "7-ntfs-undel.dd")
+#define IMG_XP_LAPTOP_FILE   _T(TEST_DATA_DIR "xp-laptop-2005-06-25.img")
+#define IMG_VISTA_BETA2_FILE _T(TEST_DATA_DIR "vista-beta2.img")
 
 struct VOLUME_FIGURES
 {
@@ -54,17 +56,19 @@ struct VOLUME_FIGURES
 };
 
 static THash<string_t, VOLUME_FIGURES> ImgFileFigures{
-    {IMG_PTRN_FILE,     {256, 219, 0, 6, 4, 36} },
-    {IMG_INDEX_FILE,    {256, 173, 0, 50, 6, 36} },
-    {IMG_NTFS3_FILE,    {1152, 1129, 0, 3, 2, 27} },
-    {IMG_KW_1_FILE,     {48, 18, 0, 7, 5, 27} },
-    {IMG_DFR_16_FILE,   {1104, 46, 0, 1022, 10, 64} },
-    {IMG_DFR_17_FILE,   {160, 43, 0, 45, 46, 64} },
-    {IMG_RAMSLACK_FILE, {256, 221, 0, 4, 4, 36} },
-    {IMG_2M_FILE,       {2048, 2017, 0, 2, 2, 36} },
-    {IMG_512K_FILE,     {512, 479, 0, 4, 2, 36} },
-    {IMG_SI_VS_FN_FILE, {256, 224, 0, 2, 3, 36} },
-    {IMG_7_UNDEL_FILE,  {48, 27, 0, 1, 2, 27} },
+    {IMG_PTRN_FILE,        {256, 219, 0, 6, 4, 36} },
+    {IMG_INDEX_FILE,       {256, 173, 0, 50, 6, 36} },
+    {IMG_NTFS3_FILE,       {1152, 1129, 0, 3, 2, 27} },
+    {IMG_KW_1_FILE,        {48, 18, 0, 7, 5, 27} },
+    {IMG_DFR_16_FILE,      {1104, 46, 0, 1022, 10, 64} },
+    {IMG_DFR_17_FILE,      {160, 43, 0, 45, 46, 64} },
+    {IMG_RAMSLACK_FILE,    {256, 221, 0, 4, 4, 36} },
+    {IMG_2M_FILE,          {2048, 2017, 0, 2, 2, 36} },
+    {IMG_512K_FILE,        {512, 479, 0, 4, 2, 36} },
+    {IMG_SI_VS_FN_FILE,    {256, 224, 0, 2, 3, 36} },
+    {IMG_7_UNDEL_FILE,     {48, 27, 0, 1, 2, 27} },
+    {IMG_XP_LAPTOP_FILE,   {48, 27, 0, 1, 2, 27} },
+    {IMG_VISTA_BETA2_FILE, {48, 27, 0, 1, 2, 27} },
 };
 
 TEST_P(MFTImgFileParserTest, DiskImageCheckMetaFilesCount_1)
@@ -159,8 +163,9 @@ TEST_P(MFTImgFileParserTest, ReadDiskImageRootAndGoSubDirs_1)
 
     MFT_REF startId{ 0 };
     startId.Id = MFT_ROOT_REC_ID;
+    IProgress prgrs;
 
-    if (TErrorCode::Success != stat.ReadMftItems(startId, nullptr, 0, nullptr))
+    if (TErrorCode::Success != stat.ReadMftItems(startId, nullptr, 0, prgrs))
         FAIL() << "ReadMftItems() returned error!";
    
     auto& ItemsList = stat.GetItemsList();
@@ -180,8 +185,9 @@ TEST_P(MFTImgFileParserTest, DISABLED_ReadDiskImageRootAndGoSubDirs_WINAPI)
 
     MFT_REF startId{ 0 };
     startId.Id = MFT_ROOT_REC_ID;
+    IProgress prgrs;
 
-    if (TErrorCode::Success != stat.ReadMftItems(startId, nullptr, 0, nullptr))
+    if (TErrorCode::Success != stat.ReadMftItems(startId, nullptr, 0, prgrs))
         FAIL() << "ReadMftItems() returned error!";
 }
 
@@ -195,6 +201,10 @@ INSTANTIATE_TEST_CASE_P(NTFS_SI_VS_FN_RAW, MFTImgFileParserTest, testing::Values
 INSTANTIATE_TEST_CASE_P(DFR_7_UNDEL_DD, MFTImgFileParserTest, testing::Values(IMG_7_UNDEL_FILE));
 INSTANTIATE_TEST_CASE_P(NTFS_2M_RAW, MFTImgFileParserTest, testing::Values(IMG_2M_FILE));
 INSTANTIATE_TEST_CASE_P(NTFS_512K_RAW, MFTImgFileParserTest, testing::Values(IMG_512K_FILE));
+
+// these two files do not have MBR signature bytes 0x55AA at 0x1FE offset for some reason
+//INSTANTIATE_TEST_CASE_P(NTFS_XP_LAPTOP_IMG, MFTImgFileParserTest, testing::Values(IMG_XP_LAPTOP_FILE));
+//INSTANTIATE_TEST_CASE_P(NTFS_VISTA_BETA2_IMG, MFTImgFileParserTest, testing::Values(IMG_VISTA_BETA2_FILE));
 
 //problem with ntfs3.raw file, records starting from 27 do not contain IndexMFTRec field while <27 do contain.
 //INSTANTIATE_TEST_CASE_P(NTFS3_RAW, MFTImgFileParserTest, testing::Values(IMG_NTFS3_FILE));
