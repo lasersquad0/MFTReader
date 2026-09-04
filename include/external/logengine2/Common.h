@@ -15,6 +15,7 @@
 #include <string>
 #include <chrono>
 #include <mutex>
+#include <thread>
 
 #ifdef LOGENGINE_HEADER_ONLY
 #define LOGENGINE_INLINE inline
