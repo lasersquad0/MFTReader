@@ -8,12 +8,13 @@
 
 #pragma once
 
-#if defined(WIN32) && _HAS_CXX20==1 && !defined(__BORLANDC__)
-#include <format>
-#endif
+//#if defined(WIN32) && _HAS_CXX20==1 && !defined(__BORLANDC__)
+//#include <format>
+//#endif
 
 #include <stdarg.h>
 #include <string>
+#include <format>
 #include <memory>
 #include "Common.h"
 #include "Sink.h"
@@ -179,7 +180,7 @@ public:
 		}
 	}
 
-#if defined(WIN32) && _HAS_CXX20==1 && !defined(__BORLANDC__)
+//#if defined(WIN32) && _HAS_CXX20==1 && !defined(__BORLANDC__)
 	template<class ... Args>
 	void CritFmt(const std::format_string<Args...> fmt, Args&& ...args)
 	{
@@ -233,7 +234,8 @@ public:
 			InternalLog(ev);
 		}
 	}
-#else
+//#else
+/*
  private:
 	std::string vformat(const char* format, va_list args)
 	{
@@ -272,7 +274,7 @@ public:
 		}
 	}
 
-	void InternalLogFmt(Levels::LogLevel ll, const char* fmt,  va_list args)
+	void InternalLogFmt(LogLevel ll, const char* fmt,  va_list args)
 	{
 		//TODO think how to pass all args into SendToAllSinks and create final string there
 		if (FAsync)
@@ -290,65 +292,65 @@ public:
 public:	
 	void CritFmt(const char* fmt, ...)
 	{
-		if (!ShouldLog(Levels::llCritical)) return;
+		if (!ShouldLog(llCritical)) return;
 
 		va_list va;
 		va_start(va, fmt);
-		InternalLogFmt(Levels::llCritical, fmt, va);
+		InternalLogFmt(llCritical, fmt, va);
 		va_end(va);
 	}
 
 	void ErrorFmt(const char* fmt, ...)
 	{
-		if (!ShouldLog(Levels::llError)) return;
+		if (!ShouldLog(llError)) return;
 
 		va_list va;
 		va_start(va, fmt);
-		InternalLogFmt(Levels::llError, fmt, va);
+		InternalLogFmt(llError, fmt, va);
 		va_end(va);
 	}
 
 	void WarnFmt(const char* fmt, ...)
 	{
-		if (!ShouldLog(Levels::llWarning)) return;
+		if (!ShouldLog(llWarning)) return;
 
 		va_list va;
 		va_start(va, fmt);
-		InternalLogFmt(Levels::llWarning, fmt, va);
+		InternalLogFmt(llWarning, fmt, va);
 		va_end(va);
 	}
 
 	void InfoFmt(const char* fmt, ...)
 	{
-		if (!ShouldLog(Levels::llInfo)) return;
+		if (!ShouldLog(llInfo)) return;
 
 		va_list va;
 		va_start(va, fmt);
-		InternalLogFmt(Levels::llInfo, fmt, va);
+		InternalLogFmt(llInfo, fmt, va);
 		va_end(va);
 	}
 
 	void DebugFmt(const char* fmt, ...)
 	{ 
-		if (!ShouldLog(Levels::llDebug)) return;
+		if (!ShouldLog(llDebug)) return;
 
 		va_list va;
 		va_start(va, fmt);
-		InternalLogFmt(Levels::llDebug, fmt, va);
+		InternalLogFmt(llDebug, fmt, va);
 		va_end(va);
 	}
 
 	void TraceFmt(const char* fmt, ...)
 	{
-		if (!ShouldLog(Levels::llTrace)) return;
+		if (!ShouldLog(llTrace)) return;
 
 		va_list va;
 		va_start(va, fmt);
-		InternalLogFmt(Levels::llTrace, fmt, va);
+		InternalLogFmt(llTrace, fmt, va);
 		va_end(va);
 	}
 
-	void LogFmt(Levels::LogLevel ll, const char* fmt,  ...)
+	void LogFmt(LogLevel ll, const char* fmt,  ...)
 	{
 		if (!ShouldLog(ll)) return;
 
@@ -359,7 +361,7 @@ public:
 	}
 
 #endif
-
+    */
 	void Crit (const std::string& msg) { Log(msg, llCritical); }
 	void Error(const std::string& msg) { Log(msg, llError);    }
 	void Warn (const std::string& msg) { Log(msg, llWarning);  }
