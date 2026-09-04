@@ -21,18 +21,14 @@ protected:
 public:
 	TMFTBaseReader(IRecordsLoader& loader) : FOut(cout_t), FAttrCurrIndex(0), FLoader(loader) {};
 
-	ostream_t& Out();
+	ostream_t& Out(){ FOut << string_t(2, ' '); return FOut; }
 
-	//TErrorCode FillAttrCollection(MFT_REF mftRecRef, TAttrCollection& collection);
 	TErrorCode FillAttrCollection(MFT_FILE_RECORD* mftRec, TAttrCollection& collection);
 	TErrorCode FillAttrCollection(MFT_FILE_RECORD* mftRec, uint32_t attrFilter, TAttrCollection& collection);
-	//bool FillCollectionFromAttrList(MFTRecIndex indexMFTRec, uint32_t attrFilter, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd1, uint8_t* attrListEnd2, TAttrCollection& collection);
 
-	//void GetAttr(ATTR_TYPE attrType, const PMFT_ATTR_HEADER* const attrValues, PMFT_ATTR_HEADER* result);
 	void GetFileListFromNode(INDEX_HDR* ihdr, TLCNRecs& lcns, TFileList& fnames);
 	void GetFileList(INDEX_HDR* ihdr, AddFileAttrPred pred);
 
-	//bool ReadClusters(CLST lcnStart, CLST lcnCnt, uint8_t* dataBuf);
 	TErrorCode ParseNonresAttrList(MFTRecIndex indexMFTRec, MFT_ATTR_HEADER* attrListAttr, AttrListPred processChildMFTRecPred);
 	TErrorCode ParseNonresAttrList(MFTRecIndex indexMFTRec, uint32_t attrFilter, MFT_ATTR_HEADER* attrListAttr, AttrListPred processChildMFTRecPred);
 	//bool GetAttrFromAttrList(ATTR_LIST_ENTRY* startListItem, ATTR_TYPE attrType, uint8_t* attrListEnd1, uint8_t* attrListEnd2, PMFT_ATTR_HEADER* result);
@@ -55,28 +51,28 @@ public:
 	TErrorCode GetFileListFromMFTRec(TAttrCollection& collection, TFileList& fileList);
 
 	TErrorCode PathByMFTRecID(MFT_REF mftRecRef, THArray<std::wstring>& paths);
-	expected_uint32 /*std::expected<MFTRecIndex, TErrorCode>*/ MFTRecIdByPath(const ci_string& path); // ci_string is for case INsensitive search here
+	expected_uint32 MFTRecIdByPath(const ci_string& path); // ci_string is for case INsensitive search here
 	
 	TErrorCode PrintMFTRecord(MFT_REF mftRecRef);
 	TErrorCode PrintMFTRecord(MFT_FILE_RECORD* mftRec);
 	TErrorCode PrintMFTHeader(MFT_FILE_RECORD* mftRec);
 	TErrorCode PrintMFTFooter(MFT_FILE_RECORD* mftRec);
-	TErrorCode PrintMFTAttrHeader(MFT_ATTR_HEADER* attr);
-	TErrorCode PrintSTDInfo(MFT_ATTR_HEADER* attr);
-	TErrorCode PrintFileNames(TAttrHeaderList& fileNamesList);
+	TErrorCode PrintAttrHeader(MFT_ATTR_HEADER* attr, MFTRecIndex mftRecID);
+	TErrorCode PrintSTDInfo(TAttrCollection& collection);
+	TErrorCode PrintFileNames(TAttrCollection& collection);
 	TErrorCode PrintDirectory(TAttrCollection& collection);
-	TErrorCode PrintObjectID(MFT_ATTR_HEADER* attr);
-	TErrorCode PrintLabel(MFT_ATTR_HEADER* attr);
-	TErrorCode PrintVolumeInfo(MFT_ATTR_HEADER* attr);
-	TErrorCode PrintDataInfo(MFT_ATTR_HEADER* attr);
-	TErrorCode PrintEA(MFT_ATTR_HEADER* attr);
-	TErrorCode PrintEAInfo(MFT_ATTR_HEADER* attr);
-	TErrorCode PrintLUS(TAttrHeaderList& lusList);
-	TErrorCode PrintSecure(MFT_ATTR_HEADER* attr);
-	TErrorCode PrintReparse(MFT_ATTR_HEADER* attr);
+	TErrorCode PrintObjectID(TAttrCollection& collection);
+	TErrorCode PrintLabel(TAttrCollection& collection);
+	TErrorCode PrintVolumeInfo(TAttrCollection& collection);
+	TErrorCode PrintDataInfo(TAttrCollection& collection);
+	TErrorCode PrintEA(TAttrCollection& collection);
+	TErrorCode PrintEAInfo(TAttrCollection& collection);
+	TErrorCode PrintLUS(TAttrCollection& collection);	
+	TErrorCode PrintSecure(TAttrCollection& collection);
+	TErrorCode PrintReparse(TAttrCollection& collection);
 };
 
-typedef int32_t(*ReadMftItemsCallback)(const string_t& data);
+typedef int32_t(*ReadMftItemsCallback)(uint32_t n100, uint32_t progress, const string_t& data);
 
 class TMFTStatCollector : public TMFTBaseReader
 {
@@ -91,7 +87,7 @@ public:
 	
 	TItemInfoList& GetItemsList() { return FItemsList; }
 
-	TErrorCode ReadMftItems(MFT_REF mftRecRef, IFILE_NAME* iFileItem, uint32_t dirLevel, ReadMftItemsCallback callback);
+	TErrorCode ReadMftItems(MFT_REF mftRecRef, IFILE_NAME* iFileItem, uint32_t dirLevel, IProgress& callback);
 	//TErrorCode ReadMftItems(MFT_REF mftRecRef, uint32_t dirLevel, ReadMftItemsCallback callback);
 	TErrorCode ReadMftItemInfo(MFT_REF mftRecRef, IFILE_NAME* iFileItem, ITEM_INFO& itemInfo);
 	//TErrorCode ReadMftItemInfo(MFT_REF mftRecRef, ITEM_INFO& itemInfo);
