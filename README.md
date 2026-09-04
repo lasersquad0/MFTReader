@@ -1,7 +1,4 @@
-# MFTReader
-
-## Description
-
+# MFTReader tool
 This project is an attempt to create application that reads NTFS system directly.
 "Directly" means that application reads raw data (MFT records) of NTFS filesystem, parses it and gets required data from there.
 
@@ -26,36 +23,37 @@ Statistic that is built by MFTReader app includes:
 MFTReader works only with NTFS file systems and does not work with any others.
 
 
-## How to use MFTReader tool
-
-#### Command line parameters
-MFTReader has 3 commands (-r, -p, -s), each command can have one or two parameters.
+## How to use this tool
+### Command line parameters
+MFTReader has 3 commands (`-r, -p, -s`), each command can have one or two parameters.
 
 ```
 Usage: MFTReader -command <arg1>...<argN>
 
 Commands:
--r, --record <req arg> <arg> Display information about MFT record. First argument is MFT record ID, second argument - volume name (if omitted default volume c:\ is used).
+-r, --record <req arg> <arg> Display information about MFT record. First argument is MFT record ID, 
+                             second argument - volume name (if omitted default volume c:\ is used).
 -p, --path   <arg>           Display information about file/directory by specified path.
 -s, --stat   <arg>           Show interesting volume/disk statistics.
 -c, --cache  <arg>           Build cache for file search and show some statistics.
 -t, --test                   For testing purposes.
 ```
 
-#### Read file information by path
-Type in console the following.
+### Read file information by path
+Type in console the following command.
 
-```
+```bash
 MFTReaderConsole.exe -p c:\windows\notepad.exe
 ```
-You will see output like below
+You will get the output similar to below.
 ```
 MFTReader shows useful information about your NTFS file system.
 
 Info about file  : c:\windows\notepad.exe
 MFT Record       : 853 523
 Alternate paths  : c:\Windows\notepad.exe
-                   c:\Windows\WinSxS\amd64_microsoft-windows-notepad_31bf3856ad364e35_10.0.26100.8737_none_0abe6ba8201cb866\notepad.exe
+                   c:\Windows\WinSxS\amd64_microsoft-windows-notepad_31bf3856ad364e35_10.0.26100.8737
+                   _none_0abe6ba8201cb866\notepad.exe
                    c:\Windows\System32\notepad.exe
 
 
@@ -194,15 +192,14 @@ Alternate paths  : c:\Windows\notepad.exe
 
 ```
 
----
 #### Read file information by MFT record ID
 MFT record ID can be specified either in decimal or hexadecimal numeral system.
-```
+```bash
 MFTReaderConsole.exe -r 53523
 MFTReaderConsole.exe -r 0xD0613
 ```
 #### Collect and show files/directories statistic for entire volume
-```
+```bash
 MFTReaderConsole.exe -s
 MFTReaderConsole.exe -s d:
 ```
