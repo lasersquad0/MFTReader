@@ -115,6 +115,7 @@ TErrorCode TMFTBaseReader::ProcessAllocDataRuns(DIR_NODE& node, ProcessiBlocksPr
                     }
                 }
 
+                //TODO why do we call processIndexBlockPred for index blocks that do not contain INDS signature?
                 //process particular Index Block, either add to list of blocks in cache or get list of files from this record, depending on predicate
                 processIndexBlockPred(dataBuf + i * node.IndexBlockSize, rli.vcn + i*node.IndexBlockSize/getVolData().BytesPerCluster, rli.lcn + i*node.IndexBlockSize/getVolData().BytesPerCluster);
             }
@@ -233,7 +234,7 @@ void TMFTBaseReader::GetFileList(INDEX_HDR* ihdr, AddFileAttrPred pred)
 
         NTFS_DE* de = (NTFS_DE*)Add2Ptr(ihdr, off); // NTFS_DE it is a "header" above File Name attribute, covers each file name attribute item
         
-        if (logger.ShouldLog(LogEngine::Levels::llDebug))
+        if (logger.ShouldLog(LogEngine::llDebug))
         {
             logger.DebugFmt("DE Ref to MFT Rec: {}", de->RecRef.toHexString()); // reference to MFT Rec for this file name
             logger.DebugFmt("DE Flags: {} ({:#x})", de->flags == NTFS_IE_HAS_SUBNODES ? "HAS SUBNODES" : de->flags == NTFS_IE_LAST ? "LAST" : de->flags == 0 ? "OTHER" : "UNKNOWN", de->flags);
@@ -256,7 +257,7 @@ void TMFTBaseReader::GetFileList(INDEX_HDR* ihdr, AddFileAttrPred pred)
                 pred(fattr, de->RecRef);
             }
 
-            if (logger.ShouldLog(LogEngine::Levels::llDebug))
+            if (logger.ShouldLog(LogEngine::llDebug))
             {
                 std::wstring wnm(GetFName(fattr), fattr->FileNameLen);
                 logger.DebugFmt("DE ATTR Parent Rec ID: {}", fattr->ParentDir.toHexString()); //TODO check that parent of each file refers to MFT Rec we are currently parsing
@@ -415,52 +416,6 @@ ATTR_FILE_NAME* TMFTBaseReader::GetDirNameAttr(MFT_FILE_RECORD* mftRec)
     return attrFNameNDOS;
 }
 
-    /*
-    PMFT_ATTR_HEADER currAttr = (MFT_ATTR_HEADER*)Add2Ptr(mftRec, mftRec->FirstAttrOffset);
-    assert(currAttr->res.DataSize + currAttr->res.DataOffset <= currAttr->AttrSize);
-    
-    ATTR_FILE_NAME* attrFNameNDOS{ 0 }, * attrFNames[2]{ 0,0 };
-    uint ind = 0;
-
-    do
-    {
-        if (currAttr->AttrType == ATTR_FILENAME)
-        {
-            attrFNameNDOS = (ATTR_FILE_NAME*)Add2Ptr(currAttr, currAttr->res.DataOffset);
-            attrFNames[ind++] = attrFNameNDOS;
-            if (attrFNameNDOS->NameType == FILE_NAME_DOS) attrFNameNDOS = nullptr;
-        }
-        assert(currAttr->AttrType != ATTR_LIST_ATTR);
-
-        assert(currAttr->AttrSize > 0);
-        currAttr = (MFT_ATTR_HEADER*)Add2Ptr(currAttr, currAttr->AttrSize);
-        assert(mftRec->FileRecSize > Diff2Ptr(mftRec, currAttr));
-
-    } while (*((uint32_t*)currAttr) != ATTR_END);
-
-    if (attrFNames[0] == nullptr) //TODO or just return nullptr in this case?
-        throw std::runtime_error("[GetFirstFileNameAttr] Attribute ATTR_FILENAME not found in MFT Rec!");
-
-    assert(attrFNameNDOS); // non-DOS filename should always present
-
-#ifndef NDEBUG    
-    if (ind == 1) // if one, it should be non-DOS filename 
-    {
-        assert(attrFNameNDOS == attrFNames[0]);
-        assert(attrFNames[0]->NameType != FILE_NAME_DOS);
-    }
-
-    if (ind == 2)
-    {
-        // at least one of two needs to be non-DOS filename
-        assert((attrFNames[0]->NameType == FILE_NAME_DOS) || (attrFNames[1]->NameType == FILE_NAME_DOS));
-        assert(attrFNames[0]->ParentDir.sId.low == attrFNames[1]->ParentDir.sId.low);
-    }
-#endif
-
-    return attrFNameNDOS;
-}*/
-
 // fills array attrFileNames with pointers to all ATTR_FILENAME attributes which mftRec contains except DOS ones 
 // Goes inside of ATTR_LIST_ATTR attribute if MFT record has it
 // attrFileNames is cleared each time before filling with new values
@@ -582,27 +537,6 @@ TErrorCode TMFTBaseReader::PathByMFTRecID(MFT_REF mftRecRef, THArray<std::wstrin
     return TErrorCode::Success;
 }
 
-/*
-TErrorCode TMFTBaseReader::FillAttrCollection(MFT_REF mftRecRef, TAttrCollection& collection)
-{
-    uint8_t* mftRecBuf = (uint8_t*)alloca(getVolData().BytesPerMFTRec);
-
-    auto res = FLoader.LoadMFTRecord(mftRecRef, mftRecBuf);
-    if (res != TErrorCode::Success)
-    {
-        GET_LOGGER;
-        logger.Error("LoadMFTRecord finished with error.");
-        return res;
-    }
-    else
-    {
-        auto mftRec = (MFT_FILE_RECORD*)mftRecBuf;
-        assert(mftRecRef.sId.low == mftRec->IndexMFTRec);
-
-        return FillAttrCollection(mftRec, collection);
-    }
-}*/
-
 /**
 * @brief Fills parameter collection with pointers to all attributes which mftRec contains
 * @details if ATTR_LIST_ATTR is present it goes inside and gets attributes from ATTR_LIST_ATTR.
@@ -651,7 +585,7 @@ TErrorCode TMFTBaseReader::FillAttrCollection(MFT_FILE_RECORD* mftRec, uint32_t 
         if (currAttr->AttrType != ATTR_LIST_ATTR)
         {
             if (MakeAttrBitmask(currAttr->AttrType) & attrFilter)
-                collection.Set(currAttr);
+                collection.Set(currAttr, mftRec->IndexMFTRec);
         }
         else
         {
@@ -702,230 +636,6 @@ TErrorCode TMFTBaseReader::FillAttrCollection(MFT_FILE_RECORD* mftRec, uint32_t 
 
     return TErrorCode::Success;
 }
-
-
-// fills array attrValues[] with pointers to all attributes which mftRec contains
-// DOES NOT go inside ATTR_LIST_ATTR even if present (for optimization purposes)
-// for ATTR_FILE_NAME and ATTR_LOGGED_UTILITY_STREAM only last such attribute placed into attrValues
-// assumes that attrValues has allocated size for ATTR_TYPE_CNT items
-/*void TMFTParserBase::FillAttrValues(MFT_FILE_RECORD* mftRec, PMFT_ATTR_HEADER* attrValues)
-{
-    PMFT_ATTR_HEADER currAttr = (MFT_ATTR_HEADER*)Add2Ptr(mftRec, mftRec->FirstAttrOffset);
-    ZeroMemory(attrValues, ATTR_TYPE_CNT * sizeof(PMFT_ATTR_HEADER));
-
-    do
-    {
-        if (currAttr->NonResidentFlag == ATTR_FLAG_RESIDENT)
-            assert(currAttr->res.DataSize + currAttr->res.DataOffset <= currAttr->AttrSize);
-
-        // all atributes except ATTR_FILENAME and ATTR_LOGGED_UTILITY_STREAM should be in a single copy in one MFT rec
-        if ((currAttr->AttrType != ATTR_FILENAME) && (currAttr->AttrType != ATTR_LOGGED_UTILITY_STREAM))
-            assert(attrValues[MATI(currAttr->AttrType)] == nullptr);
-
-        attrValues[MATI(currAttr->AttrType)] = currAttr;
-
-        assert(currAttr->AttrSize > 0);
-        currAttr = (MFT_ATTR_HEADER*)Add2Ptr(currAttr, currAttr->AttrSize);
-        assert(mftRec->FileRecSize > Diff2Ptr(mftRec, currAttr));
-
-    } while (*((uint32_t*)currAttr) != ATTR_END);
-}*/
-
-// returns true if requested attribute found in ATTR_LIST otherwise returns false 
-// for resident ATTR_LIST it is called from GetAttr()
-// for non-resident ATTR_LIST it is called from ParseNonresAttrList()
-/*bool TMFTParserBase::GetAttrFromAttrList(ATTR_LIST_ENTRY* startListItem, ATTR_TYPE attrType, uint8_t* attrListEnd1, uint8_t* attrListEnd2, PMFT_ATTR_HEADER* result)
-{
-    GET_LOGGER;
-
-    ATTR_LIST_ENTRY* attrListItem = startListItem;
-    //uint8_t* dataBufEnd1 = dataBuf + dataBufSize;
-    //uint8_t* dataBufEnd2 = dataBuf + attrAttrList->nonres.RealSize;
-
-    assert(attrListItem->AttrSize > 0);
-    assert(attrListItem->AttrType > 0);
-    assert(attrListItem->StartVCN == 0);
-    assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
-
-    uint32_t resIndex = 0;
-    while (true)
-    {
-        if (attrListItem->AttrType == attrType)
-        {
-            MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)FLoader.LoadMFTRecordCache(attrListItem->ref);
-            assert(mftRec != nullptr);
-            if (mftRec)
-            {
-                PMFT_ATTR_HEADER attrValues2[ATTR_TYPE_CNT];
-                FillAttrValues(mftRec, attrValues2);
-                PMFT_ATTR_HEADER currAttr2 = attrValues2[MATI(attrType)];
-                assert(currAttr2);
-                assert(attrValues2[MATI(ATTR_LIST_ATTR)] == nullptr); // this is check that no ATTR_LIST_ATTR inside ATTR_LIST_ATTR
-
-                //TODO optimization - for attributes other than ATTR_ALLOC return immediately when first value found
-                if (currAttr2)
-                    result[resIndex++] = currAttr2;
-                else
-                    logger.WarnFmt("[GetAttrFromAttrList] Attr: {} cannot be found is ATTR_LIST.", AttrName(attrType));
-
-                assert(resIndex < SAME_ATTR_CNT);
-            }
-            else
-            {
-                // error loading MFT record
-                // do not break loop and trying to load more records
-                logger.Error("[GetAttrFromAttrList] LoadMFTRecordCache returned NULL MFT record!");
-                //return;
-            }
-        }
-
-        attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
-        if (((uint8_t*)attrListItem >= attrListEnd1)) break;
-        if (((uint8_t*)attrListItem >= attrListEnd2)) break;
-        assert(attrListItem->AttrType > 0);
-        assert(attrListItem->AttrSize > 0);
-        assert(attrListItem->StartVCN == 0);
-        assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero        
-    } //while
-
-    if (resIndex == 0) // no requested attribute found in ATTR_LIST
-    {
-        logger.ErrorFmt("[GetAttrFromAttrList] Attr: {} is not found in the ATTR_LIST.", AttrName(attrListItem->AttrType));
-        assert((attrType == ATTR_BITMAP) || (attrType == ATTR_ALLOC)); // only these two types can be missing
-        return false;
-    }
-
-    return true;
-}*/
-
-// fills attr collection with all attrs from ATTR_LIST
-/*bool TMFTParserBase::FillCollectionFromAttrList(MFTRecIndex indexMFTRec, uint32_t attrFilter, ATTR_LIST_ENTRY* startListItem, uint8_t* attrListEnd1, uint8_t* attrListEnd2, TAttrCollection& collection)
-{
-    GET_LOGGER;
-
-    ATTR_LIST_ENTRY* attrListItem = startListItem;
-    
-    assert(attrListItem->AttrSize > 0);
-    assert(attrListItem->AttrType > 0);
-    assert(attrListItem->StartVCN == 0);
-    assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero
-    assert(attrListItem->AttrType != ATTR_ZERO);
-    assert(attrListItem->AttrType != ATTR_END);
-
-    THArray<uint32_t> visitedMFTRec;
-    // this is do not not parse current indexMFTRec again when reading attrListItem->ref MFT record   
-    // because attrs located in current MFT rec either already parsed or will be parsed during usual cycle of parsing  
-    visitedMFTRec.AddValue(indexMFTRec);
-
-    while (true)
-    {
-        if (MakeAttrBitmask(attrListItem->AttrType) & attrFilter)
-        {
-            // StartVCN might be >0 when one attribute does not fit into one MFT record.
-            // This attribute may have very long Data Run list or anything else
-            // In this case ATTR_LIST contains several ATTR_LIST_ENTRY entries for this big attribute.
-            // First entry has StartVCN=0, others - preventry.StartVCN+num_of_vcns_in_preventry_dataruns, etc.
-            // all these entries build up a continious list of VCNs 
-            if ((attrListItem->AttrType != ATTR_DATA) && (attrListItem->AttrType != ATTR_ALLOC))  // StartVCN should be 0 for all attrs except ATTR_DATA and ATTR_ALLOC
-            {
-                if (attrListItem->StartVCN != 0)
-                    logger.WarnFmt("Looks like we have met incorrect case. StartVCN({}) <> 0 for {} attribute. MFT Rec ID: {}.",
-                        attrListItem->StartVCN, AttrName(attrListItem->AttrType), MFT_REF::toHexString(indexMFTRec));
-                assert(attrListItem->StartVCN == 0);
-            }
-
-            // attributes in non-resident attr list located in a separate LCN cluster may refer back to the base record
-            // because some attributes may reside in base mft record and the others in "child" mft record(s)
-            // the attr list attribute itself is located in LCN cluster that is not mft record, it does not contain signature or Fixups values, etc.
-            if (visitedMFTRec.IndexOf(attrListItem->ref.sId.low) == -1) // whether we've parsed this MFT record already or not 
-            {
-                // we need cache version because mftRecBuf should remain valid till we return back to GetMFTRecIdByPath in calls stack
-                uint8_t* mftRecBuf = FLoader.LoadMFTRecordCache(attrListItem->ref);
-                if (mftRecBuf)
-                {
-                    FillAttrCollection((MFT_FILE_RECORD*)mftRecBuf, attrFilter, collection);
-                }
-                else
-                {
-                    // error loading MFT record
-                    // do not break loop and trying to load more records
-                    logger.Error("[GetAttrFromAttrList] LoadMFTRecordCache returned NULL MFT record!");
-                    //return;
-                }
-                visitedMFTRec.AddValue(attrListItem->ref.sId.low);
-
-            }
-        }
-
-        attrListItem = (ATTR_LIST_ENTRY*)Add2Ptr(attrListItem, attrListItem->AttrSize);
-        if (((uint8_t*)attrListItem >= attrListEnd1)) break;
-        if (((uint8_t*)attrListItem >= attrListEnd2)) break;
-        assert(attrListItem->AttrType > 0);
-        assert(attrListItem->AttrSize > 0);
-        assert(attrListItem->StartVCN == 0);
-        assert(((uint32_t)(attrListItem->AttrType) & 0x0F) == 0); // Attr type minor byte is always zero        
-    } //while
-
-    return true;
-}*/
-
-/**
-* @brief Parses NON-RESIDENT ATTR_LIST_ATTR attribute
-* @details Parses Non-Resident ATTR_LIST_ATTR attribute. Decodes data runs from the attribute and loads LCNs.
-* After that it looks for attrType attribute in ATTR_LIST_ENTRY entries
-* if several attrType attributes found all of them are returned in resulting array 'result'
-* @param volData Need for ReadClusters call and for BytesPerCluster value
-* @param attrListAttr Pointer to ATTR_LIST attribute to be parsed
-* @param attrType Attrbite type we are looking for
-* @param result Array where pointer to found attribute will be added. If several attributes of attrType are present, all of them will be added into result
-*/
-/*
-bool TMFTParserBase::ParseNonresAttrList(MFT_ATTR_HEADER* attrListAttr, ATTR_TYPE attrType, PMFT_ATTR_HEADER* result)
-{
-    GET_LOGGER_FUNC;
-
-    ZeroMemory(result, SAME_ATTR_CNT * sizeof(result[0]));
-
-    assert(attrListAttr->AttrType == ATTR_LIST_ATTR);
-    assert(attrListAttr->NonResidentFlag == 1);
-
-    TDataRuns dataRuns;
-    if (!DecodeDataRuns(attrListAttr, dataRuns)) // DataRunsDecode writes a message into log file in case of an error
-    {
-        return false;
-    }
-
-    if (dataRuns.Count() > 1)
-        logger.InfoFmt("[ParseNonresAttrList] UNUSUAL case. Non-resident ATTR_LIST_ATTR occupies {} data runs instead one.", dataRuns.Count());
-    assert(dataRuns.Count() == 1); // assuming that one data run is always enough for list of attributes
-
-    DATA_RUN_ITEM& rli = dataRuns[0];
-    logger.DebugFmt("[ParseNonresAttrList] Run Length Item VCN: {}, LCN: {}, Length:{}", rli.vcn, rli.lcn, rli.len);
-
-    if (rli.len > 1)
-        logger.InfoFmt("[ParseNonresAttrList] UNUSUAL case. Non-resident ATTR_LIST_ATTR datarun item occupies {} LCNs instead of one.", rli.len);
-    assert(rli.len == 1); // assuming that one LCN is always enough for list of attributes
-
-    auto dataBufSize = rli.len * getVolData().BytesPerCluster;
-    uint8_t* dataBuf = (uint8_t*)alloca(dataBufSize);
-
-    if (!ReadClusters(rli.lcn, rli.len, dataBuf)) // ReadClusters writes a message into log file in case of an error
-    {
-        return false;
-    }
-
-    assert(attrListAttr->nonres.RealSize < getVolData().BytesPerCluster); //may be incorrect assumption
-    
-    ATTR_LIST_ENTRY* attrListItem = (ATTR_LIST_ENTRY*)dataBuf;
-    uint8_t* dataBufEnd1 = dataBuf + dataBufSize;
-    uint8_t* dataBufEnd2 = dataBuf + attrListAttr->nonres.RealSize;
-
-    if (!GetAttrFromAttrList(attrListItem, attrType, dataBufEnd1, dataBufEnd2, result))
-        return false;
-
-    return true;
-}*/
-
 
 /**
 * @brief Version of function without attrFilter parameter. processChildMFTRecPred will be called for all attributes found in attrListAttr.
@@ -1130,7 +840,7 @@ void TMFTBaseReader::ParseIndexRoot(MFT_ATTR_HEADER* attr, TLCNRecs& lcns, TFile
     assert(indexR->AttrType == ATTR_FILENAME);
     assert(indexR->Rule == COLLATION_RULE::FILENAME);
 
-    if (logger.ShouldLog(LogEngine::Levels::llDebug))
+    if (logger.ShouldLog(LogEngine::llDebug))
     {
         logger.DebugFmt("IndexRoot Indexed Attr Type: {} {:#x}", AttrName(indexR->AttrType), (uint32_t)indexR->AttrType);
         logger.DebugFmt("IndexRoot Collation Rule: {} ({:#x})", CollRuleName((uint32_t)indexR->Rule), (uint32_t)indexR->Rule);
@@ -1368,7 +1078,7 @@ TErrorCode TMFTBaseReader::ParseAttrList(MFTRecIndex indexMFTRec, uint32_t attrF
 * @param VolData Volume data. Needed for reading file system.
 * @param path Fully qualified and ABSOLUTE path to file or folder that starts from disk name.
 */
-expected_uint32 /*std::expected<MFTRecIndex, TErrorCode>*/ TMFTBaseReader::MFTRecIdByPath(const ci_string& path) // ci_string is for case INsensitive search here
+expected_uint32 TMFTBaseReader::MFTRecIdByPath(const ci_string& path) // ci_string is for case INsensitive search here
 {
     if (path.size() == 0) return std::unexpected(TErrorCode::InvalidArgument);
 
@@ -1377,13 +1087,14 @@ expected_uint32 /*std::expected<MFTRecIndex, TErrorCode>*/ TMFTBaseReader::MFTRe
 
     std::vector<ci_string> arr;
     StringToArray(path, arr, ci_string(_T("\\/")));
-    if (arr.size() == 0) return std::unexpected(TErrorCode::InvalidArgument);
+    
+    if (arr.size() == 0) 
+        return std::unexpected(TErrorCode::InvalidArgument);
 
     MFT_REF mftRecID{ 0 };
     mftRecID.sId.low = MFT_ROOT_REC_ID;
     uint8_t* mftRecBuf = (uint8_t*)alloca(getVolData().BytesPerMFTRec);
 
-    DIR_NODE node;
     MFT_FILE_RECORD* mftRec = (MFT_FILE_RECORD*)mftRecBuf;
 
     for (size_t i = 1; i < arr.size(); i++) // bypass drive letter for now
@@ -1410,7 +1121,7 @@ expected_uint32 /*std::expected<MFTRecIndex, TErrorCode>*/ TMFTBaseReader::MFTRe
         fn.ciName = arr[i];
         // binary search in sorted array (assume that GetFileListFromMFTRec has read items in SORTED order)
         auto iter = std::lower_bound(fileList.begin(), fileList.end(), fn); // fn has overrided operators < and ==
-        if (iter != node.FileList.end() && (*iter).ciName == fn.ciName)
+        if (iter != fileList.end() && (*iter).ciName == fn.ciName)
         {
             mftRecID = iter->MFTRecID;
         }
@@ -1425,18 +1136,210 @@ expected_uint32 /*std::expected<MFTRecIndex, TErrorCode>*/ TMFTBaseReader::MFTRe
     return mftRecID.sId.low;
 }
 
-
-TErrorCode TMFTBaseReader::PrintSTDInfo(MFT_ATTR_HEADER* attr)
+TErrorCode TMFTBaseReader::PrintMFTRecord(MFT_REF mftRecRef)
 {
+    uint8_t* mftRecBuf = (uint8_t*)alloca(getVolData().BytesPerMFTRec);
+
+    // LoadMFTRecord check that returned mftRecBuf contains requested MFT record ID
+    // If non-existing record is requested then error code MFTRecordNotInUse returned
+    auto res = FLoader.LoadMFTRecord(mftRecRef, mftRecBuf);
+    if (res != TErrorCode::Success)
+    {
+        GET_LOGGER;
+        logger.Error("LoadMFTRecord finished with error.");
+        return res;
+    }
+    else
+    {
+        return PrintMFTRecord((MFT_FILE_RECORD*)mftRecBuf);
+    }
+}
+
+TErrorCode TMFTBaseReader::PrintMFTRecord(MFT_FILE_RECORD* mftRec)
+{
+    TAttrCollection collection;
+    CH_ERR(FillAttrCollection(mftRec, collection));
+
+    CH_ERR(PrintMFTHeader(mftRec));
+
+    assert(FAttrCurrIndex == 0);
+    FAttrCurrIndex = 1;
+
+    // attributes are printed in order of their ATTR_TYPE enum
+    CH_ERR(PrintSTDInfo(collection));
+
+    CH_ERR(PrintFileNames(collection));
+
+    CH_ERR(PrintObjectID(collection));
+
+    CH_ERR(PrintSecure(collection));
+
+    CH_ERR(PrintLabel(collection));
+
+    CH_ERR(PrintVolumeInfo(collection));
+
+    CH_ERR(PrintDataInfo(collection));
+
+    CH_ERR(PrintReparse(collection));
+
+    if (((mftRec->Flags & MFT_FLAG_IS_DIRECTORY) == MFT_FLAG_IS_DIRECTORY))
+    {
+        CH_ERR(PrintDirectory(collection));
+    }
+
+    CH_ERR(PrintEAInfo(collection));
+
+    CH_ERR(PrintEA(collection));
+
+    CH_ERR(PrintLUS(collection));
+
+    CH_ERR(PrintMFTFooter(mftRec));
+
+    FAttrCurrIndex = 0; // reset index for future use
+
+    return TErrorCode::Success;
+}
+
+TErrorCode TMFTBaseReader::PrintMFTHeader(MFT_FILE_RECORD* mftRec)
+{
+    //fixup array must go right after IndexMFTRec
+    assert(offsetof(MFT_FILE_RECORD, IndexMFTRec) + sizeof(mftRec->IndexMFTRec) == mftRec->RecHeader.FixupOffset);
+    assert(ntfs_is_file_recp(mftRec->RecHeader.Signature));
+    assert(mftRec->FileRecSize > mftRec->FirstAttrOffset);
+    assert(mftRec->FileRecSize <= mftRec->AllocFileRecSize);
+    assert(mftRec->AllocFileRecSize == getVolData().BytesPerMFTRec);
+    assert((mftRec->Flags & MFT_FLAG_IN_USE) > 0);
+    assert(mftRec->FirstAttrOffset < mftRec->AllocFileRecSize);
+
+    string_t str = std::format(_T("MFT Record ID: {0:#x} (#{0})"), mftRec->IndexMFTRec);
+    size_t spacesL = (MFT_LINE_LEN - str.size()) / 2;
+    size_t spacesR = MFT_LINE_LEN - str.size() - spacesL;
+    string_t line = _T("+");
+    line.append(MFT_LINE_LEN - 2, '-');
+    line.append(1, '+');
+
+    // 4 lines below should be printed into FOut, not into Out()
+    FOut << std::endl << line << std::endl;
+    FOut << std::format(_T("{:<{}}{}{:>{}}"), _T("|"), spacesL, str, _T("|"), spacesR) << std::endl;
+    FOut << line << std::endl;
+    FOut << std::endl;
+
+    Out() << std::format(_T("{:<{}}:'{}'"), _T("MFT Rec Signature"), F_WIDTH, convert_string<char_t>(std::string((char*)mftRec->RecHeader.Signature, 4))) << std::endl;
+
+    switch (mftRec->Flags)
+    {
+    case MFT_FLAG_IN_USE: Out() << std::left << std::setw(F_WIDTH) << _T("MFT Rec Type") << _T(":'IN USE'") << std::endl; break;
+    case MFT_FLAG_IS_DIRECTORY: Out() << std::left << std::setw(F_WIDTH) << _T("(!) MFT Rec Type") << _T(": DELETED Directory - unusual case") << std::endl; break;
+    case MFT_FLAG_IN_USE | MFT_FLAG_IS_DIRECTORY: Out() << std::format(_T("{:<{}}:{} {:#x}"), _T("MFT Rec Type"), F_WIDTH, _T("'IN USE DIRECTORY'"), (uint16_t)mftRec->Flags) << std::endl; break;
+    default:
+        Out() << std::format(_T("{:<{}}: {} {:#x}"), _T("MFT Rec Type"), F_WIDTH, _T("UNKNOWN"), (uint16_t)mftRec->Flags) << std::endl;
+    }
+
+    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Rec ID") << _T(": ") << convert_string<char_t>(MFT_REF::toHexString(mftRec->IndexMFTRec)) << std::endl;
+    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Rec Sequence") << _T(": ") << mftRec->SeqNum << std::endl;
+    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Log Seq Number") << _T(": ") << mftRec->RecHeader.LogFileSeqNum << std::endl;
+    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Parent Rec ID") << _T(": ") << convert_string<char_t>(mftRec->ParentFileRec.toHexString()) << (mftRec->ParentFileRec.Id > 0 ? _T(" CHILD") : _T(" BASE")) << std::endl;
+    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Hard Links Count") << _T(": ") << mftRec->HardLinksCnt << (mftRec->ParentFileRec.Id > 0 ? " (may be inaccurate for child records)" : "") << std::endl;
+    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Next Attr ID") << _T(": ") << mftRec->NextAttrID << std::endl;
+    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Rec Size") << _T(": ") << mftRec->FileRecSize << std::endl;
+    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Allocated Size") << _T(": ") << mftRec->AllocFileRecSize << std::endl;
+
+    return TErrorCode::Success;
+}
+
+TErrorCode TMFTBaseReader::PrintMFTFooter(MFT_FILE_RECORD* mftRec)
+{
+    string_t str = std::format(_T("END of MFT Record ID: {0:#x} (#{0})"), mftRec->IndexMFTRec);
+    size_t spacesL = (MFT_LINE_LEN - str.size()) / 2;
+    size_t spacesR = MFT_LINE_LEN - str.size() - spacesL;
+    string_t line = _T("+");
+    line.append(MFT_LINE_LEN - 2, '-');
+    line.append(1, '+');
+
+    // 4 lines below should be printed into FOut, not into Out()
+    FOut << std::endl << line << std::endl;
+    FOut << std::format(_T("{:<{}}{}{:>{}}"), _T("|"), spacesL, str, _T("|"), spacesR) << std::endl;
+    FOut << line << std::endl;
+    FOut << std::endl;
+
+    return TErrorCode::Success;
+}
+
+TErrorCode TMFTBaseReader::PrintAttrHeader(MFT_ATTR_HEADER* attr, MFTRecIndex mftRecID)
+{
+    assert(attr->AttrSize > 0);
+
+    string_t str1 = std::format(_T(" Attribute {} ({:#x}) "), convert_string<char_t>(AttrName(attr->AttrType)), (uint32_t)attr->AttrType);
+    string_t str2 = std::format(_T("#{} "), FAttrCurrIndex);
+    size_t spacesL = (ATTR_LINE_LEN - str1.size() - str2.size()) / 2;
+    size_t spacesR = ATTR_LINE_LEN - str1.size() - str2.size() - spacesL;
+    string_t strL(spacesL, '-');
+    string_t strR(spacesR, '-');
+
+    Out() << std::endl;
+    Out() << str2 << strL << str1 << strR << std::endl;
+    Out() << std::left << std::setw(F_WIDTH) << _T("Attr location:") << convert_string<char_t>(MFT_REF::toHexString(mftRecID)) << std::endl;
+    Out() << std::left << std::setw(F_WIDTH) << _T("Residence:") << (attr->NonResidentFlag == ATTR_FLAG_NONRESIDENT ? _T("NON - RESIDENT") : _T("RESIDENT")) << std::endl;
+    Out() << std::format(_T("{:<{}}{} {:#x}"), _T("Type:"), F_WIDTH, convert_string<char_t>(AttrName(attr->AttrType)), (uint32_t)attr->AttrType) << std::endl;
+    Out() << std::left << std::setw(F_WIDTH) << _T("Attr ID:") << attr->AttrID << std::endl;
+
+    std::wstring nameOfAttrW = STREAM_NONAME_W;
+    if (attr->AttrNameSize > 0) // if attr has a name - show it
+    {
+        nameOfAttrW.assign(GetAttrName(attr, AttrNameOffset), attr->AttrNameSize);
+        Out() << std::format(_T("{:<{}}'{}'"), _T("Attr Name:"), F_WIDTH, convert_string<char_t>(nameOfAttrW)) << std::endl;
+    }
+
+    //Out() << std::left << std::setw(F_WIDTH) << _T("Attr Size:")  << attr->AttrSize << std::endl;
+    Out() << std::format(_T("{:<{}}{} {}"), _T("Flags:"), F_WIDTH, attr->Flags, convert_string<char_t>(AttrFlagToString(attr->Flags))) << std::endl;
+
+    if (attr->NonResidentFlag == ATTR_FLAG_RESIDENT) // attribute is RESident
+    {
+        Out() << std::left << std::setw(F_WIDTH) << _T("Indexed:") << attr->res.IndexedFlag << std::endl;
+        assert(attr->res.DataSize + attr->res.DataOffset <= attr->AttrSize);
+    }
+    else
+    {
+        Out() << std::left << std::setw(F_WIDTH) << _T("StartVCN:") << toStringSep<string_t>(attr->nonres.StartVCN) << std::endl;
+        Out() << std::left << std::setw(F_WIDTH) << _T("LastVCN:") << toStringSep(attr->nonres.LastVCN) << std::endl;
+        Out() << std::left << std::setw(F_WIDTH) << _T("RealSize:") << toStringSep(attr->nonres.RealSize) << _T(" bytes") << std::endl;
+        Out() << std::left << std::setw(F_WIDTH) << _T("StreamSize:") << toStringSep(attr->nonres.StreamSize) << _T(" bytes") << std::endl;
+        Out() << std::left << std::setw(F_WIDTH) << _T("Allocated Size:") << toStringSep(attr->nonres.AllocatedSize) << _T(" bytes") << std::endl;
+
+        if (attr->nonres.CompressionUnitSize > 0) // for compressed files
+        {
+            Out() << std::left << std::setw(F_WIDTH) << _T("Compressed Unit Size:") << toStringSep(2 << attr->nonres.CompressionUnitSize) << _T(" clusters") << std::endl;
+            Out() << std::left << std::setw(F_WIDTH) << _T("Compressed Size:") << toStringSep(attr->nonres.CompressedSize) << _T(" bytes (multiple of the cluster size)") << std::endl;
+        }
+    }
+
+    return TErrorCode::Success;
+}
+
+TErrorCode TMFTBaseReader::PrintSTDInfo(TAttrCollection& collection)
+{
+    auto& attrList = collection.Get(ATTR_STD_INFO);
+
+    if (SingleAttributes[MATI(ATTR_STD_INFO)]) assert(attrList.Count() < 2);
+    // STD_INFO always present in MFT record
+    assert(attrList.Count() == 1);
+
+    if (attrList.Count() != 1) 
+        return TErrorCode::CorruptedData;
+
+    if (SingleAttributes[MATI(ATTR_STD_INFO)] && attrList.Count() > 1)
+        return TErrorCode::CorruptedData;
+
+    auto attr = attrList[0];
     assert(attr->AttrType == ATTR_STD_INFO);
 
     auto stdInfo = (ATTR_STD_INFO5*)Add2Ptr(attr, attr->res.DataOffset);
     assert((stdInfo->FileAttrib & FILE_ATTRIBUTE_NORMAL) == 0);// check that NORMAL bit is always zero
 
-    CH_ERR(PrintMFTAttrHeader(attr));
+    CH_ERR(PrintAttrHeader(attr, collection.GetLoc(attr)));
 
     Out() << std::format(_T("{:<{}}{}"), _T("Created:"), F_WIDTH, FileDateToString(stdInfo->CreateTime)) << std::endl;
-    Out() << std::format(_T("{:<{}}{}"), _T("Modiied:"), F_WIDTH, FileDateToString(stdInfo->ModifyTime)) << std::endl;
+    Out() << std::format(_T("{:<{}}{}"), _T("Modified:"), F_WIDTH, FileDateToString(stdInfo->ModifyTime)) << std::endl;
     Out() << std::format(_T("{:<{}}{}"), _T("MFT Changed:"), F_WIDTH, FileDateToString(stdInfo->ModifyAttrTime)) << std::endl;
     Out() << std::format(_T("{:<{}}{}"), _T("Last Access:"), F_WIDTH, FileDateToString(stdInfo->LastAccessTime)) << std::endl;
 
@@ -1454,9 +1357,17 @@ TErrorCode TMFTBaseReader::PrintSTDInfo(MFT_ATTR_HEADER* attr)
     return TErrorCode::Success;
 }
 
-TErrorCode TMFTBaseReader::PrintFileNames(TAttrHeaderList& fileNamesList)
+TErrorCode TMFTBaseReader::PrintFileNames(TAttrCollection& collection)
 {
-    for (auto& attr : fileNamesList)
+    auto& attrList = collection.Get(ATTR_FILENAME);
+
+    if (SingleAttributes[MATI(ATTR_FILENAME)]) assert(attrList.Count() < 2);
+    assert(attrList.Count() > 0);
+    // FILENAME attr is always present, at least one filename
+    if ((SingleAttributes[MATI(ATTR_FILENAME)] && attrList.Count() > 1) || attrList.Count() == 0)
+        return TErrorCode::CorruptedData;
+
+    for (auto& attr : attrList)
     {
         assert(attr->AttrType == ATTR_FILENAME);
 
@@ -1466,7 +1377,7 @@ TErrorCode TMFTBaseReader::PrintFileNames(TAttrHeaderList& fileNamesList)
         assert(fname->NameType <= FILE_NAME_UNICODE_AND_DOS);
         assert((fname->dup.FileAttrib & FILE_ATTRIBUTE_NORMAL) == 0);// check that NORMAL bit is always zero
 
-        CH_ERR(PrintMFTAttrHeader(attr));
+        CH_ERR(PrintAttrHeader(attr, collection.GetLoc(attr)));
         FAttrCurrIndex++;
         Out() << std::format(_T("{:<{}}'{}'"), _T("File Name:"), F_WIDTH, convert_string<char_t>(name)) << std::endl;
         Out() << std::format(_T("{:<{}}'{}' {:#x}"), _T("Name Type:"), F_WIDTH, convert_string< char_t>(FileNameTypes[fname->NameType]), fname->NameType) << std::endl;
@@ -1519,12 +1430,23 @@ TErrorCode TMFTBaseReader::PrintDirectory(TAttrCollection& collection)
     return TErrorCode::Success;
 }
 
-TErrorCode TMFTBaseReader::PrintObjectID(MFT_ATTR_HEADER* attr)
+TErrorCode TMFTBaseReader::PrintObjectID(TAttrCollection& collection)
 {
+    auto& attrList = collection.Get(ATTR_ID);
+    if (SingleAttributes[MATI(ATTR_ID)]) assert(attrList.Count() < 2);
+
+    // its Ok if no ID attribute in MFT record
+    if (attrList.Count() == 0) 
+        return TErrorCode::Success;
+
+    if (SingleAttributes[MATI(ATTR_ID)] && attrList.Count() > 1)
+        return TErrorCode::CorruptedData;
+
+    auto attr = attrList[0];
     assert(attr->AttrType == ATTR_ID);
     auto objID = (ATTR_OBJECT_ID*)Add2Ptr(attr, attr->res.DataOffset);
     
-    CH_ERR(PrintMFTAttrHeader(attr));
+    CH_ERR(PrintAttrHeader(attr, collection.GetLoc(attr)));
 
     constexpr const uint BUF_SZ = 100;
     std::wstring buf(BUF_SZ, 0);
@@ -1566,11 +1488,21 @@ TErrorCode TMFTBaseReader::PrintObjectID(MFT_ATTR_HEADER* attr)
     return TErrorCode::Success;
 }
 
-TErrorCode TMFTBaseReader::PrintLabel(MFT_ATTR_HEADER* attr)
+TErrorCode TMFTBaseReader::PrintLabel(TAttrCollection& collection)
 {
+    auto& attrList = collection.Get(ATTR_LABEL);
+    if (SingleAttributes[MATI(ATTR_LABEL)]) assert(attrList.Count() < 2);
+
+    if (attrList.Count() == 0) 
+        return TErrorCode::Success;
+    
+    if (SingleAttributes[MATI(ATTR_LABEL)] && attrList.Count() > 1)
+        return TErrorCode::CorruptedData;
+
+    auto attr = attrList[0];
     assert(attr->AttrType == ATTR_LABEL);
 
-    CH_ERR(PrintMFTAttrHeader(attr));
+    CH_ERR(PrintAttrHeader(attr, collection.GetLoc(attr)));
 
     std::wstring label((wchar_t*)Add2Ptr(attr, attr->res.DataOffset), attr->res.DataSize / sizeof(wchar_t));
     Out() << std::format(_T("{:<{}} '{}'"), _T("Label:"), F_WIDTH, convert_string<char_t>(label)) << std::endl;
@@ -1579,11 +1511,21 @@ TErrorCode TMFTBaseReader::PrintLabel(MFT_ATTR_HEADER* attr)
     return TErrorCode::Success;
 }
 
-TErrorCode TMFTBaseReader::PrintVolumeInfo(MFT_ATTR_HEADER* attr)
+TErrorCode TMFTBaseReader::PrintVolumeInfo(TAttrCollection& collection)
 {
+    auto& attrList = collection.Get(ATTR_VOL_INFO);
+    if (SingleAttributes[MATI(ATTR_VOL_INFO)]) assert(attrList.Count() < 2);
+    
+    if (attrList.Count() == 0) 
+        return TErrorCode::Success;
+
+    if (SingleAttributes[MATI(ATTR_VOL_INFO)] && attrList.Count() > 1)
+        return TErrorCode::CorruptedData;
+
+    auto attr = attrList[0];
     assert(attr->AttrType == ATTR_VOL_INFO);
     
-    CH_ERR(PrintMFTAttrHeader(attr));
+    CH_ERR(PrintAttrHeader(attr, collection.GetLoc(attr)));
 
     auto volInfo = (VOLUME_INFO*)Add2Ptr(attr, attr->res.DataOffset);
     
@@ -1595,11 +1537,21 @@ TErrorCode TMFTBaseReader::PrintVolumeInfo(MFT_ATTR_HEADER* attr)
     return TErrorCode::Success;
 }
 
-TErrorCode TMFTBaseReader::PrintDataInfo(MFT_ATTR_HEADER* attr)
+TErrorCode TMFTBaseReader::PrintDataInfo(TAttrCollection& collection)
 {
+    auto& attrList = collection.Get(ATTR_DATA);
+    if (SingleAttributes[MATI(ATTR_DATA)]) assert(attrList.Count() < 2);
+
+    if (attrList.Count() == 0) 
+        return TErrorCode::Success;
+    
+    if (SingleAttributes[MATI(ATTR_DATA)] && attrList.Count() > 1)
+        return TErrorCode::CorruptedData;
+
+    auto attr = attrList[0];
     assert(attr->AttrType == ATTR_DATA);
 
-    CH_ERR(PrintMFTAttrHeader(attr));
+    CH_ERR(PrintAttrHeader(attr, collection.GetLoc(attr)));
 
     if (attr->NonResidentFlag == ATTR_FLAG_NONRESIDENT)
     {
@@ -1635,35 +1587,64 @@ TErrorCode TMFTBaseReader::PrintDataInfo(MFT_ATTR_HEADER* attr)
     return TErrorCode::Success;
 }
 
-TErrorCode TMFTBaseReader::PrintEA(MFT_ATTR_HEADER* attr)
+TErrorCode TMFTBaseReader::PrintEA(TAttrCollection& collection)
 {
+    auto& attrList = collection.Get(ATTR_EA);
+    if (SingleAttributes[MATI(ATTR_EA)]) assert(attrList.Count() < 2);
+
+    if (attrList.Count() == 0) 
+        return TErrorCode::Success;
+
+    if (SingleAttributes[MATI(ATTR_EA)] && attrList.Count() > 1)
+        return TErrorCode::CorruptedData;
+
+    auto attr = attrList[0];
     assert(attr->AttrType == ATTR_EA);
 
-    CH_ERR(PrintMFTAttrHeader(attr));
+    CH_ERR(PrintAttrHeader(attr, collection.GetLoc(attr)));
     
     FAttrCurrIndex++;
 
     return TErrorCode::Success;
 }
 
-TErrorCode TMFTBaseReader::PrintEAInfo(MFT_ATTR_HEADER* attr)
+TErrorCode TMFTBaseReader::PrintEAInfo(TAttrCollection& collection)
 {
+    auto& attrList = collection.Get(ATTR_EA_INFO);
+    if (SingleAttributes[MATI(ATTR_EA_INFO)]) assert(attrList.Count() < 2);
+    
+    if (attrList.Count() == 0) 
+        return TErrorCode::Success;
+    
+    if (SingleAttributes[MATI(ATTR_EA_INFO)] && attrList.Count() > 1)
+        return TErrorCode::CorruptedData;
+
+    auto attr = attrList[0];
     assert(attr->AttrType == ATTR_EA_INFO);
 
-    CH_ERR(PrintMFTAttrHeader(attr));
+    CH_ERR(PrintAttrHeader(attr, collection.GetLoc(attr)));
 
     FAttrCurrIndex++;
 
     return TErrorCode::Success;
 }
 
-TErrorCode TMFTBaseReader::PrintLUS(TAttrHeaderList& lusList)
+TErrorCode TMFTBaseReader::PrintLUS(TAttrCollection& collection)
 {
-    for (auto& attr : lusList)
+    auto & attrList = collection.Get(ATTR_LOGGED_UTILITY_STREAM);
+    if (SingleAttributes[MATI(ATTR_LOGGED_UTILITY_STREAM)]) assert(attrList.Count() < 2);
+    
+    if (attrList.Count() == 0) 
+        return TErrorCode::Success;
+    
+    if (SingleAttributes[MATI(ATTR_LOGGED_UTILITY_STREAM)] && attrList.Count() > 1)
+        return TErrorCode::CorruptedData;
+
+    for (auto& attr : attrList)
     {
         assert(attr->AttrType == ATTR_LOGGED_UTILITY_STREAM);
 
-        CH_ERR(PrintMFTAttrHeader(attr));
+        CH_ERR(PrintAttrHeader(attr, collection.GetLoc(attr)));
     }
 
     FAttrCurrIndex++;
@@ -1671,22 +1652,41 @@ TErrorCode TMFTBaseReader::PrintLUS(TAttrHeaderList& lusList)
     return TErrorCode::Success;
 }
 
-TErrorCode TMFTBaseReader::PrintSecure(MFT_ATTR_HEADER* attr)
+TErrorCode TMFTBaseReader::PrintSecure(TAttrCollection& collection)
 {
+    auto& attrList = collection.Get(ATTR_SECURE);
+    if (SingleAttributes[MATI(ATTR_SECURE)]) assert(attrList.Count() < 2);
+    
+    if (attrList.Count() == 0) 
+        return TErrorCode::Success;
+    
+    if (SingleAttributes[MATI(ATTR_SECURE)] && attrList.Count() > 1)
+        return TErrorCode::CorruptedData;
+
+    auto attr = attrList[0];
     assert(attr->AttrType == ATTR_SECURE);
 
-    CH_ERR(PrintMFTAttrHeader(attr));
+    CH_ERR(PrintAttrHeader(attr, collection.GetLoc(attr)));
 
     FAttrCurrIndex++;
 
     return TErrorCode::Success;
 }
 
-TErrorCode TMFTBaseReader::PrintReparse(MFT_ATTR_HEADER* attr)
+TErrorCode TMFTBaseReader::PrintReparse(TAttrCollection& collection)
 {
+    auto& attrList = collection.Get(ATTR_REPARSE);
+    if (SingleAttributes[MATI(ATTR_REPARSE)]) assert(attrList.Count() < 2);
+    
+    if (attrList.Count() == 0) 
+        return TErrorCode::Success;
+    if (SingleAttributes[MATI(ATTR_REPARSE)] && attrList.Count() > 1)
+        return TErrorCode::CorruptedData;
+
+    auto attr = attrList[0];
     assert(attr->AttrType == ATTR_REPARSE);
 
-    CH_ERR(PrintMFTAttrHeader(attr));
+    CH_ERR(PrintAttrHeader(attr, collection.GetLoc(attr)));
 
     auto rp = (ATTR_REPARSE_POINT*)Add2Ptr(attr, attr->res.DataOffset);
 
@@ -1706,210 +1706,6 @@ TErrorCode TMFTBaseReader::PrintReparse(MFT_ATTR_HEADER* attr)
     return TErrorCode::Success;
 }
 
-TErrorCode TMFTBaseReader::PrintMFTAttrHeader(MFT_ATTR_HEADER* attr)
-{
-    assert(attr->AttrSize > 0);
-    
-    string_t str1 = std::format(_T(" Attribute {} ({:#x}) "), convert_string<char_t>(AttrName(attr->AttrType)), (uint32_t)attr->AttrType);
-    string_t str2 = std::format(_T("#{} "), FAttrCurrIndex);
-    size_t spacesL = (ATTR_LINE_LEN - str1.size() - str2.size())/2;
-    size_t spacesR = ATTR_LINE_LEN - str1.size() - str2.size() - spacesL;
-    string_t strL(spacesL, '-');
-    string_t strR(spacesR, '-');
 
-    Out() << std::endl;
-    Out() << str2 << strL << str1 << strR << std::endl;
-    Out() << std::left << std::setw(F_WIDTH) << _T("Residence:") << (attr->NonResidentFlag == ATTR_FLAG_NONRESIDENT ? _T("NON - RESIDENT") : _T("RESIDENT")) << std::endl;
-    Out() << std::format(_T("{:<{}}{} {:#x}"), _T("Type:"), F_WIDTH, convert_string<char_t>(AttrName(attr->AttrType)), (uint32_t)attr->AttrType) << std::endl;
-    Out() << std::left << std::setw(F_WIDTH) << _T("Attr ID:") << attr->AttrID   << std::endl;
-    
-    std::wstring nameOfAttrW = STREAM_NONAME_W;
-    if (attr->AttrNameSize > 0) // if attr has a name - show it
-    {
-        nameOfAttrW.assign(GetAttrName(attr, AttrNameOffset), attr->AttrNameSize);
-        Out() << std::format(_T("{:<{}}'{}'"), _T("Attr Name:"), F_WIDTH, convert_string<char_t>(nameOfAttrW)) << std::endl;
-    }
 
-    //Out() << std::left << std::setw(F_WIDTH) << _T("Attr Size:")  << attr->AttrSize << std::endl;
-    Out() << std::format(_T("{:<{}}{} {}"), _T("Flags:"), F_WIDTH, attr->Flags, convert_string<char_t>(AttrFlagToString(attr->Flags))) << std::endl;
 
-    if (attr->NonResidentFlag == ATTR_FLAG_RESIDENT) // attribute is RESident
-    {
-        Out() << std::left << std::setw(F_WIDTH) << _T("Indexed:") << attr->res.IndexedFlag << std::endl;
-        assert(attr->res.DataSize + attr->res.DataOffset <= attr->AttrSize);
-    }
-    else
-    {
-        Out() << std::left << std::setw(F_WIDTH) << _T("StartVCN:")       << toStringSep<string_t>(attr->nonres.StartVCN) << std::endl;
-        Out() << std::left << std::setw(F_WIDTH) << _T("LastVCN:")        << toStringSep(attr->nonres.LastVCN) << std::endl;
-        Out() << std::left << std::setw(F_WIDTH) << _T("RealSize:")       << toStringSep(attr->nonres.RealSize) << _T(" bytes") << std::endl;
-        Out() << std::left << std::setw(F_WIDTH) << _T("StreamSize:")     << toStringSep(attr->nonres.StreamSize) << _T(" bytes") << std::endl;
-        Out() << std::left << std::setw(F_WIDTH) << _T("Allocated Size:") << toStringSep(attr->nonres.AllocatedSize) << _T(" bytes") << std::endl;
-
-        if (attr->nonres.CompressionUnitSize > 0) // for compressed files
-        {
-            Out() << std::left << std::setw(F_WIDTH) << _T("Compressed Unit Size:") << toStringSep(2 << attr->nonres.CompressionUnitSize) << _T(" clusters") << std::endl;
-            Out() << std::left << std::setw(F_WIDTH) << _T("Compressed Size:") << toStringSep(attr->nonres.CompressedSize) << _T(" bytes (multiple of the cluster size)") << std::endl;
-        }
-    }
-
-    return TErrorCode::Success;
-}
-
-ostream_t& TMFTBaseReader::Out()
-{
-    FOut << _T("  ");
-    return FOut;
-}
-
-TErrorCode TMFTBaseReader::PrintMFTHeader(MFT_FILE_RECORD* mftRec)
-{
-    //fixup array must go right after IndexMFTRec
-    assert(offsetof(MFT_FILE_RECORD, IndexMFTRec) + sizeof(mftRec->IndexMFTRec) == mftRec->RecHeader.FixupOffset);
-    assert(ntfs_is_file_recp(mftRec->RecHeader.Signature));
-    assert(mftRec->FileRecSize > mftRec->FirstAttrOffset);
-    assert(mftRec->FileRecSize <= mftRec->AllocFileRecSize);
-    assert(mftRec->AllocFileRecSize == getVolData().BytesPerMFTRec);
-    assert((mftRec->Flags & MFT_FLAG_IN_USE) > 0);
-    assert(mftRec->FirstAttrOffset < mftRec->AllocFileRecSize);
-    
-    string_t str = std::format(_T("MFT Record ID: {0:#x} (#{0})"), mftRec->IndexMFTRec);
-    size_t spacesL = (MFT_LINE_LEN - str.size()) / 2;
-    size_t spacesR = MFT_LINE_LEN - str.size() - spacesL;
-    string_t line = _T("+");
-    line.append(MFT_LINE_LEN - 2, '-');
-    line.append(1, '+');
-
-    // 4 lines below should be printed into FOut, not into Out()
-    FOut << std::endl << line << std::endl;
-    FOut << std::format(_T("{:<{}}{}{:>{}}"), _T("|"), spacesL, str, _T("|"), spacesR) << std::endl;
-    FOut << line << std::endl;
-    FOut << std::endl;
-
-    Out() << std::format(_T("{:<{}}:'{}'"), _T("MFT Rec Signature"), F_WIDTH, convert_string<char_t>(std::string((char*)mftRec->RecHeader.Signature, 4))) << std::endl;
-
-    switch (mftRec->Flags)
-    {
-    case MFT_FLAG_IN_USE: Out() << std::left << std::setw(F_WIDTH) <<_T("MFT Rec Type") << _T(":'IN USE'") << std::endl; break;
-    case MFT_FLAG_IS_DIRECTORY: Out() << std::left << std::setw(F_WIDTH) << _T("(!) MFT Rec Type") << _T(": DELETED Directory - unusual case") << std::endl; break;
-    case MFT_FLAG_IN_USE | MFT_FLAG_IS_DIRECTORY: Out() << std::format(_T("{:<{}}:{} {:#x}"), _T("MFT Rec Type"), F_WIDTH, _T("'IN USE DIRECTORY'"), (uint16_t)mftRec->Flags) << std::endl; break;
-    default:
-        Out() << std::format(_T("{:<{}}: {} {:#x}"), _T("MFT Rec Type"), F_WIDTH, _T("UNKNOWN"), (uint16_t)mftRec->Flags) << std::endl;
-    }
-
-    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Rec ID") << _T(": ") << convert_string<char_t>(MFT_REF::toHexString(mftRec->IndexMFTRec)) << std::endl;
-    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Rec Sequence") << _T(": ") << mftRec->SeqNum << std::endl;
-    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Log Seq Number") << _T(": ") << mftRec->RecHeader.LogFileSeqNum << std::endl;
-    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Parent Rec ID") << _T(": ") << convert_string<char_t>(mftRec->ParentFileRec.toHexString()) << (mftRec->ParentFileRec.Id > 0 ? _T(" CHILD") : _T(" BASE")) << std::endl;
-    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Hard Links Count") << _T(": ") << mftRec->HardLinksCnt << (mftRec->ParentFileRec.Id > 0 ? " (may be inaccurate for child records)" : "") << std::endl;
-    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Next Attr ID") << _T(": ") << mftRec->NextAttrID << std::endl;
-    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Rec Size") << _T(": ") << mftRec->FileRecSize << std::endl;
-    Out() << std::left << std::setw(F_WIDTH) << _T("MFT Allocated Size") << _T(": ") << mftRec->AllocFileRecSize << std::endl;
-
-    return TErrorCode::Success;
-}
-
-TErrorCode TMFTBaseReader::PrintMFTFooter(MFT_FILE_RECORD* mftRec)
-{
-    string_t str = std::format(_T("END of MFT Record ID: {0:#x} (#{0})"), mftRec->IndexMFTRec);
-    size_t spacesL = (MFT_LINE_LEN - str.size()) / 2;
-    size_t spacesR = MFT_LINE_LEN - str.size() - spacesL;
-    string_t line = _T("+");
-    line.append(MFT_LINE_LEN - 2, '-');
-    line.append(1, '+');
-
-    // 4 lines below should be printed into FOut, not into Out()
-    FOut << std::endl << line << std::endl;
-    FOut << std::format(_T("{:<{}}{}{:>{}}"), _T("|"), spacesL, str, _T("|"), spacesR) << std::endl;
-    FOut << line << std::endl;
-    FOut << std::endl;
-
-    return TErrorCode::Success;
-}
-
-TErrorCode TMFTBaseReader::PrintMFTRecord(MFT_REF mftRecRef)
-{
-    uint8_t* mftRecBuf = (uint8_t*)alloca(getVolData().BytesPerMFTRec);
-
-    // LoadMFTRecord check that returned mftRecBuf contains requested MFT record ID
-    // If non-existing record is requested then error code MFTRecordNotInUse returned
-    auto res = FLoader.LoadMFTRecord(mftRecRef, mftRecBuf);
-    if (res != TErrorCode::Success)
-    {
-        GET_LOGGER;
-        logger.Error("LoadMFTRecord finished with error.");
-        return res;
-    }
-    else
-    {
-        return PrintMFTRecord((MFT_FILE_RECORD*)mftRecBuf);
-    }
-}
-
-TErrorCode TMFTBaseReader::PrintMFTRecord(MFT_FILE_RECORD* mftRec)
-{
-    TAttrCollection collection;
-    CH_ERR(FillAttrCollection(mftRec, collection));
-  
-    CH_ERR(PrintMFTHeader(mftRec));
-
-    assert(FAttrCurrIndex == 0);
-
-    FAttrCurrIndex = 1;
-    // STD_INFO always present in MFT record
-    auto& attrList = collection.Get(ATTR_STD_INFO);
-    if (SingleAttributes[MATI(ATTR_STD_INFO)]) assert(attrList.Count() == 1);
-    CH_ERR(PrintSTDInfo(attrList[0]));
-
-    attrList = collection.Get(ATTR_FILENAME);
-    if (SingleAttributes[MATI(ATTR_FILENAME)]) assert(attrList.Count() < 2);
-    assert(attrList.Count() > 0); // FILENAME attr is always present, at least one name
-    CH_ERR(PrintFileNames(attrList));
-
-    attrList = collection.Get(ATTR_ID);
-    if (SingleAttributes[MATI(ATTR_ID)]) assert(attrList.Count() < 2);
-    if(attrList.Count() > 0) CH_ERR(PrintObjectID(attrList[0]));
-
-    attrList = collection.Get(ATTR_LABEL);
-    if (SingleAttributes[MATI(ATTR_LABEL)]) assert(attrList.Count() < 2);
-    if (attrList.Count() > 0) CH_ERR(PrintLabel(attrList[0]));
-
-    attrList = collection.Get(ATTR_VOL_INFO);
-    if (SingleAttributes[MATI(ATTR_VOL_INFO)]) assert(attrList.Count() < 2);
-    if (attrList.Count() > 0) CH_ERR(PrintVolumeInfo(attrList[0]));
-
-    if (((mftRec->Flags & MFT_FLAG_IS_DIRECTORY) == MFT_FLAG_IS_DIRECTORY))
-    {
-        CH_ERR(PrintDirectory(collection));
-    }
-
-    attrList = collection.Get(ATTR_DATA);
-    if (SingleAttributes[MATI(ATTR_DATA)]) assert(attrList.Count() < 2);
-    if (attrList.Count() > 0) CH_ERR(PrintDataInfo(attrList[0]));
-
-    attrList = collection.Get(ATTR_EA);
-    if (SingleAttributes[MATI(ATTR_EA)]) assert(attrList.Count() < 2);
-    if (attrList.Count() > 0) CH_ERR(PrintEA(attrList[0]));
-
-    attrList = collection.Get(ATTR_EA_INFO);
-    if (SingleAttributes[MATI(ATTR_EA_INFO)]) assert(attrList.Count() < 2);
-    if (attrList.Count() > 0) CH_ERR(PrintEAInfo(attrList[0]));
-
-    attrList = collection.Get(ATTR_LOGGED_UTILITY_STREAM);
-    if (SingleAttributes[MATI(ATTR_LOGGED_UTILITY_STREAM)]) assert(attrList.Count() < 2);
-    if (attrList.Count() > 0) CH_ERR(PrintLUS(attrList));
-
-    attrList = collection.Get(ATTR_SECURE);
-    if (SingleAttributes[MATI(ATTR_SECURE)]) assert(attrList.Count() < 2);
-    if (attrList.Count() > 0) CH_ERR(PrintSecure(attrList[0]));
-
-    attrList = collection.Get(ATTR_REPARSE);
-    if (SingleAttributes[MATI(ATTR_REPARSE)]) assert(attrList.Count() < 2);
-    if (attrList.Count() > 0) CH_ERR(PrintReparse(attrList[0]));
-
-    CH_ERR(PrintMFTFooter(mftRec));
-
-    FAttrCurrIndex = 0; // reset index for future use
-
-    return TErrorCode::Success;
-}
