@@ -24,14 +24,14 @@ enum TFileMode:int { fmRead, fmWrite, fmReadWrite, fmWriteTrunc };
 enum TSharingMode:int { shDefault, shDenyNo, shDenyRead, shDenyWrite, shDenyReadWrite };
 enum class TSeekMode { smFromBegin, smFromEnd, smFromCurrent };
 
-
+ /*
 #if defined (__BORLANDC__)
 #define _SH_DENYRW SH_DENYRW
 #define _SH_DENYWR SH_DENYWR
 #define _SH_DENYRD SH_DENYRD
 #define _SH_DENYNO SH_DENYNO
 #endif
-
+ */
 
 // this is my special sharing mode
 #define _SH_DEFAULT 0
@@ -125,7 +125,7 @@ public:
 	}
 
 	template<typename CharT, typename Traits>
-	TStream& operator<<(std::basic_ostream<typename CharT, typename Traits>& (*manip)(std::basic_ostream<typename CharT, typename Traits>&)) 
+	TStream& operator<<(std::basic_ostream<CharT, Traits>& (*manip)(std::basic_ostream<CharT, Traits>&))
 	{
 		if (manip == std::endl<CharT, Traits>) {
 			// Your custom logic for endl goes here
