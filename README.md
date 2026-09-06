@@ -35,8 +35,7 @@ Commands:
                              second argument - volume name (if omitted default volume c:\ is used).
 -p, --path   <arg>           Display information about file/directory by specified path.
 -s, --stat   <arg>           Show interesting volume/disk statistics.
--c, --cache  <arg>           Build cache for file search and show some statistics.
--t, --test                   For testing purposes.
+
 ```
 
 
