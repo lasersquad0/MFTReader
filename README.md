@@ -49,7 +49,7 @@ You will get the output similar to below.
 
 Alternate paths - you will be surprised how many files has alternate names (hard links).
 
-MFT Rec ID - shown in both dec and hex format. You can use this id later to show information about this file.
+MFT Rec ID - shown in both dec and hex format. You can use this id later to request information about this file.
 
 MFT Changed - datetime when this attribute (not file) has changed. This date hasn't shown any where in Windows Explorer.
 
