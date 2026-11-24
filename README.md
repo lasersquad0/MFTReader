@@ -7,20 +7,20 @@ There are however a number of articles in Internet describing NTFS filesystem st
 MFTReader application is based on this information.
 
 What MFTReader app can do:
-- read single file/folder information by MFT record ID. Shows all NTFS attributes and much more.
-- read single file/folder information by path. Shows all NTFS attributes and much more.
+- read single file/folder information by path. Show all NTFS attributes and much more.
+- read single file/folder information by MFT record ID. Show all NTFS attributes and much more.
 - read entire NTFS filesystem (all files and folders, their attributes, without file data) and build statistic that cannot built with using other methods
 
 Statistic that is built by MFTReader app includes:
 - number of hard links for file
-- number of names assigned to the file/folder (you will discover many interesting thing here!)
+- number of names assigned to the file/folder (you will discover many interesting things here!)
 - number and names of data streams assigned to file/folder (very interesting too)
 - number of NTFS attributes that file/folder has (do not mix with file DOS file attributes, NTFS attributes is a different thing)
 - statistic of files having either resident or non-resident NTFS attributes
 - number of reparse points for the file/folder
-- etc.
+- other info.
 
-MFTReader works only with NTFS file systems and does not work with any others.
+MFTReader works only with NTFS file systems and does not work with other filesystem types.
 
 
 ## How to use this tool
