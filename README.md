@@ -34,7 +34,7 @@ Commands:
 -r, --record <req arg> <arg> Display information about MFT record. First argument is MFT record ID, 
                              second argument - volume name (if omitted default volume c:\ is used).
 -p, --path   <arg>           Display information about file/directory by specified path.
--s, --stat   <arg>           Show interesting volume/disk statistics.
+-s, --stat   <arg>           Collect and show interesting volume statistics.
 
 ```
 
